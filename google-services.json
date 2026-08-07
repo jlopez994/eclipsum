@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "676180869301",
+    "project_id": "eclipsum-app-jl",
+    "storage_bucket": "eclipsum-app-jl.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:676180869301:android:47cc87190ac3d0f0733efc",
+        "android_client_info": {
+          "package_name": "com.jlopez.eclipsum"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDb4hGW-oIAgvMcaom2QAB2KHGa9khAH_U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
