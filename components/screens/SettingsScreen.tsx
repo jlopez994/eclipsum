@@ -12,7 +12,7 @@ export function SettingsScreen({ permissions, onDemoEclipse }: SettingsScreenPro
   return (
     <View style={s.root}>
       <Text style={s.title}>Ajustes</Text>
-      <ScrollView style={s.body} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 22 }}>
+      <ScrollView style={s.body} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 22, paddingBottom: 36 }}>
         <Text style={s.hint}>
           El puesto de observación se elige en el mapa, tocando el nombre del lugar arriba a la izquierda.
         </Text>
