@@ -13,10 +13,11 @@ import {
 import { computeLocalEclipse, type LocalEclipse } from './lib/eclipse';
 import { cloudCoverAt, fetchCloudCover } from './lib/weather';
 import { findNearestTotality, haversineKm, type TotalityDirection } from './lib/totality';
+import { openInMaps } from './lib/maps';
 import type { Spot } from './lib/spots';
 import { scheduleEclipseAlerts } from './lib/notifications';
 import { fetchEclipseMessage, track } from './lib/firebase';
-import { loadPrefs, savePrefs, type Prefs } from './lib/prefs';
+import { loadPrefs, pushRecent, savePrefs, type Prefs } from './lib/prefs';
 import { TabBar, type TabKey } from './components/TabBar';
 import { SpotSelector } from './components/SpotSelector';
 import { MapScreen } from './components/screens/MapScreen';
@@ -28,11 +29,17 @@ import { C, F } from './components/theme';
 const ECLIPSE_MODE_LEAD_MS = 30 * 60_000;
 const ECLIPSE_MODE_TAIL_MS = 5 * 60_000;
 const COARSE_TICK_MS = 30_000;
+/** Umbral para mostrar «Tú: …» bajo el chip del puesto */
+const REAL_PLACE_KM = 1;
 
 interface Geo {
   lat: number;
   lon: number;
   place: string;
+}
+
+function cleanPlaceLabel(name: string): string {
+  return name.replace(/\s·\sGPS$/, '').replace(/\s·\sManual$/, '').trim();
 }
 
 /** Eclipse sintético para la demo: desplaza los eventos para que el siguiente hito caiga en ~2 min. */
@@ -65,6 +72,11 @@ export default function App() {
   const [demo, setDemo] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
+
+  const onPrefsChange = useCallback((next: Prefs) => {
+    setPrefs(next);
+    void savePrefs(next);
+  }, []);
 
   useEffect(() => {
     void loadPrefs().then(setPrefs);
@@ -128,11 +140,25 @@ export default function App() {
     };
   }, []);
 
-  // Puesto de observación activo: spot elegido o, si no hay, el GPS
+  // Sembrar puesto deseado con GPS si aún no hay ninguno guardado
+  useEffect(() => {
+    if (!prefs || !geo || prefs.spot) return;
+    const spot: Spot = {
+      name: cleanPlaceLabel(geo.place) || 'Mi posición',
+      lat: geo.lat,
+      lon: geo.lon,
+      origin: 'gps',
+    };
+    onPrefsChange({ ...prefs, spot });
+  }, [prefs, geo, onPrefsChange]);
+
+  // Puesto deseado (cálculos); fallback temporal a GPS mientras se siembra
   const activeSpot = prefs?.spot ?? null;
   const active = activeSpot
-    ? { lat: activeSpot.lat, lon: activeSpot.lon, place: activeSpot.name }
-    : geo;
+    ? { lat: activeSpot.lat, lon: activeSpot.lon, place: activeSpot.name, origin: activeSpot.origin }
+    : geo
+      ? { lat: geo.lat, lon: geo.lon, place: cleanPlaceLabel(geo.place), origin: 'gps' as const }
+      : null;
 
   const eclipse = useMemo(
     () => (active ? computeLocalEclipse(active.lat, active.lon) : null),
@@ -173,10 +199,25 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eclipse]);
 
-  const onPrefsChange = useCallback((next: Prefs) => {
-    setPrefs(next);
-    void savePrefs(next);
-  }, []);
+  const selectSpot = useCallback(
+    (spot: Spot) => {
+      if (!prefs) return;
+      const recentSpots = spot.origin === 'gps' ? prefs.recentSpots : pushRecent(prefs.recentSpots, spot);
+      onPrefsChange({ ...prefs, spot, recentSpots });
+    },
+    [prefs, onPrefsChange],
+  );
+
+  const recalcHere = useCallback(() => {
+    if (!prefs || !geo) return;
+    const spot: Spot = {
+      name: cleanPlaceLabel(geo.place) || 'Mi posición',
+      lat: geo.lat,
+      lon: geo.lon,
+      origin: 'gps',
+    };
+    onPrefsChange({ ...prefs, spot });
+  }, [prefs, geo, onPrefsChange]);
 
   if (!fontsLoaded || !prefs) {
     return (
@@ -207,13 +248,20 @@ export default function App() {
     return km > 20 ? km : null;
   })();
 
+  const realPlaceLabel = (() => {
+    if (!geo || !active) return null;
+    const km = haversineKm(geo.lat, geo.lon, active.lat, active.lon);
+    if (km < REAL_PLACE_KM) return null;
+    return cleanPlaceLabel(geo.place) || 'GPS';
+  })();
+
   if (activeEclipse && active && (demo || inEclipseWindow)) {
     return (
       <View style={s.root}>
         <StatusBar style="light" />
         <EclipseModeScreen
           eclipse={activeEclipse}
-          place={active.place.replace(' · GPS', '').replace(' · Manual', '')}
+          place={cleanPlaceLabel(active.place)}
           now={now}
           isDemo={demo}
           onExitDemo={() => setDemo(false)}
@@ -235,13 +283,16 @@ export default function App() {
           (eclipse && active ? (
             <MapScreen
               eclipse={eclipse}
-              place={active.place}
+              place={cleanPlaceLabel(active.place)}
+              realPlace={realPlaceLabel}
+              spotIsGps={active.origin === 'gps'}
               cloudPct={cloudPct}
               totality={totality}
               now={now}
               onOpenSelector={() => setSelectorOpen(true)}
+              onOpenMaps={() => openInMaps(active.lat, active.lon, active.place)}
               divergenceKm={divergenceKm}
-              onRecalcHere={() => onPrefsChange({ ...prefs, spot: null })}
+              onRecalcHere={recalcHere}
             />
           ) : (
             <View style={s.loading}>
@@ -283,7 +334,8 @@ export default function App() {
         userGeo={geo ? { lat: geo.lat, lon: geo.lon } : null}
         gpsPlace={geo?.place ?? 'Tu posición'}
         activeSpot={activeSpot}
-        onSelect={(spot) => onPrefsChange({ ...prefs, spot })}
+        recentSpots={prefs.recentSpots}
+        onSelect={selectSpot}
       />
     </View>
   );

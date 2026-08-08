@@ -21,11 +21,17 @@ const EVENT_ACCENT: Record<string, string> = {
 
 interface MapScreenProps {
   eclipse: LocalEclipse;
+  /** Puesto deseado (cálculos) */
   place: string;
+  /** Etiqueta GPS real si difiere del puesto; null = misma ubicación o sin GPS */
+  realPlace: string | null;
+  /** El puesto activo es un snapshot GPS */
+  spotIsGps: boolean;
   cloudPct: number | null;
   totality: TotalityDirection | 'none' | null;
   now: Date;
   onOpenSelector: () => void;
+  onOpenMaps: () => void;
   /** km entre GPS real y spot activo el día del eclipse; null = sin aviso */
   divergenceKm: number | null;
   onRecalcHere: () => void;
@@ -92,10 +98,13 @@ function UserDot() {
 export function MapScreen({
   eclipse,
   place,
+  realPlace,
+  spotIsGps,
   cloudPct,
   totality,
   now,
   onOpenSelector,
+  onOpenMaps,
   divergenceKm,
   onRecalcHere,
 }: MapScreenProps) {
@@ -176,43 +185,54 @@ export function MapScreen({
         <Text style={s.bandLabel}>BANDA DE TOTALIDAD · 12 AGO 2026</Text>
       </View>
 
-      {/* Guía hacia la banda + pill (solo parcial) */}
-      {!isTotal && totality !== null && totality !== 'none' && (
-        <>
-          <View style={s.guide} />
-          <View style={s.pill}>
-            <Text style={s.pillText}>
-              a <Text style={{ color: C.corona }}>{totality.distanceKm} km al {bearingLabel(totality.bearingDeg)}</Text>{' '}
-              verías el <Text style={{ color: C.violet }}>TOTAL</Text>
-            </Text>
-          </View>
-        </>
-      )}
-      {isTotal && (
-        <View style={s.pillTotalWrap}>
-          <View style={s.pillTotal}>
+      {/* Guía hacia la banda (solo parcial) */}
+      {!isTotal && totality !== null && totality !== 'none' && <View style={s.guide} />}
+
+      {/* Estado: en banda o distancia a totalidad — encima de la hoja */}
+      {isTotal ? (
+        <View style={s.statusWrap}>
+          <View style={[s.statusPill, { borderColor: 'rgba(124,108,255,0.6)' }]}>
             <Text style={[s.pillText, { color: C.violet }]} numberOfLines={1}>
               ESTÁS EN LA BANDA DE TOTALIDAD
             </Text>
           </View>
         </View>
-      )}
+      ) : totality !== null && totality !== 'none' ? (
+        <View style={s.statusWrap}>
+          <View style={s.statusPill}>
+            <Text style={s.pillText} numberOfLines={1}>
+              a <Text style={{ color: C.corona }}>{totality.distanceKm} km al {bearingLabel(totality.bearingDeg)}</Text>
+              {' '}verías el <Text style={{ color: C.violet }}>TOTAL</Text>
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       <View style={[s.userArea, { top: dotTop as `${number}%` }]}>
         <UserDot />
-        <Text style={s.userLabel}>TU POSICIÓN</Text>
+        <Text style={s.userLabel}>{spotIsGps ? 'TU POSICIÓN' : 'PUESTO'}</Text>
       </View>
 
       {/* Overlay superior: chips + lugares + aviso divergencia */}
       <View style={s.topOverlay} pointerEvents="box-none">
         <View style={s.chipsRow} pointerEvents="box-none">
-          <Pressable style={s.chipLocation} onPress={onOpenSelector}>
-            <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={C.corona} strokeWidth={2.4}>
-              <Path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z" />
-            </Svg>
-            <Text style={s.chipText}>{place}</Text>
-            <Text style={s.chipChevron}>▾</Text>
-          </Pressable>
+          <View style={s.chipGroup}>
+            <Pressable style={s.chipLocation} onPress={onOpenSelector}>
+              <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={C.corona} strokeWidth={2.4}>
+                <Path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z" />
+              </Svg>
+              <View style={{ flexShrink: 1, minWidth: 0 }}>
+                <Text style={s.chipText} numberOfLines={1}>
+                  {place}
+                </Text>
+                {realPlace !== null && <Text style={s.chipReal}>Tú: {realPlace}</Text>}
+              </View>
+              <Text style={s.chipChevron}>▾</Text>
+            </Pressable>
+            <Pressable style={s.chipMaps} onPress={onOpenMaps} hitSlop={6}>
+              <Text style={s.chipMapsText}>MAPS</Text>
+            </Pressable>
+          </View>
           <View style={s.chipNorth}>
             <Text style={s.chipNorthText}>N</Text>
           </View>
@@ -315,30 +335,18 @@ const s = StyleSheet.create({
     borderLeftColor: 'rgba(242,239,233,0.32)',
     borderStyle: 'dashed',
   },
-  pill: {
-    position: 'absolute',
-    left: '50%',
-    top: '45%',
-    transform: [{ translateX: 14 }],
-    backgroundColor: 'rgba(21,21,30,0.88)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,184,77,0.5)',
-    borderRadius: 99,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  pillTotalWrap: {
+  statusWrap: {
     position: 'absolute',
     left: 16,
     right: 16,
     bottom: SHEET_MIN + 16,
     alignItems: 'center',
   },
-  pillTotal: {
+  statusPill: {
     maxWidth: '100%',
     backgroundColor: 'rgba(21,21,30,0.88)',
     borderWidth: 1,
-    borderColor: 'rgba(124,108,255,0.6)',
+    borderColor: 'rgba(255,184,77,0.5)',
     borderRadius: 99,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -383,6 +391,7 @@ const s = StyleSheet.create({
   },
   divergenceText: { fontFamily: F.semibold, fontSize: 13, color: C.text },
   divergenceAction: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1, color: C.danger },
+  chipGroup: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1, minWidth: 0 },
   chipLocation: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -393,9 +402,22 @@ const s = StyleSheet.create({
     borderRadius: 99,
     paddingHorizontal: 16,
     paddingVertical: 9,
+    flexShrink: 1,
+    minWidth: 0,
+    maxWidth: 240,
   },
   chipText: { fontFamily: F.semibold, fontSize: 13, color: C.text },
+  chipReal: { fontFamily: F.medium, fontSize: 10, color: C.dim, marginTop: 1 },
   chipChevron: { fontFamily: F.semibold, fontSize: 12, color: C.dim, marginLeft: 2 },
+  chipMaps: {
+    backgroundColor: 'rgba(21,21,30,0.85)',
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 99,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  chipMapsText: { fontFamily: F.bold, fontSize: 10, letterSpacing: 1, color: C.dim },
   chipNorth: {
     width: 38,
     height: 38,
