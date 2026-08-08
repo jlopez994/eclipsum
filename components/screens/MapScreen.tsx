@@ -19,7 +19,7 @@ const BAND_ANCHOR = 0.355;
 const DOT_TOTAL = 0.26;
 /** Justo fuera de la banda (pocos km): bastante más abajo que DOT_TOTAL para distinguirlo. */
 const DOT_NEAR = 0.42;
-/** Lo más lejos que cabe en el diagrama (sobre el pill de estado). */
+/** Lo más lejos que cabe en el diagrama (sobre la hoja). */
 const DOT_FAR = 0.58;
 /** km que mapean a DOT_FAR; más allá se satura. */
 const DIST_SCALE_KM = 150;
@@ -72,9 +72,6 @@ const fmtHM = (d: Date) =>
   d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 const fmtPct = (o: number) => `${(o * 100).toFixed(1).replace('.', ',')}%`;
-
-/** Distancias de la regla del diagrama (km a la banda). */
-const RULER_KM = [50, 100, 150];
 
 /** Fracción vertical para una distancia a la banda dada. */
 function kmFraction(km: number): number {
@@ -429,13 +426,6 @@ export function MapScreen({
         <Text style={s.bandHint}>MÁS DURACIÓN CERCA DEL CENTRO</Text>
       </View>
 
-      {/* Regla de distancias a la banda (misma escala que los puntos) */}
-      {RULER_KM.map((km) => (
-        <View key={km} style={[s.ruler, { top: `${kmFraction(km) * 100}%` }]} pointerEvents="none">
-          <View style={s.rulerLine} />
-          <Text style={s.rulerText}>{km} KM</Text>
-        </View>
-      ))}
 
       {/* Guía hacia la banda: longitud hasta el punto más alejado */}
       {showGuide && (
@@ -455,32 +445,17 @@ export function MapScreen({
           style={[s.guideKmWrap, { top: `${(guideTop + guideHeightFrac / 2) * 100}%` }]}
           pointerEvents="none"
         >
-          <Text style={s.guideKmText}>{guideKm} km</Text>
+          <Text style={s.guideKmText}>
+            {guideKm} km
+            {!showHere && totality !== null && totality !== 'none'
+              ? ` al ${bearingLabel(totality.bearingDeg)}`
+              : ''}
+          </Text>
         </View>
       )}
 
       </>
       )}
-
-      {/* Estado: en banda o distancia a totalidad — encima de la hoja */}
-      {isTotal ? (
-        <View style={s.statusWrap}>
-          <View style={[s.statusPill, { borderColor: 'rgba(124,108,255,0.6)' }]}>
-            <Text style={[s.pillText, { color: C.violet }]} numberOfLines={1}>
-              ESTÁS EN LA BANDA DE TOTALIDAD
-            </Text>
-          </View>
-        </View>
-      ) : totality !== null && totality !== 'none' ? (
-        <View style={s.statusWrap}>
-          <View style={s.statusPill}>
-            <Text style={s.pillText} numberOfLines={1}>
-              a <Text style={{ color: C.corona }}>{totality.distanceKm} km al {bearingLabel(totality.bearingDeg)}</Text>
-              {' '}verías el <Text style={{ color: C.violet }}>TOTAL</Text>
-            </Text>
-          </View>
-        </View>
-      ) : null}
 
       {mapView === 'diagram' && showHere && (
         <View style={[s.userArea, dotsCollide && s.hereArea, { top: `${hereTop * 100}%` }]}>
@@ -661,22 +636,6 @@ const s = StyleSheet.create({
     borderRadius: 6,
     overflow: 'hidden',
   },
-  ruler: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-  },
-  rulerLine: { flex: 1, height: 1, backgroundColor: 'rgba(124,108,255,0.13)' },
-  rulerText: {
-    fontFamily: F.medium,
-    fontSize: 9,
-    letterSpacing: 1,
-    color: 'rgba(124,108,255,0.55)',
-  },
   bandHint: {
     position: 'absolute',
     alignSelf: 'center',
@@ -709,23 +668,6 @@ const s = StyleSheet.create({
     borderRadius: 4,
     overflow: 'hidden',
   },
-  statusWrap: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: SHEET_MIN + 36,
-    alignItems: 'center',
-  },
-  statusPill: {
-    maxWidth: '100%',
-    backgroundColor: 'rgba(21,21,30,0.88)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,184,77,0.5)',
-    borderRadius: 99,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  pillText: { fontFamily: F.semibold, fontSize: 12, color: C.text, textAlign: 'center' },
   userArea: { position: 'absolute', left: 0, right: 0, alignItems: 'center', gap: 8 },
   /** Lado a lado cuando las Y casi coinciden */
   hereArea: { transform: [{ translateX: -52 }] },
