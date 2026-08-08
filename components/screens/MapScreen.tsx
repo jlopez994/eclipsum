@@ -11,6 +11,17 @@ const SHEET_MIN = 236;
 const SHEET_MAX = 560;
 const SHEET_SNAP_THRESHOLD = 380;
 
+/** Ancla visual bajo la banda (guía / escala de distancia). */
+const BAND_ANCHOR = 0.355;
+/** Punto sobre la banda cuando hay totalidad. */
+const DOT_TOTAL = 0.26;
+/** Casi en el borde de la banda (pocos km). */
+const DOT_NEAR = 0.34;
+/** Lo más lejos que cabe en el diagrama (sobre el pill de estado). */
+const DOT_FAR = 0.56;
+/** km que mapean a DOT_FAR; más allá se satura. */
+const DIST_SCALE_KM = 200;
+
 const EVENT_ACCENT: Record<string, string> = {
   C1: C.corona,
   C2: C.totality,
@@ -39,6 +50,14 @@ interface MapScreenProps {
 
 const fmtHM = (d: Date) =>
   d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+
+/** Fracción vertical del punto: más cerca de la banda cuanto menor sea la distancia. */
+function dotTopFraction(isTotal: boolean, totality: TotalityDirection | 'none' | null): number {
+  if (isTotal) return DOT_TOTAL;
+  if (totality === null || totality === 'none') return DOT_FAR;
+  const t = Math.min(1, totality.distanceKm / DIST_SCALE_KM);
+  return DOT_NEAR + t * (DOT_FAR - DOT_NEAR);
+}
 
 function useSheet() {
   const height = useRef(new Animated.Value(SHEET_MIN)).current;
@@ -134,7 +153,8 @@ export function MapScreen({
           : { color: C.danger, label: `${cloudPct}% NUBES` };
 
   const obscuracion = (eclipse.obscuration * 100).toFixed(1).replace('.', ',');
-  const dotTop = isTotal ? '24%' : '61.5%';
+  const dotFrac = dotTopFraction(isTotal, totality);
+  const guideHeightFrac = Math.max(0, dotFrac - BAND_ANCHOR);
 
   return (
     <View style={s.root}>
@@ -185,8 +205,18 @@ export function MapScreen({
         <Text style={s.bandLabel}>BANDA DE TOTALIDAD · 12 AGO 2026</Text>
       </View>
 
-      {/* Guía hacia la banda (solo parcial) */}
-      {!isTotal && totality !== null && totality !== 'none' && <View style={s.guide} />}
+      {/* Guía hacia la banda (solo parcial): longitud = hueco hasta el punto */}
+      {!isTotal && totality !== null && totality !== 'none' && guideHeightFrac > 0.02 && (
+        <View
+          style={[
+            s.guide,
+            {
+              top: `${BAND_ANCHOR * 100}%`,
+              height: `${guideHeightFrac * 100}%`,
+            },
+          ]}
+        />
+      )}
 
       {/* Estado: en banda o distancia a totalidad — encima de la hoja */}
       {isTotal ? (
@@ -208,7 +238,7 @@ export function MapScreen({
         </View>
       ) : null}
 
-      <View style={[s.userArea, { top: dotTop as `${number}%` }]}>
+      <View style={[s.userArea, { top: `${dotFrac * 100}%` }]}>
         <UserDot />
         <Text style={s.userLabel}>{spotIsGps ? 'TU POSICIÓN' : 'PUESTO'}</Text>
       </View>
@@ -329,8 +359,6 @@ const s = StyleSheet.create({
   guide: {
     position: 'absolute',
     left: '50%',
-    top: '36.5%',
-    height: '25%',
     borderLeftWidth: 2,
     borderLeftColor: 'rgba(242,239,233,0.32)',
     borderStyle: 'dashed',
@@ -339,7 +367,7 @@ const s = StyleSheet.create({
     position: 'absolute',
     left: 16,
     right: 16,
-    bottom: SHEET_MIN + 16,
+    bottom: SHEET_MIN + 36,
     alignItems: 'center',
   },
   statusPill: {
@@ -373,7 +401,7 @@ const s = StyleSheet.create({
     elevation: 6,
   },
   userLabel: { fontFamily: F.medium, fontSize: 11, letterSpacing: 1, color: C.dim },
-  topOverlay: { position: 'absolute', top: 12, left: 0, right: 0, gap: 12 },
+  topOverlay: { position: 'absolute', top: 44, left: 0, right: 0, gap: 12 },
   chipsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
