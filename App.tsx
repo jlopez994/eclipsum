@@ -85,8 +85,9 @@ export default function App() {
       setLocating(true);
       try {
         if (!prefs.useGps && prefs.manual) {
-          const { lat, lon } = prefs.manual;
-          if (!cancelled) setGeo({ lat, lon, place: `${lat.toFixed(2)}, ${lon.toFixed(2)} · Manual` });
+          const { lat, lon, name } = prefs.manual;
+          const label = name ?? `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+          if (!cancelled) setGeo({ lat, lon, place: `${label} · Manual` });
           return;
         }
         const { status } = await Location.requestForegroundPermissionsAsync();
@@ -94,25 +95,37 @@ export default function App() {
         setPermissions((p) => ({ ...p, location: status === 'granted' }));
         if (status !== 'granted') {
           if (prefs.manual) {
-            const { lat, lon } = prefs.manual;
-            setGeo({ lat, lon, place: `${lat.toFixed(2)}, ${lon.toFixed(2)} · Manual` });
+            const { lat, lon, name } = prefs.manual;
+            setGeo({ lat, lon, place: `${name ?? `${lat.toFixed(2)}, ${lon.toFixed(2)}`} · Manual` });
           } else {
             setGeo(null);
             setTab('ajustes');
           }
           return;
         }
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        // GPS puede fallar (emulador, interiores): caemos a la última posición conocida
+        let coords: { lat: number; lon: number } | null = null;
+        try {
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        } catch {
+          const last = await Location.getLastKnownPositionAsync().catch(() => null);
+          if (last) coords = { lat: last.coords.latitude, lon: last.coords.longitude };
+        }
         if (cancelled) return;
-        const { latitude: lat, longitude: lon } = pos.coords;
+        if (!coords) {
+          setGeo(null);
+          setTab('ajustes');
+          return;
+        }
         let place = 'GPS';
         try {
-          const [addr] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
+          const [addr] = await Location.reverseGeocodeAsync({ latitude: coords.lat, longitude: coords.lon });
           if (addr?.city) place = `${addr.city} · GPS`;
         } catch {
           // sin geocoder: mostramos solo GPS
         }
-        if (!cancelled) setGeo({ lat, lon, place });
+        if (!cancelled) setGeo({ lat: coords.lat, lon: coords.lon, place });
       } finally {
         if (!cancelled) setLocating(false);
       }

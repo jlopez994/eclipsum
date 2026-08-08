@@ -6,7 +6,7 @@ export type AlertToggles = Record<EclipseEvent['key'], boolean>;
 
 export interface Prefs {
   useGps: boolean;
-  manual: { lat: number; lon: number } | null;
+  manual: { lat: number; lon: number; name?: string } | null;
   alertsOn: AlertToggles;
   /** Puesto de observación activo; null = seguir al GPS */
   spot: Spot | null;

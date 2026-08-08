@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import * as Location from 'expo-location';
 import type { Prefs } from '../../lib/prefs';
 import { C, F } from '../theme';
 
@@ -23,16 +24,37 @@ function Radio({ on }: { on: boolean }) {
 }
 
 export function SettingsScreen({ prefs, place, coords, permissions, onChange, onDemoEclipse }: SettingsScreenProps) {
-  const [lat, setLat] = useState(prefs.manual ? String(prefs.manual.lat) : '');
-  const [lon, setLon] = useState(prefs.manual ? String(prefs.manual.lon) : '');
-  const [manualError, setManualError] = useState(false);
+  const [query, setQuery] = useState(prefs.manual?.name ?? '');
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
-  const applyManual = () => {
-    const la = parseFloat(lat.replace(',', '.'));
-    const lo = parseFloat(lon.replace(',', '.'));
-    const valid = Number.isFinite(la) && Number.isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180;
-    setManualError(!valid);
-    if (valid) onChange({ ...prefs, useGps: false, manual: { lat: la, lon: lo } });
+  const applySearch = async () => {
+    const q = query.trim();
+    if (!q) return;
+    setSearchError(null);
+    // Atajo avanzado: "lat, lon" directo sigue funcionando
+    const m = q.match(/^(-?\d{1,2}(?:\.\d+)?)[\s,;]+(-?\d{1,3}(?:\.\d+)?)$/);
+    if (m) {
+      const la = parseFloat(m[1]);
+      const lo = parseFloat(m[2]);
+      if (Math.abs(la) <= 90 && Math.abs(lo) <= 180) {
+        onChange({ ...prefs, useGps: false, manual: { lat: la, lon: lo } });
+        return;
+      }
+    }
+    setSearching(true);
+    try {
+      const results = await Location.geocodeAsync(q);
+      if (results.length === 0) {
+        setSearchError('No encontrado. Prueba «ciudad» o «ciudad, provincia».');
+        return;
+      }
+      onChange({ ...prefs, useGps: false, manual: { lat: results[0].latitude, lon: results[0].longitude, name: q } });
+    } catch {
+      setSearchError('Buscador no disponible. Comprueba la conexión.');
+    } finally {
+      setSearching(false);
+    }
   };
 
   const coordsLabel = coords
@@ -57,8 +79,8 @@ export function SettingsScreen({ prefs, place, coords, permissions, onChange, on
             <Pressable style={s.rowItem} onPress={() => onChange({ ...prefs, useGps: false })}>
               <Radio on={!prefs.useGps} />
               <View style={{ flex: 1 }}>
-                <Text style={s.rowTitle}>Coordenadas manuales</Text>
-                <Text style={s.rowSub}>Para planificar desde otro punto</Text>
+                <Text style={s.rowTitle}>Otra ubicación</Text>
+                <Text style={s.rowSub}>Busca por nombre: «Teruel», «Sanabria»…</Text>
               </View>
               <Text style={s.chevron}>›</Text>
             </Pressable>
@@ -66,23 +88,17 @@ export function SettingsScreen({ prefs, place, coords, permissions, onChange, on
               <View style={s.manualBox}>
                 <TextInput
                   style={s.input}
-                  placeholder="Latitud (ej. 41.65)"
+                  placeholder="Lugar (o «lat, lon»)"
                   placeholderTextColor={C.dim}
-                  keyboardType="numbers-and-punctuation"
-                  value={lat}
-                  onChangeText={setLat}
+                  value={query}
+                  onChangeText={setQuery}
+                  onSubmitEditing={applySearch}
+                  returnKeyType="search"
+                  autoCorrect={false}
                 />
-                <TextInput
-                  style={s.input}
-                  placeholder="Longitud (ej. -0.88)"
-                  placeholderTextColor={C.dim}
-                  keyboardType="numbers-and-punctuation"
-                  value={lon}
-                  onChangeText={setLon}
-                />
-                {manualError && <Text style={s.error}>Coordenadas no válidas (lat ±90, lon ±180)</Text>}
-                <Pressable style={s.applyButton} onPress={applyManual}>
-                  <Text style={s.applyText}>APLICAR</Text>
+                {searchError && <Text style={s.error}>{searchError}</Text>}
+                <Pressable style={[s.applyButton, searching && { opacity: 0.6 }]} onPress={applySearch} disabled={searching}>
+                  <Text style={s.applyText}>{searching ? 'BUSCANDO…' : 'BUSCAR'}</Text>
                 </Pressable>
               </View>
             )}
