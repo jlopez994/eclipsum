@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Defs, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Location from 'expo-location';
 import { nextEvent, type LocalEclipse } from '../../lib/eclipse';
 import { bearingLabel, type TotalityDirection } from '../../lib/totality';
 import { Countdown } from '../Countdown';
@@ -15,12 +16,12 @@ const SHEET_SNAP_THRESHOLD = 380;
 const BAND_ANCHOR = 0.355;
 /** Punto sobre la banda cuando hay totalidad. */
 const DOT_TOTAL = 0.26;
-/** Casi en el borde de la banda (pocos km). */
-const DOT_NEAR = 0.34;
+/** Justo fuera de la banda (pocos km): bastante más abajo que DOT_TOTAL para distinguirlo. */
+const DOT_NEAR = 0.42;
 /** Lo más lejos que cabe en el diagrama (sobre el pill de estado). */
-const DOT_FAR = 0.56;
+const DOT_FAR = 0.58;
 /** km que mapean a DOT_FAR; más allá se satura. */
-const DIST_SCALE_KM = 200;
+const DIST_SCALE_KM = 150;
 
 const EVENT_ACCENT: Record<string, string> = {
   C1: C.corona,
@@ -34,10 +35,15 @@ interface MapScreenProps {
   eclipse: LocalEclipse;
   /** Puesto deseado (cálculos) */
   place: string;
-  /** Etiqueta GPS real si difiere del puesto; null = misma ubicación o sin GPS */
-  realPlace: string | null;
+  /** Nombre corto del GPS cuando difiere del puesto; se pinta en el punto «TÚ» */
+  hereLabel: string | null;
   /** El puesto activo es un snapshot GPS */
   spotIsGps: boolean;
+  /**
+   * Posición GPS en la escala del diagrama cuando difiere del puesto.
+   * null = solapados / sin segundo punto.
+   */
+  hereOnMap: { isTotal: boolean; totality: TotalityDirection | 'none' | null } | null;
   cloudPct: number | null;
   totality: TotalityDirection | 'none' | null;
   now: Date;
@@ -114,11 +120,59 @@ function UserDot() {
   );
 }
 
+/** Punto GPS sutil (anillo) cuando el puesto deseado está aparte. */
+function HereDot() {
+  return (
+    <View style={s.hereDotWrap}>
+      <View style={s.hereDot} />
+    </View>
+  );
+}
+
+/**
+ * Brújula: la N gira con el rumbo del móvil (arriba del chip = dirección en la que miras).
+ * Si no hay sensor (emulador), no se muestra.
+ */
+function CompassChip() {
+  const [heading, setHeading] = useState<number | null>(null);
+
+  useEffect(() => {
+    let sub: Location.LocationSubscription | null = null;
+    let cancelled = false;
+    void (async () => {
+      try {
+        sub = await Location.watchHeadingAsync((h) => {
+          const deg = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+          if (!cancelled && Number.isFinite(deg)) setHeading(((deg % 360) + 360) % 360);
+        });
+      } catch {
+        // sin brújula disponible
+      }
+    })();
+    return () => {
+      cancelled = true;
+      sub?.remove();
+    };
+  }, []);
+
+  if (heading === null) return null;
+
+  return (
+    <View style={s.compass} accessibilityLabel={`Norte: ${Math.round(heading)}°`}>
+      <View style={s.compassTick} />
+      <View style={[s.compassDial, { transform: [{ rotate: `${-heading}deg` }] }]}>
+        <Text style={s.compassN}>N</Text>
+      </View>
+    </View>
+  );
+}
+
 export function MapScreen({
   eclipse,
   place,
-  realPlace,
+  hereLabel,
   spotIsGps,
+  hereOnMap,
   cloudPct,
   totality,
   now,
@@ -153,8 +207,12 @@ export function MapScreen({
           : { color: C.danger, label: `${cloudPct}% NUBES` };
 
   const obscuracion = (eclipse.obscuration * 100).toFixed(1).replace('.', ',');
-  const dotFrac = dotTopFraction(isTotal, totality);
-  const guideHeightFrac = Math.max(0, dotFrac - BAND_ANCHOR);
+  const showHere = hereOnMap !== null;
+  const spotFrac = dotTopFraction(isTotal, totality);
+  const hereFrac = showHere ? dotTopFraction(hereOnMap.isTotal, hereOnMap.totality) : spotFrac;
+  // Guía hasta el más lejos de los dos (hacia el sur del diagrama)
+  const guideEnd = Math.max(spotFrac, hereFrac);
+  const guideHeightFrac = Math.max(0, guideEnd - BAND_ANCHOR);
 
   return (
     <View style={s.root}>
@@ -205,8 +263,8 @@ export function MapScreen({
         <Text style={s.bandLabel}>BANDA DE TOTALIDAD · 12 AGO 2026</Text>
       </View>
 
-      {/* Guía hacia la banda (solo parcial): longitud = hueco hasta el punto */}
-      {!isTotal && totality !== null && totality !== 'none' && guideHeightFrac > 0.02 && (
+      {/* Guía hacia la banda: longitud hasta el punto más alejado */}
+      {guideHeightFrac > 0.02 && (showHere || (!isTotal && totality !== null && totality !== 'none')) && (
         <View
           style={[
             s.guide,
@@ -238,9 +296,15 @@ export function MapScreen({
         </View>
       ) : null}
 
-      <View style={[s.userArea, { top: `${dotFrac * 100}%` }]}>
+      {showHere && (
+        <View style={[s.userArea, s.hereArea, { top: `${hereFrac * 100}%` }]}>
+          <HereDot />
+          <Text style={s.hereLabel}>{hereLabel ?? 'TÚ'}</Text>
+        </View>
+      )}
+      <View style={[s.userArea, showHere && s.spotArea, { top: `${spotFrac * 100}%` }]}>
         <UserDot />
-        <Text style={s.userLabel}>{spotIsGps ? 'TU POSICIÓN' : 'PUESTO'}</Text>
+        <Text style={s.userLabel}>{showHere || !spotIsGps ? 'PUESTO' : 'TU POSICIÓN'}</Text>
       </View>
 
       {/* Overlay superior: chips + lugares + aviso divergencia */}
@@ -251,21 +315,16 @@ export function MapScreen({
               <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={C.corona} strokeWidth={2.4}>
                 <Path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z" />
               </Svg>
-              <View style={{ flexShrink: 1, minWidth: 0 }}>
-                <Text style={s.chipText} numberOfLines={1}>
-                  {place}
-                </Text>
-                {realPlace !== null && <Text style={s.chipReal}>Tú: {realPlace}</Text>}
-              </View>
+              <Text style={s.chipText} numberOfLines={1}>
+                {place}
+              </Text>
               <Text style={s.chipChevron}>▾</Text>
             </Pressable>
             <Pressable style={s.chipMaps} onPress={onOpenMaps} hitSlop={6}>
               <Text style={s.chipMapsText}>MAPS</Text>
             </Pressable>
           </View>
-          <View style={s.chipNorth}>
-            <Text style={s.chipNorthText}>N</Text>
-          </View>
+          <CompassChip />
         </View>
         {divergenceKm !== null && (
           <View style={s.divergence}>
@@ -380,7 +439,10 @@ const s = StyleSheet.create({
     paddingVertical: 8,
   },
   pillText: { fontFamily: F.semibold, fontSize: 12, color: C.text, textAlign: 'center' },
-  userArea: { position: 'absolute', left: 0, right: 0, alignItems: 'center', gap: 10 },
+  userArea: { position: 'absolute', left: 0, right: 0, alignItems: 'center', gap: 8 },
+  /** Ligero offset horizontal para no taparse si las Y son parecidas */
+  hereArea: { transform: [{ translateX: -22 }] },
+  spotArea: { transform: [{ translateX: 14 }] },
   dotWrap: { width: 14, height: 14, alignItems: 'center', justifyContent: 'center' },
   dotRing: {
     position: 'absolute',
@@ -400,7 +462,17 @@ const s = StyleSheet.create({
     shadowRadius: 6,
     elevation: 6,
   },
+  hereDotWrap: { width: 14, height: 14, alignItems: 'center', justifyContent: 'center' },
+  hereDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: C.corona,
+    backgroundColor: 'rgba(21,21,30,0.65)',
+  },
   userLabel: { fontFamily: F.medium, fontSize: 11, letterSpacing: 1, color: C.dim },
+  hereLabel: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 0.8, color: C.corona },
   topOverlay: { position: 'absolute', top: 44, left: 0, right: 0, gap: 12 },
   chipsRow: {
     flexDirection: 'row',
@@ -432,10 +504,9 @@ const s = StyleSheet.create({
     paddingVertical: 9,
     flexShrink: 1,
     minWidth: 0,
-    maxWidth: 240,
+    maxWidth: 260,
   },
-  chipText: { fontFamily: F.semibold, fontSize: 13, color: C.text },
-  chipReal: { fontFamily: F.medium, fontSize: 10, color: C.dim, marginTop: 1 },
+  chipText: { fontFamily: F.semibold, fontSize: 13, color: C.text, flexShrink: 1 },
   chipChevron: { fontFamily: F.semibold, fontSize: 12, color: C.dim, marginLeft: 2 },
   chipMaps: {
     backgroundColor: 'rgba(21,21,30,0.85)',
@@ -446,7 +517,7 @@ const s = StyleSheet.create({
     paddingVertical: 9,
   },
   chipMapsText: { fontFamily: F.bold, fontSize: 10, letterSpacing: 1, color: C.dim },
-  chipNorth: {
+  compass: {
     width: 38,
     height: 38,
     borderRadius: 19,
@@ -455,8 +526,29 @@ const s = StyleSheet.create({
     borderColor: C.border,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
-  chipNorthText: { fontFamily: F.bold, fontSize: 13, color: C.dim },
+  /** Marca fija: dirección hacia la que apunta la parte superior del móvil */
+  compassTick: {
+    position: 'absolute',
+    top: 3,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 4,
+    borderRightWidth: 4,
+    borderBottomWidth: 6,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: C.corona,
+    zIndex: 2,
+  },
+  compassDial: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    paddingTop: 5,
+  },
+  compassN: { fontFamily: F.bold, fontSize: 12, color: C.text },
   sheet: {
     position: 'absolute',
     left: 0,

@@ -67,6 +67,11 @@ export default function App() {
   const [permissions, setPermissions] = useState({ location: false, notifications: false });
   const [cloudPct, setCloudPct] = useState<number | null>(null);
   const [totality, setTotality] = useState<TotalityDirection | 'none' | null>(null);
+  /** GPS en la escala del diagrama cuando difiere del puesto; null = solapado */
+  const [hereOnMap, setHereOnMap] = useState<{
+    isTotal: boolean;
+    totality: TotalityDirection | 'none' | null;
+  } | null>(null);
   const [remoteMsg, setRemoteMsg] = useState('');
   const [tab, setTab] = useState<TabKey>('mapa');
   const [demo, setDemo] = useState(false);
@@ -189,6 +194,43 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.lat, active?.lon, eclipse]);
 
+  // Segundo punto: GPS real en la escala de la banda cuando no coincide con el puesto
+  useEffect(() => {
+    if (!geo || !active) {
+      setHereOnMap(null);
+      return;
+    }
+    const km = haversineKm(geo.lat, geo.lon, active.lat, active.lon);
+    if (km < REAL_PLACE_KM) {
+      setHereOnMap(null);
+      return;
+    }
+    let cancelled = false;
+    // Provisional ya: que el punto se vea sin esperar al cálculo de km a la banda
+    setHereOnMap({ isTotal: false, totality: 'none' });
+    try {
+      const hereEc = computeLocalEclipse(geo.lat, geo.lon);
+      if (hereEc.kind === 'total') {
+        if (!cancelled) setHereOnMap({ isTotal: true, totality: null });
+        return () => {
+          cancelled = true;
+        };
+      }
+      findNearestTotality(geo.lat, geo.lon)
+        .then((t) => {
+          if (!cancelled) setHereOnMap({ isTotal: false, totality: t ?? 'none' });
+        })
+        .catch(() => {
+          if (!cancelled) setHereOnMap({ isTotal: false, totality: 'none' });
+        });
+    } catch {
+      if (!cancelled) setHereOnMap({ isTotal: false, totality: 'none' });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [geo?.lat, geo?.lon, active?.lat, active?.lon]);
+
   // Reprogramar alertas al cambiar de puesto (las horas de contacto varían por ubicación)
   useEffect(() => {
     if (!eclipse || !prefs || !permissions.notifications) return;
@@ -248,11 +290,11 @@ export default function App() {
     return km > 20 ? km : null;
   })();
 
-  const realPlaceLabel = (() => {
+  const hereLabel = (() => {
     if (!geo || !active) return null;
     const km = haversineKm(geo.lat, geo.lon, active.lat, active.lon);
     if (km < REAL_PLACE_KM) return null;
-    return cleanPlaceLabel(geo.place) || 'GPS';
+    return cleanPlaceLabel(geo.place) || 'TÚ';
   })();
 
   if (activeEclipse && active && (demo || inEclipseWindow)) {
@@ -284,8 +326,9 @@ export default function App() {
             <MapScreen
               eclipse={eclipse}
               place={cleanPlaceLabel(active.place)}
-              realPlace={realPlaceLabel}
+              hereLabel={hereLabel}
               spotIsGps={active.origin === 'gps'}
+              hereOnMap={hereOnMap}
               cloudPct={cloudPct}
               totality={totality}
               now={now}
