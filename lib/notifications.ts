@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import type { LocalEclipse } from './eclipse';
+import type { AlertToggles } from './prefs';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -19,11 +20,13 @@ interface Alert {
   time: Date;
 }
 
-function buildAlerts(eclipse: LocalEclipse): Alert[] {
-  const byKey = (k: string) => eclipse.events.find((e) => e.key === k);
+function buildAlerts(eclipse: LocalEclipse, enabled: AlertToggles): Alert[] {
+  const byKey = (k: keyof AlertToggles) => (enabled[k] ? eclipse.events.find((e) => e.key === k) : undefined);
   const c1 = byKey('C1');
   const c2 = byKey('C2');
+  const max = byKey('MAX');
   const c3 = byKey('C3');
+  const c4 = byKey('C4');
   const minus = (d: Date, min: number) => new Date(d.getTime() - min * 60_000);
 
   const alerts: Alert[] = [];
@@ -37,8 +40,14 @@ function buildAlerts(eclipse: LocalEclipse): Alert[] {
   if (c2) {
     alerts.push({ title: '🌑 Totalidad en 2 min', body: 'Prepárate: durante la totalidad puedes mirar sin gafas.', time: minus(c2.time, 2) });
   }
+  if (max) {
+    alerts.push({ title: '🌗 Máximo en 1 min', body: 'Punto culminante del eclipse.', time: minus(max.time, 1) });
+  }
   if (c3) {
     alerts.push({ title: '⚠️ FIN DE TOTALIDAD', body: 'GAFAS PUESTAS YA. El sol vuelve a ser peligroso.', time: c3.time });
+  }
+  if (c4) {
+    alerts.push({ title: 'Fin del eclipse', body: 'Último contacto. Gracias por mirar al cielo con Eclipsum.', time: c4.time });
   }
   return alerts.filter((a) => a.time.getTime() > Date.now());
 }
@@ -68,14 +77,14 @@ export async function sendTestNotification(): Promise<void> {
   });
 }
 
-/** Programa alertas locales. Devuelve cuántas quedaron programadas. */
-export async function scheduleEclipseAlerts(eclipse: LocalEclipse): Promise<number> {
+/** Programa alertas locales según toggles. Devuelve cuántas quedaron programadas. */
+export async function scheduleEclipseAlerts(eclipse: LocalEclipse, enabled: AlertToggles): Promise<number> {
   await ensurePermissionAndChannel();
 
-  // Reprogramar desde cero para evitar duplicados si se pulsa dos veces
+  // Reprogramar desde cero para evitar duplicados al cambiar toggles
   await Notifications.cancelAllScheduledNotificationsAsync();
 
-  const alerts = buildAlerts(eclipse);
+  const alerts = buildAlerts(eclipse, enabled);
   for (const a of alerts) {
     await Notifications.scheduleNotificationAsync({
       content: { title: a.title, body: a.body, sound: 'default' },

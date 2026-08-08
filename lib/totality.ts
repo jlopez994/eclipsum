@@ -7,9 +7,21 @@ export interface TotalityDirection {
   /** Punto destino dentro de la banda de totalidad */
   lat: number;
   lon: number;
+  /** Duración de la totalidad en el punto destino, en segundos */
+  durationSec: number | null;
 }
 
 const EARTH_R = 6371; // km
+
+/** Distancia haversine en km entre dos puntos. */
+export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const r = Math.PI / 180;
+  const dφ = (lat2 - lat1) * r;
+  const dλ = (lon2 - lon1) * r;
+  const a =
+    Math.sin(dφ / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dλ / 2) ** 2;
+  return 2 * EARTH_R * Math.asin(Math.sqrt(a));
+}
 const PROBE_DISTANCES_KM = [25, 50, 100, 200, 400, 700];
 const PRECISION_KM = 2;
 const BEARINGS = [0, 45, 90, 135, 180, 225, 270, 315];
@@ -68,7 +80,15 @@ export async function findNearestTotality(lat: number, lon: number): Promise<Tot
 
     if (!best || hiKm < best.distanceKm) {
       const p = destination(lat, lon, bearing, hiKm);
-      best = { distanceKm: Math.round(hiKm), bearingDeg: bearing, lat: p.lat, lon: p.lon };
+      // Punto justo en el límite tiene totalidad ~0 s; medimos 5 km más adentro para un dato útil
+      const inner = destination(lat, lon, bearing, hiKm + 5);
+      let durationSec: number | null = null;
+      try {
+        durationSec = computeLocalEclipse(inner.lat, inner.lon).totalityDurationSec;
+      } catch {
+        durationSec = null;
+      }
+      best = { distanceKm: Math.round(hiKm), bearingDeg: bearing, lat: p.lat, lon: p.lon, durationSec };
     }
   }
   return best;

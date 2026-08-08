@@ -26,6 +26,38 @@ export async function fetchCloudCover(lat: number, lon: number): Promise<CloudFo
   };
 }
 
+/**
+ * Nubosidad para varios puntos en una sola llamada (Open-Meteo acepta listas separadas por coma).
+ * Devuelve un pronóstico por punto, en el mismo orden; null por punto si la respuesta no cuadra.
+ */
+export async function fetchCloudCoverBatch(
+  points: { lat: number; lon: number }[],
+): Promise<(CloudForecast | null)[]> {
+  if (points.length === 0) return [];
+  if (points.length === 1) {
+    return [await fetchCloudCover(points[0].lat, points[0].lon).catch(() => null)];
+  }
+  const url =
+    `https://api.open-meteo.com/v1/forecast?latitude=${points.map((p) => p.lat).join(',')}` +
+    `&longitude=${points.map((p) => p.lon).join(',')}` +
+    `&hourly=cloud_cover&start_date=${ECLIPSE_DATE}&end_date=${ECLIPSE_DATE}&timezone=UTC`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Open-Meteo HTTP ${res.status}`);
+  const json = await res.json();
+  const list: unknown = json;
+  if (!Array.isArray(list) || list.length !== points.length) {
+    throw new Error('Respuesta Open-Meteo por lote inesperada');
+  }
+  return list.map((item) => {
+    const times: unknown = (item as { hourly?: { time?: unknown } })?.hourly?.time;
+    const covers: unknown = (item as { hourly?: { cloud_cover?: unknown } })?.hourly?.cloud_cover;
+    if (!Array.isArray(times) || !Array.isArray(covers) || times.length !== covers.length) return null;
+    return {
+      hours: times.map((t, i) => ({ time: new Date(String(t) + ':00Z'), cloudCover: Number(covers[i]) })),
+    };
+  });
+}
+
 /** Nubosidad interpolada a la hora dada, o null si fuera de rango. */
 export function cloudCoverAt(forecast: CloudForecast, when: Date): number | null {
   const h = forecast.hours;
