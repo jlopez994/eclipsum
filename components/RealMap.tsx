@@ -1,0 +1,101 @@
+import { useMemo } from 'react';
+import { StyleSheet } from 'react-native';
+import { WebView } from 'react-native-webview';
+import { BAND_2026 } from '../lib/bandGeo';
+import { C } from './theme';
+
+interface MapPoint {
+  lat: number;
+  lon: number;
+  label: string;
+}
+
+interface RealMapProps {
+  spot: MapPoint;
+  here: MapPoint | null;
+}
+
+/**
+ * Mapa real (Leaflet + tiles Carto dark, sin API key) con la banda de
+ * totalidad dibujada encima y marcadores de puesto y GPS.
+ */
+export function RealMap({ spot, here }: RealMapProps) {
+  const html = useMemo(
+    () => buildHtml(spot, here),
+    [spot.lat, spot.lon, spot.label, here?.lat, here?.lon, here?.label],
+  );
+  return (
+    <WebView
+      style={s.web}
+      source={{ html }}
+      originWhitelist={['*']}
+      setSupportMultipleWindows={false}
+      overScrollMode="never"
+    />
+  );
+}
+
+function buildHtml(spot: MapPoint, here: MapPoint | null): string {
+  const north = BAND_2026.map((b) => [b.latN, b.lon]);
+  const south = [...BAND_2026].reverse().map((b) => [b.latS, b.lon]);
+  const center = BAND_2026.map((b) => [(b.latN + b.latS) / 2, b.lon]);
+  const data = JSON.stringify({ polygon: [...north, ...south], center, spot, here });
+  return `<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  html, body, #map { margin: 0; height: 100%; background: ${C.bg}; }
+  .lbl { background: rgba(11,11,18,0.85); color: ${C.text}; border: 1px solid ${C.border};
+         border-radius: 6px; padding: 2px 7px; font: 600 11px system-ui; white-space: nowrap; }
+  .leaflet-tooltip-top:before { display: none; }
+  .leaflet-control-attribution { background: rgba(11,11,18,0.7); color: #666; font-size: 9px; }
+  .leaflet-control-attribution a { color: #888; }
+</style>
+</head><body>
+<div id="map"></div>
+<script>
+  var D = ${data};
+  var map = L.map('map', { zoomControl: false, attributionControl: true });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 18,
+    attribution: '&copy; OSM &copy; CARTO',
+  }).addTo(map);
+
+  L.polygon(D.polygon, {
+    color: '${C.totality}', weight: 1.5, opacity: 0.9,
+    fillColor: '${C.totality}', fillOpacity: 0.18,
+  }).addTo(map).bindTooltip('Banda de totalidad · 12 ago 2026', { sticky: true, className: 'lbl' });
+
+  L.polyline(D.center, { color: '${C.corona}', weight: 2, dashArray: '6 6', opacity: 0.9 })
+    .addTo(map).bindTooltip('Centro: máxima duración', { sticky: true, className: 'lbl' });
+
+  var pts = [];
+  function dot(p, fill) {
+    var m = L.circleMarker([p.lat, p.lon], {
+      radius: 8, color: '${C.corona}', weight: 2.5,
+      fillColor: fill ? '${C.text}' : 'transparent', fillOpacity: fill ? 1 : 0,
+    }).addTo(map);
+    m.bindTooltip(p.label, { permanent: true, direction: 'top', offset: [0, -10], className: 'lbl' });
+    pts.push([p.lat, p.lon]);
+  }
+  dot(D.spot, true);
+  if (D.here) dot(D.here, false);
+
+  if (pts.length > 1) map.fitBounds(pts, { padding: [70, 70] });
+  else map.setView(pts[0], 7);
+</script>
+</body></html>`;
+}
+
+const s = StyleSheet.create({
+  web: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: C.bg,
+  },
+});

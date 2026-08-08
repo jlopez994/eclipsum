@@ -10,6 +10,8 @@ export interface Prefs {
   spot: Spot | null;
   /** Últimos puestos elegidos (más reciente primero), máx. RECENT_CAP */
   recentSpots: Spot[];
+  /** Vista de la pestaña mapa: diagrama esquemático o mapa real */
+  mapView: 'diagram' | 'real';
 }
 
 const KEY = 'eclipsum:prefs';
@@ -19,6 +21,7 @@ export const DEFAULT_PREFS: Prefs = {
   alertsOn: { C1: true, C2: true, MAX: true, C3: true, C4: true },
   spot: null,
   recentSpots: [],
+  mapView: 'diagram',
 };
 
 function sameCoords(a: Spot, b: Spot): boolean {
@@ -51,6 +54,7 @@ export async function loadPrefs(): Promise<Prefs> {
       ...parsed,
       alertsOn: { ...DEFAULT_PREFS.alertsOn, ...(parsed.alertsOn ?? {}) },
       recentSpots,
+      mapView: parsed.mapView === 'real' ? 'real' : 'diagram',
     };
   } catch {
     return DEFAULT_PREFS;

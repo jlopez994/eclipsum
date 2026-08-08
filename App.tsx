@@ -71,6 +71,10 @@ export default function App() {
   const [hereOnMap, setHereOnMap] = useState<{
     isTotal: boolean;
     totality: TotalityDirection | 'none' | null;
+    /** km entre GPS y puesto */
+    km: number;
+    /** Obscuración en el GPS, 0..1; null si aún no calculada */
+    obscuration: number | null;
   } | null>(null);
   const [remoteMsg, setRemoteMsg] = useState('');
   const [tab, setTab] = useState<TabKey>('mapa');
@@ -206,25 +210,29 @@ export default function App() {
       return;
     }
     let cancelled = false;
+    const kmRound = Math.round(km);
     // Provisional ya: que el punto se vea sin esperar al cálculo de km a la banda
-    setHereOnMap({ isTotal: false, totality: 'none' });
+    setHereOnMap({ isTotal: false, totality: 'none', km: kmRound, obscuration: null });
     try {
       const hereEc = computeLocalEclipse(geo.lat, geo.lon);
       if (hereEc.kind === 'total') {
-        if (!cancelled) setHereOnMap({ isTotal: true, totality: null });
+        if (!cancelled)
+          setHereOnMap({ isTotal: true, totality: null, km: kmRound, obscuration: hereEc.obscuration });
         return () => {
           cancelled = true;
         };
       }
       findNearestTotality(geo.lat, geo.lon)
         .then((t) => {
-          if (!cancelled) setHereOnMap({ isTotal: false, totality: t ?? 'none' });
+          if (!cancelled)
+            setHereOnMap({ isTotal: false, totality: t ?? 'none', km: kmRound, obscuration: hereEc.obscuration });
         })
         .catch(() => {
-          if (!cancelled) setHereOnMap({ isTotal: false, totality: 'none' });
+          if (!cancelled)
+            setHereOnMap({ isTotal: false, totality: 'none', km: kmRound, obscuration: hereEc.obscuration });
         });
     } catch {
-      if (!cancelled) setHereOnMap({ isTotal: false, totality: 'none' });
+      if (!cancelled) setHereOnMap({ isTotal: false, totality: 'none', km: kmRound, obscuration: null });
     }
     return () => {
       cancelled = true;
@@ -332,6 +340,13 @@ export default function App() {
               cloudPct={cloudPct}
               totality={totality}
               now={now}
+              spotCoords={{ lat: active.lat, lon: active.lon }}
+              hereCoords={hereOnMap && geo ? { lat: geo.lat, lon: geo.lon } : null}
+              mapView={prefs?.mapView ?? 'diagram'}
+              onToggleMapView={() => {
+                if (prefs)
+                  onPrefsChange({ ...prefs, mapView: prefs.mapView === 'real' ? 'diagram' : 'real' });
+              }}
               onOpenSelector={() => setSelectorOpen(true)}
               onOpenMaps={() => openInMaps(active.lat, active.lon, active.place)}
               divergenceKm={divergenceKm}

@@ -1,4 +1,4 @@
-import { Observer, SearchLocalSolarEclipse } from 'astronomy-engine';
+import { Body, Equator, Horizon, Observer, SearchLocalSolarEclipse, SearchRiseSet } from 'astronomy-engine';
 
 export interface EclipseEvent {
   key: 'C1' | 'C2' | 'MAX' | 'C3' | 'C4';
@@ -6,6 +6,8 @@ export interface EclipseEvent {
   time: Date;
   /** Altitud del sol en grados; <0 = bajo el horizonte */
   altitude: number;
+  /** Azimut del sol en grados (0=N, 90=E, 180=S, 270=O) */
+  azimuth: number;
 }
 
 export interface LocalEclipse {
@@ -14,6 +16,8 @@ export interface LocalEclipse {
   obscuration: number;
   events: EclipseEvent[];
   totalityDurationSec: number | null;
+  /** Ocaso del sol el día del eclipse; los contactos posteriores no son visibles */
+  sunset: Date | null;
 }
 
 // ponytail: v1 fija el eclipse del 2026-08-12; parametrizar fecha cuando haya catálogo multi-eclipse
@@ -25,7 +29,10 @@ export function computeLocalEclipse(lat: number, lon: number, elevationM = 0): L
 
   const events: EclipseEvent[] = [];
   const push = (key: EclipseEvent['key'], label: string, e?: { time: { date: Date }; altitude: number }) => {
-    if (e) events.push({ key, label, time: e.time.date, altitude: e.altitude });
+    if (!e) return;
+    const eq = Equator(Body.Sun, e.time.date, observer, true, true);
+    const hor = Horizon(e.time.date, observer, eq.ra, eq.dec, 'normal');
+    events.push({ key, label, time: e.time.date, altitude: e.altitude, azimuth: hor.azimuth });
   };
 
   push('C1', 'Inicio parcial', ec.partial_begin);
@@ -39,7 +46,16 @@ export function computeLocalEclipse(lat: number, lon: number, elevationM = 0): L
       ? Math.round((ec.total_end.time.date.getTime() - ec.total_begin.time.date.getTime()) / 1000)
       : null;
 
-  return { kind: ec.kind as LocalEclipse['kind'], obscuration: ec.obscuration, events, totalityDurationSec };
+  let sunset: Date | null = null;
+  try {
+    // Desde 12h antes del pico: el siguiente ocaso es el de la tarde del eclipse
+    const from = new Date(ec.peak.time.date.getTime() - 12 * 3600 * 1000);
+    sunset = SearchRiseSet(Body.Sun, observer, -1, from, 1)?.date ?? null;
+  } catch {
+    sunset = null;
+  }
+
+  return { kind: ec.kind as LocalEclipse['kind'], obscuration: ec.obscuration, events, totalityDurationSec, sunset };
 }
 
 export function nextEvent(eclipse: LocalEclipse, now: Date): EclipseEvent | null {

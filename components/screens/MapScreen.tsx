@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Svg, { Defs, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
+import { Animated, Easing, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle, Defs, Path, RadialGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { nextEvent, type LocalEclipse } from '../../lib/eclipse';
 import { bearingLabel, type TotalityDirection } from '../../lib/totality';
 import { Countdown } from '../Countdown';
+import { RealMap } from '../RealMap';
 import { C, F } from '../theme';
 
 const SHEET_MIN = 236;
@@ -29,6 +30,7 @@ const EVENT_ACCENT: Record<string, string> = {
   MAX: C.totality,
   C3: C.danger,
   C4: C.corona,
+  OC: C.danger,
 };
 
 interface MapScreenProps {
@@ -43,10 +45,22 @@ interface MapScreenProps {
    * Posición GPS en la escala del diagrama cuando difiere del puesto.
    * null = solapados / sin segundo punto.
    */
-  hereOnMap: { isTotal: boolean; totality: TotalityDirection | 'none' | null } | null;
+  hereOnMap: {
+    isTotal: boolean;
+    totality: TotalityDirection | 'none' | null;
+    km: number;
+    obscuration: number | null;
+  } | null;
   cloudPct: number | null;
   totality: TotalityDirection | 'none' | null;
   now: Date;
+  /** Coordenadas del puesto activo (para el mapa real) */
+  spotCoords: { lat: number; lon: number };
+  /** Coordenadas GPS cuando difiere del puesto; null = sin segundo marcador */
+  hereCoords: { lat: number; lon: number } | null;
+  /** Vista elegida: diagrama esquemático o mapa real */
+  mapView: 'diagram' | 'real';
+  onToggleMapView: () => void;
   onOpenSelector: () => void;
   onOpenMaps: () => void;
   /** km entre GPS real y spot activo el día del eclipse; null = sin aviso */
@@ -57,12 +71,22 @@ interface MapScreenProps {
 const fmtHM = (d: Date) =>
   d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
+const fmtPct = (o: number) => `${(o * 100).toFixed(1).replace('.', ',')}%`;
+
+/** Distancias de la regla del diagrama (km a la banda). */
+const RULER_KM = [50, 100, 150];
+
+/** Fracción vertical para una distancia a la banda dada. */
+function kmFraction(km: number): number {
+  const t = Math.min(1, km / DIST_SCALE_KM);
+  return DOT_NEAR + t * (DOT_FAR - DOT_NEAR);
+}
+
 /** Fracción vertical del punto: más cerca de la banda cuanto menor sea la distancia. */
 function dotTopFraction(isTotal: boolean, totality: TotalityDirection | 'none' | null): number {
   if (isTotal) return DOT_TOTAL;
   if (totality === null || totality === 'none') return DOT_FAR;
-  const t = Math.min(1, totality.distanceKm / DIST_SCALE_KM);
-  return DOT_NEAR + t * (DOT_FAR - DOT_NEAR);
+  return kmFraction(totality.distanceKm);
 }
 
 function useSheet() {
@@ -155,15 +179,129 @@ function CompassChip() {
     };
   }, []);
 
-  if (heading === null) return null;
-
+  // Sin sensor (emulador): chip estático con el norte del diagrama (arriba)
   return (
-    <View style={s.compass} accessibilityLabel={`Norte: ${Math.round(heading)}°`}>
-      <View style={s.compassTick} />
-      <View style={[s.compassDial, { transform: [{ rotate: `${-heading}deg` }] }]}>
+    <View
+      style={s.compass}
+      accessibilityLabel={heading === null ? 'Norte del diagrama: arriba' : `Norte: ${Math.round(heading)}°`}
+    >
+      {heading !== null && <View style={s.compassTick} />}
+      <View style={[s.compassDial, heading !== null && { transform: [{ rotate: `${-heading}deg` }] }]}>
         <Text style={s.compassN}>N</Text>
       </View>
     </View>
+  );
+}
+
+/** Dónde estará el sol en el máximo: flecha = azimut (arriba del diagrama = norte). */
+function SunChip({ azimuthDeg, altitudeDeg }: { azimuthDeg: number; altitudeDeg: number }) {
+  return (
+    <View style={s.sunWrap}>
+      <View
+        style={s.sunChip}
+        accessibilityLabel={`Sol en el máximo: ${bearingLabel(azimuthDeg)}, ${Math.round(altitudeDeg)}° de altura`}
+      >
+        <View style={[StyleSheet.absoluteFill, s.sunArrowLayer, { transform: [{ rotate: `${azimuthDeg}deg` }] }]}>
+          <View style={s.sunArrowHead} />
+        </View>
+        <View style={s.sunDot} />
+      </View>
+      <Text style={s.sunLabel}>SOL {altitudeDeg.toFixed(1).replace('.', ',')}°</Text>
+    </View>
+  );
+}
+
+/** Altura del sol a escala: observador, horizonte y ángulo real. */
+function HorizonDiagram({ altitudeDeg, azimuthDeg }: { altitudeDeg: number; azimuthDeg: number }) {
+  const rad = (altitudeDeg * Math.PI) / 180;
+  const sin = Math.sin(rad);
+  const cos = Math.cos(rad);
+  const ox = 46;
+  const oy = 84;
+  // Radio limitado para que el sol no se salga del lienzo con alturas grandes
+  const r = Math.min(205, sin > 0.05 ? (oy - 16) / sin : 205, cos > 0.05 ? (300 - 24 - ox) / cos : 205);
+  const sx = ox + r * cos;
+  const sy = oy - r * sin;
+  const altTxt = altitudeDeg.toFixed(1).replace('.', ',');
+  // Referencia: un puño con el brazo estirado cubre ~10°
+  const fistRad = (10 * Math.PI) / 180;
+  const fistR = 150;
+  const fx = ox + fistR * Math.cos(fistRad);
+  const fy = oy - fistR * Math.sin(fistRad);
+  return (
+    <View accessibilityLabel={`Sol a ${altTxt}° sobre el horizonte ${bearingLabel(azimuthDeg)}`}>
+      <Svg width="100%" height={110} viewBox="0 0 300 110">
+        <Rect x={0} y={oy} width={300} height={110 - oy} fill="#101019" />
+        {/* Skyline: edificios y árbol para dar escala al horizonte */}
+        <Path
+          d={`M150 ${oy} v-10 h9 v10 Z M166 ${oy} v-7 h7 v7 Z M204 ${oy} v-13 h10 v13 Z M218 ${oy} v-9 h8 v9 Z`}
+          fill="#1D1D2C"
+        />
+        <Circle cx={190} cy={oy - 8} r={5} fill="#1D1D2C" />
+        <Rect x={189} y={oy - 5} width={2} height={5} fill="#1D1D2C" />
+        <Path d={`M0 ${oy} H300`} stroke="#2A2A3C" strokeWidth={1.5} />
+        {/* Línea de referencia a 10° */}
+        <Path
+          d={`M${ox} ${oy} L${fx.toFixed(1)} ${fy.toFixed(1)}`}
+          stroke="rgba(242,239,233,0.25)"
+          strokeWidth={1}
+          strokeDasharray="3 4"
+        />
+        <SvgText x={fx + 4} y={fy + 3} fill="rgba(242,239,233,0.45)" fontSize={9}>
+          10°
+        </SvgText>
+        <Path
+          d={`M${ox} ${oy} L${sx} ${sy}`}
+          stroke="rgba(255,184,77,0.5)"
+          strokeWidth={1.5}
+          strokeDasharray="4 4"
+        />
+        <Path
+          d={`M${ox + 40} ${oy} A40 40 0 0 0 ${(ox + 40 * cos).toFixed(1)} ${(oy - 40 * sin).toFixed(1)}`}
+          stroke={C.corona}
+          strokeWidth={1.5}
+          fill="none"
+        />
+        <SvgText x={ox + 50} y={oy - 8} fill={C.corona} fontSize={11} fontWeight="600">
+          {altTxt}°
+        </SvgText>
+        <Circle cx={sx} cy={sy} r={9} fill={C.corona} />
+        <Circle cx={ox} cy={oy} r={4} fill={C.text} />
+        <SvgText x={296} y={oy + 16} fill={C.dim} fontSize={9} textAnchor="end" letterSpacing={1}>
+          HORIZONTE {bearingLabel(azimuthDeg)}
+        </SvgText>
+      </Svg>
+      <Text style={s.horizonNote}>Referencia: un puño con el brazo estirado cubre ≈ 10°.</Text>
+    </View>
+  );
+}
+
+/** Barrido ambiental de la umbra a lo largo de la banda (O→E, como el 12-ago). */
+function UmbraSweep() {
+  const x = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(x, { toValue: 1, duration: 9000, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(x, { toValue: 0, duration: 0, useNativeDriver: true }),
+        Animated.delay(2200),
+      ]),
+    ).start();
+  }, [x]);
+  const translateX = x.interpolate({ inputRange: [0, 1], outputRange: [-160, 760] });
+  return (
+    <Animated.View pointerEvents="none" style={[s.umbra, { transform: [{ translateX }] }]}>
+      <Svg width={140} height={140}>
+        <Defs>
+          <RadialGradient id="umbraGlow" cx="50%" cy="50%" r="50%">
+            <Stop offset="0%" stopColor="#000" stopOpacity={0.55} />
+            <Stop offset="55%" stopColor="#000" stopOpacity={0.28} />
+            <Stop offset="100%" stopColor="#000" stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect x={0} y={0} width={140} height={140} fill="url(#umbraGlow)" />
+      </Svg>
+    </Animated.View>
   );
 }
 
@@ -176,6 +314,10 @@ export function MapScreen({
   cloudPct,
   totality,
   now,
+  spotCoords,
+  hereCoords,
+  mapView,
+  onToggleMapView,
   onOpenSelector,
   onOpenMaps,
   divergenceKm,
@@ -185,11 +327,23 @@ export function MapScreen({
   const isTotal = eclipse.kind === 'total';
   const upcoming = nextEvent(eclipse, now);
   const maxEvent = eclipse.events.find((e) => e.key === 'MAX');
-  const [sunHint] = useState(() =>
+  const sunHint =
     maxEvent && maxEvent.altitude > 0
-      ? `El sol estará a ${maxEvent.altitude.toFixed(0)}° sobre el horizonte oeste durante el máximo.`
-      : 'El sol estará muy bajo: busca horizonte oeste totalmente despejado.',
-  );
+      ? `El sol estará a ${maxEvent.altitude.toFixed(1).replace('.', ',')}° sobre el horizonte ${bearingLabel(maxEvent.azimuth)} durante el máximo.`
+      : 'El sol estará muy bajo: busca horizonte oeste totalmente despejado.';
+
+  // Cronología con el ocaso intercalado; los contactos bajo el horizonte no se ven
+  const cronoRows = [
+    ...eclipse.events.map((e) => ({
+      key: e.key as string,
+      label: e.label,
+      time: e.time,
+      belowHorizon: e.altitude < 0,
+    })),
+    ...(eclipse.sunset
+      ? [{ key: 'OC', label: 'Ocaso del sol', time: eclipse.sunset, belowHorizon: false }]
+      : []),
+  ].sort((a, b) => a.time.getTime() - b.time.getTime());
 
   const bandDuration = isTotal
     ? eclipse.totalityDurationSec
@@ -215,9 +369,24 @@ export function MapScreen({
   // Guía: con dos puntos conecta punto a punto; con uno, desde la banda al punto
   const guideTop = showHere ? Math.min(spotFrac, hereFrac) : BAND_ANCHOR;
   const guideHeightFrac = Math.max(0, Math.max(spotFrac, hereFrac) - guideTop);
+  const showGuide =
+    guideHeightFrac > 0.02 && (showHere || (!isTotal && totality !== null && totality !== 'none'));
+  const guideKm = showHere
+    ? hereOnMap.km
+    : totality !== null && totality !== 'none'
+      ? totality.distanceKm
+      : null;
 
   return (
     <View style={s.root}>
+      {mapView === 'real' && (
+        <RealMap
+          spot={{ ...spotCoords, label: place }}
+          here={hereCoords ? { ...hereCoords, label: hereLabel ?? 'TÚ' } : null}
+        />
+      )}
+      {mapView === 'diagram' && (
+      <>
       {/* Fondo + costa esquemática */}
       <Svg style={StyleSheet.absoluteFill} viewBox="0 0 390 780" preserveAspectRatio="none">
         <Defs>
@@ -252,21 +421,31 @@ export function MapScreen({
           colors={[
             'transparent',
             'rgba(124,108,255,0.10)',
-            'rgba(124,108,255,0.20)',
-            'rgba(255,184,77,0.16)',
-            'rgba(124,108,255,0.20)',
+            'rgba(124,108,255,0.24)',
+            'rgba(255,184,77,0.22)',
+            'rgba(124,108,255,0.24)',
             'rgba(124,108,255,0.10)',
             'transparent',
           ]}
           locations={[0, 0.22, 0.4, 0.5, 0.6, 0.78, 1]}
           style={StyleSheet.absoluteFill}
         />
+        <UmbraSweep />
         <View style={s.bandLine} />
         <Text style={s.bandLabel}>BANDA DE TOTALIDAD · 12 AGO 2026</Text>
+        <Text style={s.bandHint}>MÁS DURACIÓN CERCA DEL CENTRO</Text>
       </View>
 
+      {/* Regla de distancias a la banda (misma escala que los puntos) */}
+      {RULER_KM.map((km) => (
+        <View key={km} style={[s.ruler, { top: `${kmFraction(km) * 100}%` }]} pointerEvents="none">
+          <View style={s.rulerLine} />
+          <Text style={s.rulerText}>{km} KM</Text>
+        </View>
+      ))}
+
       {/* Guía hacia la banda: longitud hasta el punto más alejado */}
-      {guideHeightFrac > 0.02 && (showHere || (!isTotal && totality !== null && totality !== 'none')) && (
+      {showGuide && (
         <View
           style={[
             s.guide,
@@ -276,6 +455,18 @@ export function MapScreen({
             },
           ]}
         />
+      )}
+      {/* km sobre la guía: distancia puesto↔GPS, o puesto↔banda si solo hay un punto */}
+      {showGuide && guideKm !== null && guideHeightFrac > 0.07 && (
+        <View
+          style={[s.guideKmWrap, { top: `${(guideTop + guideHeightFrac / 2) * 100}%` }]}
+          pointerEvents="none"
+        >
+          <Text style={s.guideKmText}>{guideKm} km</Text>
+        </View>
+      )}
+
+      </>
       )}
 
       {/* Estado: en banda o distancia a totalidad — encima de la hoja */}
@@ -298,18 +489,28 @@ export function MapScreen({
         </View>
       ) : null}
 
-      {showHere && (
+      {mapView === 'diagram' && showHere && (
         <View style={[s.userArea, dotsCollide && s.hereArea, { top: `${hereFrac * 100}%` }]}>
           <HereDot />
           <Text style={s.hereLabel}>{hereLabel ?? 'TÚ'}</Text>
+          {(hereOnMap.isTotal || hereOnMap.obscuration !== null) && (
+            <Text style={[s.dotPct, hereOnMap.isTotal && { color: C.violet }]}>
+              {hereOnMap.isTotal ? 'TOTAL' : fmtPct(hereOnMap.obscuration ?? 0)}
+            </Text>
+          )}
         </View>
       )}
-      <View style={[s.userArea, dotsCollide && s.spotArea, { top: `${spotFrac * 100}%` }]}>
-        <UserDot />
-        <Text style={s.userLabel} numberOfLines={1}>
-          {showHere || !spotIsGps ? place : 'TU POSICIÓN'}
-        </Text>
-      </View>
+      {mapView === 'diagram' && (
+        <View style={[s.userArea, dotsCollide && s.spotArea, { top: `${spotFrac * 100}%` }]}>
+          <UserDot />
+          <Text style={s.userLabel} numberOfLines={1}>
+            {showHere || !spotIsGps ? place : 'TU POSICIÓN'}
+          </Text>
+          <Text style={[s.dotPct, isTotal && { color: C.violet }]}>
+            {isTotal ? 'TOTAL' : `${obscuracion}%`}
+          </Text>
+        </View>
+      )}
 
       {/* Overlay superior: chips + lugares + aviso divergencia */}
       <View style={s.topOverlay} pointerEvents="box-none">
@@ -328,7 +529,13 @@ export function MapScreen({
               <Text style={s.chipMapsText}>MAPS</Text>
             </Pressable>
           </View>
-          <CompassChip />
+          <View style={s.rightChips}>
+            <Pressable style={s.viewToggle} onPress={onToggleMapView} hitSlop={6}>
+              <Text style={s.viewToggleText}>{mapView === 'diagram' ? 'MAPA' : 'GRÁFICO'}</Text>
+            </Pressable>
+            {maxEvent && <SunChip azimuthDeg={maxEvent.azimuth} altitudeDeg={maxEvent.altitude} />}
+            <CompassChip />
+          </View>
         </View>
         {divergenceKm !== null && (
           <View style={s.divergence}>
@@ -372,16 +579,24 @@ export function MapScreen({
           <Text style={s.cronoTitle} numberOfLines={1}>
             CRONOLOGÍA EN {place.toUpperCase()} · 12 AGO
           </Text>
-          {eclipse.events.map((e) => (
+          {cronoRows.map((e) => (
             <View key={e.key} style={s.cronoRow}>
-              <Text style={[s.cronoLabel, e.time <= now && { color: C.dim }]}>
-                <Text style={{ color: EVENT_ACCENT[e.key] }}>{e.key === 'MAX' ? 'MÁX' : e.key}</Text>
+              <Text style={[s.cronoLabel, (e.time <= now || e.belowHorizon) && { color: C.dim }]}>
+                <Text style={{ color: EVENT_ACCENT[e.key] ?? C.dim }}>{e.key === 'MAX' ? 'MÁX' : e.key}</Text>
                 {'  '}
                 {e.label}
+                {e.belowHorizon ? ' · bajo el horizonte' : ''}
               </Text>
-              <Text style={s.cronoTime}>{fmtHM(e.time)}</Text>
+              <Text style={[s.cronoTime, e.belowHorizon && { color: C.dim }]}>{fmtHM(e.time)}</Text>
             </View>
           ))}
+          {maxEvent && maxEvent.altitude > 0 && (
+            <>
+              <View style={s.divider} />
+              <Text style={s.cronoTitle}>SOL EN EL MÁXIMO</Text>
+              <HorizonDiagram altitudeDeg={maxEvent.altitude} azimuthDeg={maxEvent.azimuth} />
+            </>
+          )}
           <Text style={s.hint}>Arrastra la hoja para ver más. {sunHint}</Text>
         </ScrollView>
       </Animated.View>
@@ -427,6 +642,109 @@ const s = StyleSheet.create({
     borderLeftWidth: 2,
     borderLeftColor: 'rgba(242,239,233,0.32)',
     borderStyle: 'dashed',
+  },
+  guideKmWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center', marginTop: -10 },
+  guideKmText: {
+    fontFamily: F.semibold,
+    fontSize: 11,
+    color: C.text,
+    backgroundColor: 'rgba(11,11,18,0.9)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  ruler: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+  },
+  rulerLine: { flex: 1, height: 1, backgroundColor: 'rgba(124,108,255,0.13)' },
+  rulerText: {
+    fontFamily: F.medium,
+    fontSize: 9,
+    letterSpacing: 1,
+    color: 'rgba(124,108,255,0.55)',
+  },
+  bandHint: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: 30,
+    fontFamily: F.medium,
+    fontSize: 9,
+    letterSpacing: 2,
+    color: 'rgba(124,108,255,0.6)',
+  },
+  umbra: { position: 'absolute', top: '50%', marginTop: -70, left: 0, width: 140, height: 140 },
+  rightChips: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sunWrap: { alignItems: 'center', gap: 4 },
+  sunChip: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(21,21,30,0.85)',
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sunArrowLayer: { alignItems: 'center' },
+  sunArrowHead: {
+    marginTop: 3,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 4,
+    borderRightWidth: 4,
+    borderBottomWidth: 6,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: C.corona,
+  },
+  sunDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: C.corona,
+    shadowColor: C.corona,
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  sunLabel: {
+    fontFamily: F.semibold,
+    fontSize: 9,
+    letterSpacing: 0.8,
+    color: C.text,
+    backgroundColor: 'rgba(11,11,18,0.85)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  horizonNote: { fontFamily: F.regular, fontSize: 11, color: C.dim, marginTop: 2 },
+  viewToggle: {
+    backgroundColor: 'rgba(21,21,30,0.85)',
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  viewToggleText: { fontFamily: F.bold, fontSize: 9, letterSpacing: 1, color: C.dim },
+  dotPct: {
+    fontFamily: F.semibold,
+    fontSize: 9,
+    letterSpacing: 0.5,
+    color: C.dim,
+    backgroundColor: 'rgba(11,11,18,0.85)',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+    overflow: 'hidden',
   },
   statusWrap: {
     position: 'absolute',
@@ -503,7 +821,7 @@ const s = StyleSheet.create({
   chipsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingHorizontal: 20,
   },
   divergence: {
