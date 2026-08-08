@@ -55,7 +55,7 @@ interface MapScreenProps {
 }
 
 const fmtHM = (d: Date) =>
-  d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 /** Fracción vertical del punto: más cerca de la banda cuanto menor sea la distancia. */
 function dotTopFraction(isTotal: boolean, totality: TotalityDirection | 'none' | null): number {
@@ -210,9 +210,11 @@ export function MapScreen({
   const showHere = hereOnMap !== null;
   const spotFrac = dotTopFraction(isTotal, totality);
   const hereFrac = showHere ? dotTopFraction(hereOnMap.isTotal, hereOnMap.totality) : spotFrac;
-  // Guía hasta el más lejos de los dos (hacia el sur del diagrama)
-  const guideEnd = Math.max(spotFrac, hereFrac);
-  const guideHeightFrac = Math.max(0, guideEnd - BAND_ANCHOR);
+  // Offset horizontal solo si los puntos casi se solapan en vertical
+  const dotsCollide = showHere && Math.abs(spotFrac - hereFrac) < 0.05;
+  // Guía: con dos puntos conecta punto a punto; con uno, desde la banda al punto
+  const guideTop = showHere ? Math.min(spotFrac, hereFrac) : BAND_ANCHOR;
+  const guideHeightFrac = Math.max(0, Math.max(spotFrac, hereFrac) - guideTop);
 
   return (
     <View style={s.root}>
@@ -269,7 +271,7 @@ export function MapScreen({
           style={[
             s.guide,
             {
-              top: `${BAND_ANCHOR * 100}%`,
+              top: `${guideTop * 100}%`,
               height: `${guideHeightFrac * 100}%`,
             },
           ]}
@@ -297,14 +299,16 @@ export function MapScreen({
       ) : null}
 
       {showHere && (
-        <View style={[s.userArea, s.hereArea, { top: `${hereFrac * 100}%` }]}>
+        <View style={[s.userArea, dotsCollide && s.hereArea, { top: `${hereFrac * 100}%` }]}>
           <HereDot />
           <Text style={s.hereLabel}>{hereLabel ?? 'TÚ'}</Text>
         </View>
       )}
-      <View style={[s.userArea, showHere && s.spotArea, { top: `${spotFrac * 100}%` }]}>
+      <View style={[s.userArea, dotsCollide && s.spotArea, { top: `${spotFrac * 100}%` }]}>
         <UserDot />
-        <Text style={s.userLabel}>{showHere || !spotIsGps ? 'PUESTO' : 'TU POSICIÓN'}</Text>
+        <Text style={s.userLabel} numberOfLines={1}>
+          {showHere || !spotIsGps ? place : 'TU POSICIÓN'}
+        </Text>
       </View>
 
       {/* Overlay superior: chips + lugares + aviso divergencia */}
@@ -365,7 +369,9 @@ export function MapScreen({
             </View>
           </View>
           <View style={s.divider} />
-          <Text style={s.cronoTitle}>CRONOLOGÍA LOCAL · 12 AGO</Text>
+          <Text style={s.cronoTitle} numberOfLines={1}>
+            CRONOLOGÍA EN {place.toUpperCase()} · 12 AGO
+          </Text>
           {eclipse.events.map((e) => (
             <View key={e.key} style={s.cronoRow}>
               <Text style={[s.cronoLabel, e.time <= now && { color: C.dim }]}>
@@ -471,8 +477,28 @@ const s = StyleSheet.create({
     borderColor: C.corona,
     backgroundColor: 'rgba(21,21,30,0.65)',
   },
-  userLabel: { fontFamily: F.medium, fontSize: 11, letterSpacing: 1, color: C.dim },
-  hereLabel: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 0.8, color: C.corona },
+  userLabel: {
+    fontFamily: F.medium,
+    fontSize: 11,
+    letterSpacing: 1,
+    color: C.text,
+    backgroundColor: 'rgba(11,11,18,0.85)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  hereLabel: {
+    fontFamily: F.semibold,
+    fontSize: 10,
+    letterSpacing: 0.8,
+    color: C.corona,
+    backgroundColor: 'rgba(11,11,18,0.85)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
   topOverlay: { position: 'absolute', top: 44, left: 0, right: 0, gap: 12 },
   chipsRow: {
     flexDirection: 'row',

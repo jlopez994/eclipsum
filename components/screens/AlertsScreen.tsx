@@ -20,7 +20,8 @@ interface AlertsScreenProps {
   onToggle: (key: keyof AlertToggles, value: boolean) => void;
 }
 
-const fmtHM = (d: Date) => d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+const fmtHM = (d: Date) =>
+  d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 export function AlertsScreen({ eclipse, toggles, onToggle }: AlertsScreenProps) {
   const [status, setStatus] = useState<string | null>(null);
