@@ -24,7 +24,8 @@ const fmtHM = (d: Date) => d.toLocaleTimeString('es-ES', { hour: '2-digit', minu
 
 export function AlertsScreen({ eclipse, toggles, onToggle }: AlertsScreenProps) {
   const [status, setStatus] = useState<string | null>(null);
-  const activeCount = Object.values(toggles).filter(Boolean).length;
+  // Solo cuentan los eventos que existen en esta ubicación (parcial no tiene C2/C3)
+  const activeCount = eclipse.events.filter((e) => toggles[e.key]).length;
 
   const reschedule = async (next: AlertToggles) => {
     try {

@@ -51,12 +51,27 @@ export function SettingsScreen({ permissions, onDemoEclipse }: SettingsScreenPro
           </View>
         </View>
 
-        <Pressable onLongPress={onDemoEclipse} delayLongPress={1500}>
-          <Text style={s.about}>
-            Eclipsum 1.0 · Cálculo: astronomy-engine · Nubosidad: Open-Meteo{'\n'}
-            Eclipse total de sol · 12 de agosto de 2026
-          </Text>
-        </Pressable>
+        <View>
+          <Text style={s.section}>ACERCA DE</Text>
+          <Pressable onLongPress={onDemoEclipse} delayLongPress={1500}>
+            <View style={s.card}>
+              <View style={[s.rowItem, s.rowDivider]}>
+                <Text style={s.rowTitle}>Versión</Text>
+                <Text style={s.aboutValue}>Eclipsum 1.0</Text>
+              </View>
+              <View style={[s.rowItem, s.rowDivider]}>
+                <Text style={s.rowTitle}>Próximo eclipse</Text>
+                <Text style={s.aboutValue}>Total · 12 ago 2026</Text>
+              </View>
+              <View style={{ padding: 16 }}>
+                <Text style={s.aboutNote}>
+                  Los horarios del eclipse se calculan en tu móvil y funcionan sin conexión. Solo el
+                  pronóstico de nubes y el buscador de lugares necesitan internet.
+                </Text>
+              </View>
+            </View>
+          </Pressable>
+        </View>
       </ScrollView>
     </View>
   );
@@ -98,5 +113,6 @@ const s = StyleSheet.create({
   safetyTitle: { fontFamily: F.bold, fontSize: 16, lineHeight: 21, color: C.text },
   safetyBody: { fontFamily: F.regular, fontSize: 13, lineHeight: 19, color: C.dim, marginTop: 8 },
   safetyLink: { fontFamily: F.bold, fontSize: 13, letterSpacing: 1, color: C.corona, marginTop: 12 },
-  about: { fontFamily: F.regular, fontSize: 12, lineHeight: 19, color: C.dim, paddingBottom: 24 },
+  aboutValue: { fontFamily: F.medium, fontSize: 13, color: C.dim },
+  aboutNote: { fontFamily: F.regular, fontSize: 13, lineHeight: 19, color: C.dim },
 });
