@@ -18,6 +18,7 @@ import { scheduleEclipseAlerts } from './lib/notifications';
 import { fetchEclipseMessage, track } from './lib/firebase';
 import { loadPrefs, savePrefs, type Prefs } from './lib/prefs';
 import { TabBar, type TabKey } from './components/TabBar';
+import { SpotSelector } from './components/SpotSelector';
 import { MapScreen } from './components/screens/MapScreen';
 import { AlertsScreen } from './components/screens/AlertsScreen';
 import { SettingsScreen } from './components/screens/SettingsScreen';
@@ -62,6 +63,7 @@ export default function App() {
   const [remoteMsg, setRemoteMsg] = useState('');
   const [tab, setTab] = useState<TabKey>('mapa');
   const [demo, setDemo] = useState(false);
+  const [selectorOpen, setSelectorOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -77,30 +79,17 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  // Resolver ubicación según prefs (GPS o manual)
+  // Resolver posición GPS (única fuente de «dónde estoy»; los puestos van aparte)
   useEffect(() => {
-    if (!prefs) return;
     let cancelled = false;
     (async () => {
       setLocating(true);
       try {
-        if (!prefs.useGps && prefs.manual) {
-          const { lat, lon, name } = prefs.manual;
-          const label = name ?? `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
-          if (!cancelled) setGeo({ lat, lon, place: `${label} · Manual` });
-          return;
-        }
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (cancelled) return;
         setPermissions((p) => ({ ...p, location: status === 'granted' }));
         if (status !== 'granted') {
-          if (prefs.manual) {
-            const { lat, lon, name } = prefs.manual;
-            setGeo({ lat, lon, place: `${name ?? `${lat.toFixed(2)}, ${lon.toFixed(2)}`} · Manual` });
-          } else {
-            setGeo(null);
-            setTab('ajustes');
-          }
+          setGeo(null);
           return;
         }
         // GPS puede fallar (emulador, interiores): caemos a la última posición conocida
@@ -115,7 +104,6 @@ export default function App() {
         if (cancelled) return;
         if (!coords) {
           setGeo(null);
-          setTab('ajustes');
           return;
         }
         let place = 'GPS';
@@ -133,7 +121,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [prefs]);
+  }, []);
 
   // Puesto de observación activo: spot elegido o, si no hay, el GPS
   const activeSpot = prefs?.spot ?? null;
@@ -246,10 +234,7 @@ export default function App() {
               cloudPct={cloudPct}
               totality={totality}
               now={now}
-              userGeo={geo ? { lat: geo.lat, lon: geo.lon } : null}
-              gpsPlace={geo?.place ?? 'Tu posición'}
-              activeSpot={activeSpot}
-              onSelectSpot={(spot) => onPrefsChange({ ...prefs, spot })}
+              onOpenSelector={() => setSelectorOpen(true)}
               divergenceKm={divergenceKm}
               onRecalcHere={() => onPrefsChange({ ...prefs, spot: null })}
             />
@@ -261,7 +246,12 @@ export default function App() {
                   <Text style={s.loadingText}>Obteniendo ubicación…</Text>
                 </>
               ) : (
-                <Text style={s.loadingText}>Sin ubicación. Configúrala en Ajustes.</Text>
+                <>
+                  <Text style={s.loadingText}>Sin GPS. Elige un puesto de observación.</Text>
+                  <Text style={s.chooseLink} onPress={() => setSelectorOpen(true)}>
+                    ELEGIR LUGAR →
+                  </Text>
+                </>
               )}
             </View>
           ))}
@@ -274,21 +264,22 @@ export default function App() {
             />
           ) : (
             <View style={s.loading}>
-              <Text style={s.loadingText}>Sin ubicación. Configúrala en Ajustes.</Text>
+              <Text style={s.loadingText}>Elige primero un puesto de observación en el mapa.</Text>
             </View>
           ))}
         {tab === 'ajustes' && (
-          <SettingsScreen
-            prefs={prefs}
-            place={geo ? geo.place.replace(' · GPS', '').replace(' · Manual', '') : '—'}
-            coords={geo ? { lat: geo.lat, lon: geo.lon } : null}
-            permissions={permissions}
-            onChange={onPrefsChange}
-            onDemoEclipse={() => setDemo(true)}
-          />
+          <SettingsScreen permissions={permissions} onDemoEclipse={() => setDemo(true)} />
         )}
       </View>
       <TabBar active={tab} onChange={setTab} />
+      <SpotSelector
+        visible={selectorOpen}
+        onClose={() => setSelectorOpen(false)}
+        userGeo={geo ? { lat: geo.lat, lon: geo.lon } : null}
+        gpsPlace={geo?.place ?? 'Tu posición'}
+        activeSpot={activeSpot}
+        onSelect={(spot) => onPrefsChange({ ...prefs, spot })}
+      />
     </View>
   );
 }
@@ -297,6 +288,7 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: C.bg },
   loadingText: { color: C.dim, fontSize: 14, fontFamily: F.medium },
+  chooseLink: { color: C.corona, fontSize: 14, fontFamily: F.bold, letterSpacing: 1 },
   remoteBanner: {
     marginTop: 44,
     marginHorizontal: 16,

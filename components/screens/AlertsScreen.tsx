@@ -61,22 +61,25 @@ export function AlertsScreen({ eclipse, toggles, onToggle }: AlertsScreenProps) 
         </View>
       </View>
       <ScrollView style={s.list} showsVerticalScrollIndicator={false}>
-        <View style={s.timelineTrack} />
-        {eclipse.events.map((e) => {
+        {eclipse.events.map((e, i) => {
           const meta = ALERT_META[e.key];
           const on = toggles[e.key];
           return (
             <View key={e.key} style={[s.row, !on && { opacity: 0.45 }]}>
-              <View
-                style={[
-                  s.rowDot,
-                  {
-                    backgroundColor: on ? meta.accent : C.bg,
-                    borderColor: on ? meta.accent : C.knobTrack,
-                    shadowColor: on ? meta.accent : 'transparent',
-                  },
-                ]}
-              />
+              <View style={s.leftCol}>
+                {i > 0 && <View style={[s.connector, { top: 0, height: '50%' }]} />}
+                {i < eclipse.events.length - 1 && <View style={[s.connector, { bottom: 0, height: '50%' }]} />}
+                <View
+                  style={[
+                    s.rowDot,
+                    {
+                      backgroundColor: on ? meta.accent : C.bg,
+                      borderColor: on ? meta.accent : C.knobTrack,
+                      shadowColor: on ? meta.accent : 'transparent',
+                    },
+                  ]}
+                />
+              </View>
               <View style={s.rowBody}>
                 <View style={s.rowTitleLine}>
                   <Text style={s.rowTitle}>
@@ -126,15 +129,14 @@ const s = StyleSheet.create({
   },
   countText: { fontFamily: F.medium, fontSize: 14, color: C.dim },
   list: { flex: 1, paddingHorizontal: 24, marginTop: 22 },
-  timelineTrack: {
-    position: 'absolute',
-    left: 31,
-    top: 30,
-    bottom: 20,
-    width: 2,
-    backgroundColor: C.border,
+  row: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  leftCol: {
+    width: 16,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 12 },
+  connector: { position: 'absolute', left: 7, width: 2, backgroundColor: C.border },
   rowDot: {
     width: 16,
     height: 16,
@@ -145,7 +147,7 @@ const s = StyleSheet.create({
     elevation: 4,
     zIndex: 1,
   },
-  rowBody: { flex: 1, minWidth: 0 },
+  rowBody: { flex: 1, minWidth: 0, paddingVertical: 12 },
   rowTitleLine: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   rowTitle: { fontFamily: F.bold, fontSize: 16, color: C.text },
   rowTime: { fontFamily: F.semibold, fontSize: 14, fontVariant: ['tabular-nums'] },

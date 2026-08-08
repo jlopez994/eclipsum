@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, PanResponder, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Defs, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { nextEvent, type LocalEclipse } from '../../lib/eclipse';
 import { bearingLabel, type TotalityDirection } from '../../lib/totality';
-import type { Spot } from '../../lib/spots';
 import { Countdown } from '../Countdown';
-import { SpotCarousel } from '../SpotCarousel';
 import { C, F } from '../theme';
 
 const SHEET_MIN = 236;
@@ -27,10 +25,7 @@ interface MapScreenProps {
   cloudPct: number | null;
   totality: TotalityDirection | 'none' | null;
   now: Date;
-  userGeo: { lat: number; lon: number } | null;
-  gpsPlace: string;
-  activeSpot: Spot | null;
-  onSelectSpot: (spot: Spot | null) => void;
+  onOpenSelector: () => void;
   /** km entre GPS real y spot activo el día del eclipse; null = sin aviso */
   divergenceKm: number | null;
   onRecalcHere: () => void;
@@ -100,10 +95,7 @@ export function MapScreen({
   cloudPct,
   totality,
   now,
-  userGeo,
-  gpsPlace,
-  activeSpot,
-  onSelectSpot,
+  onOpenSelector,
   divergenceKm,
   onRecalcHere,
 }: MapScreenProps) {
@@ -212,26 +204,17 @@ export function MapScreen({
       {/* Overlay superior: chips + lugares + aviso divergencia */}
       <View style={s.topOverlay} pointerEvents="box-none">
         <View style={s.chipsRow} pointerEvents="box-none">
-          <View style={s.chipLocation}>
+          <Pressable style={s.chipLocation} onPress={onOpenSelector}>
             <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={C.corona} strokeWidth={2.4}>
               <Path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z" />
             </Svg>
             <Text style={s.chipText}>{place}</Text>
-          </View>
+            <Text style={s.chipChevron}>▾</Text>
+          </Pressable>
           <View style={s.chipNorth}>
             <Text style={s.chipNorthText}>N</Text>
           </View>
         </View>
-        {userGeo && (
-          <SpotCarousel
-            userLat={userGeo.lat}
-            userLon={userGeo.lon}
-            gpsPlace={gpsPlace}
-            activeSpot={activeSpot}
-            totality={totality}
-            onSelect={onSelectSpot}
-          />
-        )}
         {divergenceKm !== null && (
           <View style={s.divergence}>
             <Text style={s.divergenceText}>
@@ -394,6 +377,7 @@ const s = StyleSheet.create({
     paddingVertical: 9,
   },
   chipText: { fontFamily: F.semibold, fontSize: 13, color: C.text },
+  chipChevron: { fontFamily: F.semibold, fontSize: 12, color: C.dim, marginLeft: 2 },
   chipNorth: {
     width: 38,
     height: 38,

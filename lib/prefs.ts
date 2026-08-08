@@ -5,8 +5,6 @@ import type { Spot } from './spots';
 export type AlertToggles = Record<EclipseEvent['key'], boolean>;
 
 export interface Prefs {
-  useGps: boolean;
-  manual: { lat: number; lon: number; name?: string } | null;
   alertsOn: AlertToggles;
   /** Puesto de observación activo; null = seguir al GPS */
   spot: Spot | null;
@@ -15,8 +13,6 @@ export interface Prefs {
 const KEY = 'eclipsum:prefs';
 
 export const DEFAULT_PREFS: Prefs = {
-  useGps: true,
-  manual: null,
   alertsOn: { C1: true, C2: true, MAX: true, C3: true, C4: true },
   spot: null,
 };
