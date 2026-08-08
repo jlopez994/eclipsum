@@ -189,10 +189,12 @@ export function MapScreen({
         </>
       )}
       {isTotal && (
-        <View style={[s.pill, { top: '33%', borderColor: 'rgba(124,108,255,0.6)' }]}>
-          <Text style={s.pillText}>
-            <Text style={{ color: C.violet }}>ESTÁS EN LA BANDA DE TOTALIDAD</Text>
-          </Text>
+        <View style={s.pillTotalWrap}>
+          <View style={s.pillTotal}>
+            <Text style={[s.pillText, { color: C.violet }]} numberOfLines={1}>
+              ESTÁS EN LA BANDA DE TOTALIDAD
+            </Text>
+          </View>
         </View>
       )}
 
@@ -325,7 +327,23 @@ const s = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  pillText: { fontFamily: F.semibold, fontSize: 12, color: C.text },
+  pillTotalWrap: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: SHEET_MIN + 16,
+    alignItems: 'center',
+  },
+  pillTotal: {
+    maxWidth: '100%',
+    backgroundColor: 'rgba(21,21,30,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(124,108,255,0.6)',
+    borderRadius: 99,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  pillText: { fontFamily: F.semibold, fontSize: 12, color: C.text, textAlign: 'center' },
   userArea: { position: 'absolute', left: 0, right: 0, alignItems: 'center', gap: 10 },
   dotWrap: { width: 14, height: 14, alignItems: 'center', justifyContent: 'center' },
   dotRing: {

@@ -33,7 +33,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "dev": "bash scripts/dev.sh"
+    "dev": "bash scripts/dev.sh",
+    "mensaje": "bash scripts/mensaje.sh"
   },
   "private": true
 }

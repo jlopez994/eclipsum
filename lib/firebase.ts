@@ -1,7 +1,8 @@
 import { getAnalytics, logEvent } from '@react-native-firebase/analytics';
 import { fetchAndActivate, getRemoteConfig, getString } from '@react-native-firebase/remote-config';
 
-const FETCH_INTERVAL_MS = 5 * 60_000; // corto para probar estos días; subir a 12h en producción
+// ponytail: 0 = sin caché mientras probamos; subir a 12h antes de publicar
+const FETCH_INTERVAL_MS = 0;
 
 /**
  * Mensaje remoto configurable desde consola Firebase (parámetro `eclipse_message`).
@@ -10,7 +11,8 @@ const FETCH_INTERVAL_MS = 5 * 60_000; // corto para probar estos días; subir a 
 export async function fetchEclipseMessage(): Promise<string> {
   try {
     const rc = getRemoteConfig();
-    rc.settings.minimumFetchIntervalMillis = FETCH_INTERVAL_MS;
+    // Asignar el objeto completo: en RNFirebase `settings` es un setter; mutar una propiedad no aplica nada
+    rc.settings = { minimumFetchIntervalMillis: FETCH_INTERVAL_MS, fetchTimeoutMillis: 30_000 };
     rc.defaultConfig = { eclipse_message: '' };
     await fetchAndActivate(rc);
     return getString(rc, 'eclipse_message');

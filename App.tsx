@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, StyleSheet, Text, View } from 'react-native';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import {
@@ -72,6 +72,11 @@ export default function App() {
     void Notifications.getPermissionsAsync().then(({ status }) =>
       setPermissions((p) => ({ ...p, notifications: status === 'granted' })),
     );
+    // Reconsultar Remote Config al volver a primer plano (respeta el intervalo mínimo de caché)
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void fetchEclipseMessage().then(setRemoteMsg);
+    });
+    return () => sub.remove();
   }, []);
 
   useEffect(() => {

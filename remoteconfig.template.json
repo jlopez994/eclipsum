@@ -2,7 +2,7 @@
   "parameters": {
     "eclipse_message": {
       "defaultValue": {
-        "value": "🌘 Remote Config funciona — mensaje editable desde consola Firebase"
+        "value": ""
       },
       "description": "Banner superior de la app. Vacío = oculto.",
       "valueType": "STRING"
