@@ -179,34 +179,22 @@ function CompassChip() {
     };
   }, []);
 
-  // Sin sensor (emulador): chip estático con el norte del diagrama (arriba)
+  // Sin sensor (emulador): chip estático con la N centrada
   return (
     <View
       style={s.compass}
       accessibilityLabel={heading === null ? 'Norte del diagrama: arriba' : `Norte: ${Math.round(heading)}°`}
     >
-      {heading !== null && <View style={s.compassTick} />}
-      <View style={[s.compassDial, heading !== null && { transform: [{ rotate: `${-heading}deg` }] }]}>
+      {heading !== null ? (
+        <>
+          <View style={s.compassTick} />
+          <View style={[s.compassDial, { transform: [{ rotate: `${-heading}deg` }] }]}>
+            <Text style={s.compassN}>N</Text>
+          </View>
+        </>
+      ) : (
         <Text style={s.compassN}>N</Text>
-      </View>
-    </View>
-  );
-}
-
-/** Dónde estará el sol en el máximo: flecha = azimut (arriba del diagrama = norte). */
-function SunChip({ azimuthDeg, altitudeDeg }: { azimuthDeg: number; altitudeDeg: number }) {
-  return (
-    <View style={s.sunWrap}>
-      <View
-        style={s.sunChip}
-        accessibilityLabel={`Sol en el máximo: ${bearingLabel(azimuthDeg)}, ${Math.round(altitudeDeg)}° de altura`}
-      >
-        <View style={[StyleSheet.absoluteFill, s.sunArrowLayer, { transform: [{ rotate: `${azimuthDeg}deg` }] }]}>
-          <View style={s.sunArrowHead} />
-        </View>
-        <View style={s.sunDot} />
-      </View>
-      <Text style={s.sunLabel}>SOL {altitudeDeg.toFixed(1).replace('.', ',')}°</Text>
+      )}
     </View>
   );
 }
@@ -364,13 +352,18 @@ export function MapScreen({
   const showHere = hereOnMap !== null;
   const spotFrac = dotTopFraction(isTotal, totality);
   const hereFrac = showHere ? dotTopFraction(hereOnMap.isTotal, hereOnMap.totality) : spotFrac;
-  // Offset horizontal solo si los puntos casi se solapan en vertical
-  const dotsCollide = showHere && Math.abs(spotFrac - hereFrac) < 0.05;
+  // Si casi se solapan en vertical: lado a lado a la misma altura, sin guía
+  const dotsCollide = showHere && Math.abs(spotFrac - hereFrac) < 0.09;
+  const midFrac = (spotFrac + hereFrac) / 2;
+  const spotTop = dotsCollide ? midFrac : spotFrac;
+  const hereTop = dotsCollide ? midFrac : hereFrac;
   // Guía: con dos puntos conecta punto a punto; con uno, desde la banda al punto
   const guideTop = showHere ? Math.min(spotFrac, hereFrac) : BAND_ANCHOR;
   const guideHeightFrac = Math.max(0, Math.max(spotFrac, hereFrac) - guideTop);
   const showGuide =
-    guideHeightFrac > 0.02 && (showHere || (!isTotal && totality !== null && totality !== 'none'));
+    !dotsCollide &&
+    guideHeightFrac > 0.02 &&
+    (showHere || (!isTotal && totality !== null && totality !== 'none'));
   const guideKm = showHere
     ? hereOnMap.km
     : totality !== null && totality !== 'none'
@@ -490,7 +483,7 @@ export function MapScreen({
       ) : null}
 
       {mapView === 'diagram' && showHere && (
-        <View style={[s.userArea, dotsCollide && s.hereArea, { top: `${hereFrac * 100}%` }]}>
+        <View style={[s.userArea, dotsCollide && s.hereArea, { top: `${hereTop * 100}%` }]}>
           <HereDot />
           <Text style={s.hereLabel}>{hereLabel ?? 'TÚ'}</Text>
           {(hereOnMap.isTotal || hereOnMap.obscuration !== null) && (
@@ -501,7 +494,7 @@ export function MapScreen({
         </View>
       )}
       {mapView === 'diagram' && (
-        <View style={[s.userArea, dotsCollide && s.spotArea, { top: `${spotFrac * 100}%` }]}>
+        <View style={[s.userArea, dotsCollide && s.spotArea, { top: `${spotTop * 100}%` }]}>
           <UserDot />
           <Text style={s.userLabel} numberOfLines={1}>
             {showHere || !spotIsGps ? place : 'TU POSICIÓN'}
@@ -525,17 +518,26 @@ export function MapScreen({
               </Text>
               <Text style={s.chipChevron}>▾</Text>
             </Pressable>
-            <Pressable style={s.chipMaps} onPress={onOpenMaps} hitSlop={6}>
-              <Text style={s.chipMapsText}>MAPS</Text>
+            <Pressable
+              style={s.viewToggle}
+              onPress={onToggleMapView}
+              hitSlop={8}
+              accessibilityLabel={mapView === 'diagram' ? 'Ver mapa real' : 'Ver diagrama'}
+            >
+              {mapView === 'diagram' ? (
+                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={C.dim} strokeWidth={2}>
+                  <Path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2V6z" />
+                  <Path d="M9 4v14M15 6v14" />
+                </Svg>
+              ) : (
+                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={C.dim} strokeWidth={2}>
+                  <Path d="M3 16L21 8" />
+                  <Circle cx={7} cy={14.2} r={2.4} fill={C.dim} stroke="none" />
+                </Svg>
+              )}
             </Pressable>
           </View>
-          <View style={s.rightChips}>
-            <Pressable style={s.viewToggle} onPress={onToggleMapView} hitSlop={6}>
-              <Text style={s.viewToggleText}>{mapView === 'diagram' ? 'MAPA' : 'GRÁFICO'}</Text>
-            </Pressable>
-            {maxEvent && <SunChip azimuthDeg={maxEvent.azimuth} altitudeDeg={maxEvent.altitude} />}
-            <CompassChip />
-          </View>
+          <CompassChip />
         </View>
         {divergenceKm !== null && (
           <View style={s.divergence}>
@@ -576,9 +578,14 @@ export function MapScreen({
             </View>
           </View>
           <View style={s.divider} />
-          <Text style={s.cronoTitle} numberOfLines={1}>
-            CRONOLOGÍA EN {place.toUpperCase()} · 12 AGO
-          </Text>
+          <View style={s.cronoHeader}>
+            <Text style={[s.cronoTitle, { flex: 1 }]} numberOfLines={1}>
+              CRONOLOGÍA EN {place.toUpperCase()} · 12 AGO
+            </Text>
+            <Pressable onPress={onOpenMaps} hitSlop={8}>
+              <Text style={s.mapsLink}>CÓMO LLEGAR →</Text>
+            </Pressable>
+          </View>
           {cronoRows.map((e) => (
             <View key={e.key} style={s.cronoRow}>
               <Text style={[s.cronoLabel, (e.time <= now || e.belowHorizon) && { color: C.dim }]}>
@@ -680,61 +687,17 @@ const s = StyleSheet.create({
     color: 'rgba(124,108,255,0.6)',
   },
   umbra: { position: 'absolute', top: '50%', marginTop: -70, left: 0, width: 140, height: 140 },
-  rightChips: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sunWrap: { alignItems: 'center', gap: 4 },
-  sunChip: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  horizonNote: { fontFamily: F.regular, fontSize: 11, color: C.dim, marginTop: 2 },
+  viewToggle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: 'rgba(21,21,30,0.85)',
     borderWidth: 1,
     borderColor: C.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sunArrowLayer: { alignItems: 'center' },
-  sunArrowHead: {
-    marginTop: 3,
-    width: 0,
-    height: 0,
-    borderLeftWidth: 4,
-    borderRightWidth: 4,
-    borderBottomWidth: 6,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: C.corona,
-  },
-  sunDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: C.corona,
-    shadowColor: C.corona,
-    shadowOpacity: 0.8,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  sunLabel: {
-    fontFamily: F.semibold,
-    fontSize: 9,
-    letterSpacing: 0.8,
-    color: C.text,
-    backgroundColor: 'rgba(11,11,18,0.85)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  horizonNote: { fontFamily: F.regular, fontSize: 11, color: C.dim, marginTop: 2 },
-  viewToggle: {
-    backgroundColor: 'rgba(21,21,30,0.85)',
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 12,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-  },
-  viewToggleText: { fontFamily: F.bold, fontSize: 9, letterSpacing: 1, color: C.dim },
   dotPct: {
     fontFamily: F.semibold,
     fontSize: 9,
@@ -764,9 +727,9 @@ const s = StyleSheet.create({
   },
   pillText: { fontFamily: F.semibold, fontSize: 12, color: C.text, textAlign: 'center' },
   userArea: { position: 'absolute', left: 0, right: 0, alignItems: 'center', gap: 8 },
-  /** Ligero offset horizontal para no taparse si las Y son parecidas */
-  hereArea: { transform: [{ translateX: -22 }] },
-  spotArea: { transform: [{ translateX: 14 }] },
+  /** Lado a lado cuando las Y casi coinciden */
+  hereArea: { transform: [{ translateX: -52 }] },
+  spotArea: { transform: [{ translateX: 52 }] },
   dotWrap: { width: 14, height: 14, alignItems: 'center', justifyContent: 'center' },
   dotRing: {
     position: 'absolute',
@@ -821,7 +784,7 @@ const s = StyleSheet.create({
   chipsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     paddingHorizontal: 20,
   },
   divergence: {
@@ -843,28 +806,27 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(21,21,30,0.85)',
     borderWidth: 1,
     borderColor: C.border,
-    borderRadius: 99,
+    borderRadius: 18,
+    height: 36,
     paddingHorizontal: 16,
-    paddingVertical: 9,
     flexShrink: 1,
     minWidth: 0,
     maxWidth: 260,
   },
   chipText: { fontFamily: F.semibold, fontSize: 13, color: C.text, flexShrink: 1 },
   chipChevron: { fontFamily: F.semibold, fontSize: 12, color: C.dim, marginLeft: 2 },
-  chipMaps: {
-    backgroundColor: 'rgba(21,21,30,0.85)',
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 99,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+  cronoHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  mapsLink: {
+    fontFamily: F.bold,
+    fontSize: 10,
+    letterSpacing: 1,
+    color: C.corona,
+    paddingBottom: 4,
   },
-  chipMapsText: { fontFamily: F.bold, fontSize: 10, letterSpacing: 1, color: C.dim },
   compass: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: 'rgba(21,21,30,0.85)',
     borderWidth: 1,
     borderColor: C.border,
@@ -887,8 +849,8 @@ const s = StyleSheet.create({
     zIndex: 2,
   },
   compassDial: {
-    width: 38,
-    height: 38,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     paddingTop: 5,
   },

@@ -88,14 +88,24 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // Relee permisos sin pedirlos: el usuario puede cambiarlos en Ajustes del sistema
+    const refreshPermissions = () => {
+      void Notifications.getPermissionsAsync().then(({ status }) =>
+        setPermissions((p) => ({ ...p, notifications: status === 'granted' })),
+      );
+      void Location.getForegroundPermissionsAsync().then(({ status }) =>
+        setPermissions((p) => ({ ...p, location: status === 'granted' })),
+      );
+    };
     void loadPrefs().then(setPrefs);
     void fetchEclipseMessage().then(setRemoteMsg);
-    void Notifications.getPermissionsAsync().then(({ status }) =>
-      setPermissions((p) => ({ ...p, notifications: status === 'granted' })),
-    );
-    // Reconsultar Remote Config al volver a primer plano (respeta el intervalo mínimo de caché)
+    refreshPermissions();
+    // Al volver a primer plano: Remote Config (respeta caché) y permisos actualizados
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void fetchEclipseMessage().then(setRemoteMsg);
+      if (state === 'active') {
+        void fetchEclipseMessage().then(setRemoteMsg);
+        refreshPermissions();
+      }
     });
     return () => sub.remove();
   }, []);
