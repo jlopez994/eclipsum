@@ -242,9 +242,11 @@ function HorizonDiagram({ altitudeDeg, azimuthDeg }: { altitudeDeg: number; azim
       : altitudeDeg < 12.5
         ? 'aproximadamente un puño'
         : `unos ${(altitudeDeg / 10).toFixed(1).replace('.', ',')} puños`;
+  // Recorta el cielo vacío por encima del sol: menos margen con el título
+  const minY = Math.max(0, Math.floor(sy) - 24);
   return (
     <View accessibilityLabel={`Sol a ${altTxt}° sobre el horizonte ${bearingLabel(azimuthDeg)}`}>
-      <Svg width="100%" height={110} viewBox="0 0 300 110">
+      <Svg width="100%" height={110 - minY} viewBox={`0 ${minY} 300 ${110 - minY}`}>
         <Rect x={0} y={oy} width={300} height={110 - oy} fill="#101019" />
         {/* Skyline: edificios y árbol para dar escala al horizonte */}
         <Path
