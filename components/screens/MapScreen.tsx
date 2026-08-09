@@ -33,10 +33,10 @@ const SHEET_TOP_GAP = 150;
  * Fracciones verticales relativas al lienzo del diagrama (zona sobre la hoja).
  * Así el contenido usa toda la altura libre sin el hueco muerto encima de la tarjeta.
  */
-const BAND_ANCHOR = 0.32;
-const DOT_TOTAL = 0.24;
-const DOT_NEAR = 0.52;
-const DOT_FAR = 0.82;
+const BAND_ANCHOR = 0.38;
+const DOT_TOTAL = 0.3;
+const DOT_NEAR = 0.56;
+const DOT_FAR = 0.84;
 /** km que mapean a DOT_FAR; más allá se satura. */
 const DIST_SCALE_KM = 150;
 
@@ -714,7 +714,7 @@ const s = StyleSheet.create({
   },
   band: {
     position: 'absolute',
-    top: '14%',
+    top: '20%',
     left: '-32%',
     width: '164%',
     height: 200,
