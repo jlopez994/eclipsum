@@ -45,22 +45,37 @@ function isTotalAt(lat: number, lon: number): boolean {
   }
 }
 
+// Yield local (sin lib/anim: este módulo debe seguir libre de react-native para el selfcheck)
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+// Resultado determinista por origen: la app lo pide varias veces (pantalla + selector)
+const NEAREST_CACHE = new Map<string, Promise<TotalityDirection | null>>();
+
 /**
  * Busca el punto de totalidad más cercano probando 8 rumbos:
  * sondeo creciente (25→700 km) + bisección a ±2 km.
  * Devuelve null si la totalidad queda a más de 700 km en todas direcciones.
- * Cede el hilo entre rumbos para no congelar la UI (~decenas de llamadas al motor).
+ * Memoizada por coordenada; cede el hilo en cada llamada al motor (~10-30 ms cada una).
  */
-export async function findNearestTotality(lat: number, lon: number): Promise<TotalityDirection | null> {
+export function findNearestTotality(lat: number, lon: number): Promise<TotalityDirection | null> {
+  const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
+  let p = NEAREST_CACHE.get(key);
+  if (!p) {
+    p = searchNearestTotality(lat, lon);
+    NEAREST_CACHE.set(key, p);
+  }
+  return p;
+}
+
+async function searchNearestTotality(lat: number, lon: number): Promise<TotalityDirection | null> {
   let best: TotalityDirection | null = null;
 
   for (const bearing of BEARINGS) {
-    await new Promise((r) => setTimeout(r, 0)); // ponytail: yield simple; mover a worker si algún día molesta
-
     let lo = 0; // último km conocido NO total
     let hi: number | null = null; // primer km conocido total
     for (const d of PROBE_DISTANCES_KM) {
       if (best && d >= best.distanceKm) break; // no puede mejorar
+      await tick();
       const p = destination(lat, lon, bearing, d);
       if (isTotalAt(p.lat, p.lon)) {
         hi = d;
@@ -73,6 +88,7 @@ export async function findNearestTotality(lat: number, lon: number): Promise<Tot
 
     while (hiKm - lo > PRECISION_KM) {
       const mid = (lo + hiKm) / 2;
+      await tick();
       const p = destination(lat, lon, bearing, mid);
       if (isTotalAt(p.lat, p.lon)) hiKm = mid;
       else lo = mid;

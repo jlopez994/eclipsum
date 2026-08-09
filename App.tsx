@@ -15,7 +15,7 @@ import { computeLocalEclipse, type LocalEclipse } from './lib/eclipse';
 import { getActiveEclipse } from './lib/eclipseCatalog';
 import { haversineKm } from './lib/totality';
 import { openInMaps } from './lib/maps';
-import type { Spot } from './lib/spots';
+import { listSpotOptions, type Spot } from './lib/spots';
 import { scheduleEclipseAlerts } from './lib/notifications';
 import { fetchRemoteExtras } from './lib/firebase';
 import { pushRecent } from './lib/prefs';
@@ -115,6 +115,14 @@ function AppInner() {
     const id = setInterval(() => setNow(new Date()), ms);
     return () => clearInterval(id);
   }, [demo, fineClock]);
+
+  // Precalienta el selector tras el arranque: las ciudades cercanas quedan en la
+  // caché del motor y la primera apertura de la lista no tiene que calcular nada
+  useEffect(() => {
+    if (!geo) return;
+    const id = setTimeout(() => void listSpotOptions(geo.lat, geo.lon), 1500);
+    return () => clearTimeout(id);
+  }, [geo?.lat, geo?.lon]);
 
   // Sembrar puesto deseado con GPS si aún no hay ninguno guardado
   useEffect(() => {
