@@ -4,8 +4,14 @@ import type { Spot } from './spots';
 
 export type AlertToggles = Record<EclipseEvent['key'], boolean>;
 
-/** Minutos de anticipo del aviso principal de cada contacto (0 = en el instante). */
-export type AlertLeads = Record<EclipseEvent['key'], number>;
+/**
+ * Si true, el aviso del contacto salta unos segundos antes (margen práctico).
+ * Si false, en el instante del contacto.
+ */
+export type AlertEarly = Record<EclipseEvent['key'], boolean>;
+
+/** Margen fijo cuando `alertEarly` está activo. */
+export const ALERT_EARLY_SECONDS = 15;
 
 /** Sonido de alerta: el WAV propio de la app, o el tono por defecto del sistema. */
 export type AlertSound = 'eclipse' | 'default';
@@ -23,8 +29,8 @@ export interface RecentSpot extends Spot {
 
 export interface Prefs {
   alertsOn: AlertToggles;
-  /** Anticipo en minutos del aviso principal por contacto */
-  alertLeads: AlertLeads;
+  /** Aviso unos segundos antes del contacto (por hito) */
+  alertEarly: AlertEarly;
   /** Avisos opcionales de planificación ligados a C1 (apagados por defecto) */
   c1PlanAlerts: C1PlanAlerts;
   /** Puesto de observación deseado; null solo hasta la 1ª elección / siembra GPS */
@@ -40,15 +46,12 @@ export interface Prefs {
 const KEY = 'eclipsum:prefs';
 export const RECENT_CAP = 3;
 
-/** Presets al tocar el chip de anticipo en Alertas. */
-export const ALERT_LEAD_PRESETS = [0, 1, 2, 5, 10, 15, 30, 60] as const;
-
-export const DEFAULT_ALERT_LEADS: AlertLeads = {
-  C1: 0,
-  C2: 0,
-  MAX: 0,
-  C3: 0,
-  C4: 0,
+export const DEFAULT_ALERT_EARLY: AlertEarly = {
+  C1: false,
+  C2: false,
+  MAX: false,
+  C3: false,
+  C4: false,
 };
 
 export const DEFAULT_C1_PLAN_ALERTS: C1PlanAlerts = {
@@ -58,7 +61,7 @@ export const DEFAULT_C1_PLAN_ALERTS: C1PlanAlerts = {
 
 export const DEFAULT_PREFS: Prefs = {
   alertsOn: { C1: true, C2: true, MAX: true, C3: true, C4: true },
-  alertLeads: { ...DEFAULT_ALERT_LEADS },
+  alertEarly: { ...DEFAULT_ALERT_EARLY },
   c1PlanAlerts: { ...DEFAULT_C1_PLAN_ALERTS },
   spot: null,
   recentSpots: [],
@@ -66,25 +69,30 @@ export const DEFAULT_PREFS: Prefs = {
   alertSound: 'eclipse',
 };
 
-function clampLead(n: unknown): number {
-  if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return 0;
-  return Math.min(24 * 60, Math.round(n));
-}
-
-function parseAlertLeads(raw: unknown): AlertLeads {
-  const src = raw && typeof raw === 'object' ? (raw as Partial<AlertLeads>) : {};
-  const leads: AlertLeads = {
-    C1: clampLead(src.C1 ?? DEFAULT_ALERT_LEADS.C1),
-    C2: clampLead(src.C2 ?? DEFAULT_ALERT_LEADS.C2),
-    MAX: clampLead(src.MAX ?? DEFAULT_ALERT_LEADS.MAX),
-    C3: clampLead(src.C3 ?? DEFAULT_ALERT_LEADS.C3),
-    C4: clampLead(src.C4 ?? DEFAULT_ALERT_LEADS.C4),
-  };
-  // Migración: defaults antiguos (10/2/1) → aviso en el contacto
-  if (leads.C1 === 10 && leads.C2 === 2 && leads.MAX === 1 && leads.C3 === 0 && leads.C4 === 0) {
-    return { ...DEFAULT_ALERT_LEADS };
+function parseAlertEarly(raw: unknown, legacyLeads: unknown): AlertEarly {
+  if (raw && typeof raw === 'object') {
+    const src = raw as Partial<AlertEarly>;
+    return {
+      C1: src.C1 === true,
+      C2: src.C2 === true,
+      MAX: src.MAX === true,
+      C3: src.C3 === true,
+      C4: src.C4 === true,
+    };
   }
-  return leads;
+  // Migración desde anticipos en minutos: cualquier valor > 0 → margen de segundos
+  if (legacyLeads && typeof legacyLeads === 'object') {
+    const src = legacyLeads as Record<string, unknown>;
+    const wasEarly = (k: string) => typeof src[k] === 'number' && (src[k] as number) > 0;
+    return {
+      C1: wasEarly('C1'),
+      C2: wasEarly('C2'),
+      MAX: wasEarly('MAX'),
+      C3: wasEarly('C3'),
+      C4: wasEarly('C4'),
+    };
+  }
+  return { ...DEFAULT_ALERT_EARLY };
 }
 
 function parseC1PlanAlerts(raw: unknown): C1PlanAlerts {
@@ -93,17 +101,6 @@ function parseC1PlanAlerts(raw: unknown): C1PlanAlerts {
     before24h: src.before24h === true,
     before1h: src.before1h === true,
   };
-}
-
-/** Siguiente preset de anticipo (ciclo). */
-export function nextAlertLead(current: number): number {
-  const list = ALERT_LEAD_PRESETS as readonly number[];
-  const i = list.indexOf(current);
-  if (i < 0) {
-    const greater = list.find((p) => p > current);
-    return greater ?? list[0];
-  }
-  return list[(i + 1) % list.length];
 }
 
 function sameCoords(a: Spot, b: Spot): boolean {
@@ -126,7 +123,7 @@ export async function loadPrefs(): Promise<Prefs> {
   try {
     const raw = await AsyncStorage.getItem(KEY);
     if (!raw) return DEFAULT_PREFS;
-    const parsed = JSON.parse(raw) as Partial<Prefs>;
+    const parsed = JSON.parse(raw) as Partial<Prefs> & { alertLeads?: unknown };
     const recentSpots = Array.isArray(parsed.recentSpots)
       ? parsed.recentSpots
           .filter(
@@ -141,11 +138,14 @@ export async function loadPrefs(): Promise<Prefs> {
           .map((s) => ({ ...s, visits: typeof s.visits === 'number' ? s.visits : 1 }))
           .slice(0, RECENT_CAP)
       : [];
+    const { alertLeads: _legacyLeads, ...parsedRest } = parsed as Partial<Prefs> & {
+      alertLeads?: unknown;
+    };
     return {
       ...DEFAULT_PREFS,
-      ...parsed,
+      ...parsedRest,
       alertsOn: { ...DEFAULT_PREFS.alertsOn, ...(parsed.alertsOn ?? {}) },
-      alertLeads: parseAlertLeads(parsed.alertLeads),
+      alertEarly: parseAlertEarly(parsed.alertEarly, _legacyLeads),
       c1PlanAlerts: parseC1PlanAlerts(parsed.c1PlanAlerts),
       recentSpots,
       mapView: parsed.mapView === 'real' ? 'real' : 'diagram',

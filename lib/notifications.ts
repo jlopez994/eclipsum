@@ -1,8 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import type { LocalEclipse } from './eclipse';
-import type { AlertLeads, AlertSound, AlertToggles, C1PlanAlerts } from './prefs';
-import { DEFAULT_ALERT_LEADS, DEFAULT_C1_PLAN_ALERTS } from './prefs';
+import type { AlertEarly, AlertSound, AlertToggles, C1PlanAlerts } from './prefs';
+import { ALERT_EARLY_SECONDS, DEFAULT_ALERT_EARLY, DEFAULT_C1_PLAN_ALERTS } from './prefs';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -36,31 +36,22 @@ interface Alert {
   time: Date;
 }
 
-function fmtLead(min: number): string {
-  if (min <= 0) return 'ahora';
-  if (min === 1) return 'en 1 min';
-  if (min < 60) return `en ${min} min`;
-  if (min === 60) return 'en 1 hora';
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  if (m === 0) return h === 1 ? 'en 1 hora' : `en ${h} horas`;
-  return `en ${h}h ${m}m`;
+function leadSeconds(early: boolean): number {
+  return early ? ALERT_EARLY_SECONDS : 0;
 }
 
-/** Etiqueta corta para el chip de UI (anticipo). */
-export function alertLeadChipLabel(min: number): string {
-  if (min <= 0) return 'en el momento';
-  if (min < 60) return `−${min} min`;
-  if (min === 60) return '−1 h';
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m === 0 ? `−${h} h` : `−${h}h ${m}m`;
+function minusSeconds(d: Date, sec: number): Date {
+  return new Date(d.getTime() - sec * 1000);
+}
+
+function minusMinutes(d: Date, min: number): Date {
+  return new Date(d.getTime() - min * 60_000);
 }
 
 function buildAlerts(
   eclipse: LocalEclipse,
   enabled: AlertToggles,
-  leads: AlertLeads,
+  early: AlertEarly,
   c1Plan: C1PlanAlerts,
 ): Alert[] {
   const byKey = (k: keyof AlertToggles) => (enabled[k] ? eclipse.events.find((e) => e.key === k) : undefined);
@@ -69,7 +60,6 @@ function buildAlerts(
   const max = byKey('MAX');
   const c3 = byKey('C3');
   const c4 = byKey('C4');
-  const minus = (d: Date, min: number) => new Date(d.getTime() - min * 60_000);
 
   const alerts: Alert[] = [];
   if (c1) {
@@ -77,48 +67,48 @@ function buildAlerts(
       alerts.push({
         title: 'Eclipse mañana',
         body: 'El eclipse solar empieza mañana a esta hora. Prepara las gafas.',
-        time: minus(c1.time, 24 * 60),
+        time: minusMinutes(c1.time, 24 * 60),
       });
     }
     if (c1Plan.before1h) {
       alerts.push({
         title: 'Eclipse en 1 hora',
         body: 'Primer contacto (parcial) en 1 hora. Busca horizonte oeste despejado.',
-        time: minus(c1.time, 60),
+        time: minusMinutes(c1.time, 60),
       });
     }
     alerts.push({
-      title: leads.C1 <= 0 ? '☀️ Empieza el eclipse' : `☀️ Empieza ${fmtLead(leads.C1)}`,
+      title: early.C1 ? '☀️ Empieza en unos segundos' : '☀️ Empieza el eclipse',
       body: 'GAFAS DE ECLIPSE PUESTAS para mirar al sol.',
-      time: minus(c1.time, leads.C1),
+      time: minusSeconds(c1.time, leadSeconds(early.C1)),
     });
   }
   if (c2) {
     alerts.push({
-      title: leads.C2 <= 0 ? '🌑 Totalidad' : `🌑 Totalidad ${fmtLead(leads.C2)}`,
+      title: early.C2 ? '🌑 Totalidad en unos segundos' : '🌑 Totalidad',
       body: 'Prepárate: durante la totalidad puedes mirar sin gafas.',
-      time: minus(c2.time, leads.C2),
+      time: minusSeconds(c2.time, leadSeconds(early.C2)),
     });
   }
   if (max) {
     alerts.push({
-      title: leads.MAX <= 0 ? '🌗 Máximo' : `🌗 Máximo ${fmtLead(leads.MAX)}`,
+      title: early.MAX ? '🌗 Máximo en unos segundos' : '🌗 Máximo',
       body: 'Punto culminante del eclipse.',
-      time: minus(max.time, leads.MAX),
+      time: minusSeconds(max.time, leadSeconds(early.MAX)),
     });
   }
   if (c3) {
     alerts.push({
-      title: leads.C3 <= 0 ? '⚠️ FIN DE TOTALIDAD' : `⚠️ Fin de totalidad ${fmtLead(leads.C3)}`,
+      title: early.C3 ? '⚠️ Fin de totalidad en unos segundos' : '⚠️ FIN DE TOTALIDAD',
       body: 'GAFAS PUESTAS YA. El sol vuelve a ser peligroso.',
-      time: minus(c3.time, leads.C3),
+      time: minusSeconds(c3.time, leadSeconds(early.C3)),
     });
   }
   if (c4) {
     alerts.push({
-      title: leads.C4 <= 0 ? 'Fin del eclipse' : `Fin del eclipse ${fmtLead(leads.C4)}`,
+      title: early.C4 ? 'Fin del eclipse en unos segundos' : 'Fin del eclipse',
       body: 'Último contacto. Gracias por mirar al cielo con Eclipsum.',
-      time: minus(c4.time, leads.C4),
+      time: minusSeconds(c4.time, leadSeconds(early.C4)),
     });
   }
   return alerts.filter((a) => a.time.getTime() > Date.now());
@@ -154,22 +144,22 @@ export async function sendTestNotification(sound: AlertSound = 'eclipse'): Promi
   });
 }
 
-/** Cuántos avisos se programarían con estos toggles/anticipos (mismo filtro que al agendar). */
+/** Cuántos avisos se programarían con estos toggles (mismo filtro que al agendar). */
 export function countEclipseAlerts(
   eclipse: LocalEclipse,
   enabled: AlertToggles,
-  leads: AlertLeads = DEFAULT_ALERT_LEADS,
+  early: AlertEarly = DEFAULT_ALERT_EARLY,
   c1Plan: C1PlanAlerts = DEFAULT_C1_PLAN_ALERTS,
 ): number {
-  return buildAlerts(eclipse, enabled, leads, c1Plan).length;
+  return buildAlerts(eclipse, enabled, early, c1Plan).length;
 }
 
-/** Programa alertas locales según toggles y anticipos. Devuelve cuántas quedaron programadas. */
+/** Programa alertas locales según toggles. Devuelve cuántas quedaron programadas. */
 export async function scheduleEclipseAlerts(
   eclipse: LocalEclipse,
   enabled: AlertToggles,
   sound: AlertSound = 'eclipse',
-  leads: AlertLeads = DEFAULT_ALERT_LEADS,
+  early: AlertEarly = DEFAULT_ALERT_EARLY,
   c1Plan: C1PlanAlerts = DEFAULT_C1_PLAN_ALERTS,
 ): Promise<number> {
   const channelId = await ensurePermissionAndChannel(sound);
@@ -177,7 +167,7 @@ export async function scheduleEclipseAlerts(
   // Reprogramar desde cero para evitar duplicados al cambiar toggles
   await Notifications.cancelAllScheduledNotificationsAsync();
 
-  const alerts = buildAlerts(eclipse, enabled, leads, c1Plan);
+  const alerts = buildAlerts(eclipse, enabled, early, c1Plan);
   for (const a of alerts) {
     await Notifications.scheduleNotificationAsync({
       content: { title: a.title, body: a.body, sound: soundFile(sound) },

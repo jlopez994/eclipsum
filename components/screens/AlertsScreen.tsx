@@ -4,13 +4,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import type { LocalEclipse } from '../../lib/eclipse';
 import {
-  alertLeadChipLabel,
   countEclipseAlerts,
   scheduleEclipseAlerts,
   sendTestNotification,
 } from '../../lib/notifications';
-import type { AlertLeads, AlertSound, AlertToggles, C1PlanAlerts } from '../../lib/prefs';
-import { nextAlertLead } from '../../lib/prefs';
+import type { AlertEarly, AlertSound, AlertToggles, C1PlanAlerts } from '../../lib/prefs';
+import { ALERT_EARLY_SECONDS } from '../../lib/prefs';
 import { track } from '../../lib/firebase';
 import { C, F } from '../theme';
 
@@ -25,11 +24,11 @@ const ALERT_META: Record<string, { accent: string; desc: string }> = {
 interface AlertsScreenProps {
   eclipse: LocalEclipse;
   toggles: AlertToggles;
-  leads: AlertLeads;
+  early: AlertEarly;
   c1Plan: C1PlanAlerts;
   alertSound: AlertSound;
   onToggle: (key: keyof AlertToggles, value: boolean) => void;
-  onLeadChange: (key: keyof AlertLeads, minutes: number) => void;
+  onEarlyChange: (key: keyof AlertEarly, value: boolean) => void;
   onC1PlanChange: (next: C1PlanAlerts) => void;
 }
 
@@ -39,11 +38,11 @@ const fmtHM = (d: Date) =>
 export function AlertsScreen({
   eclipse,
   toggles,
-  leads,
+  early,
   c1Plan,
   alertSound,
   onToggle,
-  onLeadChange,
+  onEarlyChange,
   onC1PlanChange,
 }: AlertsScreenProps) {
   const insets = useSafeAreaInsets();
@@ -53,7 +52,7 @@ export function AlertsScreen({
   const testClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Solo cuentan los eventos que existen en esta ubicación (parcial no tiene C2/C3)
   const activeCount = eclipse.events.filter((e) => toggles[e.key]).length;
-  const scheduledCount = countEclipseAlerts(eclipse, toggles, leads, c1Plan);
+  const scheduledCount = countEclipseAlerts(eclipse, toggles, early, c1Plan);
 
   const clearTestFlash = () => {
     if (testClearRef.current) {
@@ -76,11 +75,11 @@ export function AlertsScreen({
 
   const reschedule = async (
     nextToggles: AlertToggles,
-    nextLeads: AlertLeads,
+    nextEarly: AlertEarly,
     nextPlan: C1PlanAlerts,
   ) => {
     try {
-      const n = await scheduleEclipseAlerts(eclipse, nextToggles, alertSound, nextLeads, nextPlan);
+      const n = await scheduleEclipseAlerts(eclipse, nextToggles, alertSound, nextEarly, nextPlan);
       track('alerts_scheduled', { count: n });
       setFlash(null);
     } catch (e) {
@@ -91,20 +90,20 @@ export function AlertsScreen({
   const handleToggle = (key: keyof AlertToggles) => {
     const next = { ...toggles, [key]: !toggles[key] };
     onToggle(key, !toggles[key]);
-    void reschedule(next, leads, c1Plan);
+    void reschedule(next, early, c1Plan);
   };
 
-  const handleLead = (key: keyof AlertLeads) => {
-    const minutes = nextAlertLead(leads[key]);
-    const next = { ...leads, [key]: minutes };
-    onLeadChange(key, minutes);
+  const handleEarly = (key: keyof AlertEarly) => {
+    const value = !early[key];
+    const next = { ...early, [key]: value };
+    onEarlyChange(key, value);
     void reschedule(toggles, next, c1Plan);
   };
 
   const handleC1Plan = (key: keyof C1PlanAlerts) => {
     const next = { ...c1Plan, [key]: !c1Plan[key] };
     onC1PlanChange(next);
-    void reschedule(toggles, leads, next);
+    void reschedule(toggles, early, next);
   };
 
   const onTest = async () => {
@@ -133,7 +132,8 @@ export function AlertsScreen({
           </Text>
         </View>
         <Text style={s.hint}>
-          Un aviso por hito; el anticipo lo mueve. En C1 puedes sumar avisos 24 h y 1 h antes.
+          Un aviso por hito. Activa el margen de {ALERT_EARLY_SECONDS} s si quieres prepararte. En C1
+          puedes sumar avisos 24 h y 1 h antes.
         </Text>
       </View>
       <ScrollView
@@ -144,8 +144,8 @@ export function AlertsScreen({
         {eclipse.events.map((e, i) => {
           const meta = ALERT_META[e.key];
           const on = toggles[e.key];
-          const lead = leads[e.key];
-          const fireAt = new Date(e.time.getTime() - lead * 60_000);
+          const isEarly = early[e.key];
+          const fireAt = new Date(e.time.getTime() - (isEarly ? ALERT_EARLY_SECONDS : 0) * 1000);
           return (
             <View key={e.key} style={[s.row, !on && { opacity: 0.45 }]}>
               <View style={s.leftCol}>
@@ -171,20 +171,28 @@ export function AlertsScreen({
                 </View>
                 <Text style={s.rowDesc}>{meta.desc}</Text>
                 <Pressable
-                  onPress={() => handleLead(e.key)}
+                  onPress={() => handleEarly(e.key)}
                   disabled={!on}
                   hitSlop={6}
-                  style={[s.leadChip, { borderColor: on ? meta.accent + '66' : C.border }]}
+                  style={[
+                    s.leadChip,
+                    {
+                      borderColor: on ? meta.accent + '66' : C.border,
+                      backgroundColor: isEarly && on ? meta.accent + '22' : 'rgba(11,11,16,0.55)',
+                    },
+                  ]}
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: isEarly, disabled: !on }}
                   accessibilityLabel={
-                    lead <= 0
-                      ? `Avisa en el contacto a las ${fmtHM(e.time)}. Tocar para cambiar anticipo.`
-                      : `Avisa ${alertLeadChipLabel(lead)} del contacto, a las ${fmtHM(fireAt)}. Tocar para cambiar.`
+                    isEarly
+                      ? `Avisa ${ALERT_EARLY_SECONDS} segundos antes, a las ${fmtHM(fireAt)}. Tocar para avisar en el contacto.`
+                      : `Avisa en el contacto a las ${fmtHM(e.time)}. Tocar para avisar unos segundos antes.`
                   }
                 >
                   <Text style={[s.leadChipText, { color: on ? meta.accent : C.dim }]}>
-                    {lead <= 0
-                      ? `Avisa en el contacto · ${fmtHM(e.time)}`
-                      : `Avisa ${alertLeadChipLabel(lead)} · ${fmtHM(fireAt)}`}
+                    {isEarly
+                      ? `Avisa −${ALERT_EARLY_SECONDS} s · ${fmtHM(fireAt)}`
+                      : `Avisa en el contacto · ${fmtHM(e.time)}`}
                   </Text>
                 </Pressable>
                 {e.key === 'C1' && (

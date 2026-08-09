@@ -129,7 +129,7 @@ function AppInner() {
   useEffect(() => {
     if (!eclipse || !prefs || !permissions.notifications) return;
     if (!Object.values(prefs.alertsOn).some(Boolean)) return;
-    scheduleEclipseAlerts(eclipse, prefs.alertsOn, prefs.alertSound, prefs.alertLeads, prefs.c1PlanAlerts).catch(() => {
+    scheduleEclipseAlerts(eclipse, prefs.alertsOn, prefs.alertSound, prefs.alertEarly, prefs.c1PlanAlerts).catch(() => {
       // sin permiso o error puntual: el usuario puede reprogramar desde Alertas
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -263,12 +263,12 @@ function AppInner() {
             <AlertsScreen
               eclipse={eclipse}
               toggles={prefs.alertsOn}
-              leads={prefs.alertLeads}
+              early={prefs.alertEarly}
               c1Plan={prefs.c1PlanAlerts}
               alertSound={prefs.alertSound}
               onToggle={(key, value) => onPrefsChange({ ...prefs, alertsOn: { ...prefs.alertsOn, [key]: value } })}
-              onLeadChange={(key, minutes) =>
-                onPrefsChange({ ...prefs, alertLeads: { ...prefs.alertLeads, [key]: minutes } })
+              onEarlyChange={(key, value) =>
+                onPrefsChange({ ...prefs, alertEarly: { ...prefs.alertEarly, [key]: value } })
               }
               onC1PlanChange={(c1PlanAlerts) => onPrefsChange({ ...prefs, c1PlanAlerts })}
             />
@@ -284,7 +284,7 @@ function AppInner() {
             onSoundChange={(sound) => {
               onPrefsChange({ ...prefs, alertSound: sound });
               if (eclipse && Object.values(prefs.alertsOn).some(Boolean)) {
-                scheduleEclipseAlerts(eclipse, prefs.alertsOn, sound, prefs.alertLeads, prefs.c1PlanAlerts).catch(() => {});
+                scheduleEclipseAlerts(eclipse, prefs.alertsOn, sound, prefs.alertEarly, prefs.c1PlanAlerts).catch(() => {});
               }
             }}
             onDemoEclipse={() => setDemo(true)}
