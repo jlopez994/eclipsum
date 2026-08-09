@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { BAND_2026 } from '../lib/bandGeo';
+import { bandForEclipse, type BandSlice } from '../lib/bandGeo';
 import { getActiveEclipse } from '../lib/eclipseCatalog';
 import { LEAFLET_CSS, LEAFLET_JS } from '../lib/leafletVendor';
 import { C } from './theme';
@@ -26,7 +26,10 @@ export function RealMap({ spot, here }: RealMapProps) {
   const webRef = useRef<WebView>(null);
   const [ready, setReady] = useState(false);
   // HTML congelado al montar: los cambios de puesto se inyectan (flyTo) sin recargar el mapa
-  const [html] = useState(() => buildHtml(spot, here, getActiveEclipse().bandTooltip));
+  const [html] = useState(() => {
+    const active = getActiveEclipse();
+    return buildHtml(spot, here, active.bandTooltip, bandForEclipse(active.id));
+  });
 
   useEffect(() => {
     if (!ready) return;
@@ -47,11 +50,18 @@ export function RealMap({ spot, here }: RealMapProps) {
   );
 }
 
-function buildHtml(spot: MapPoint, here: MapPoint | null, bandTooltip: string): string {
-  const north = BAND_2026.map((b) => [b.latN, b.lon]);
-  const south = [...BAND_2026].reverse().map((b) => [b.latS, b.lon]);
-  const center = BAND_2026.map((b) => [(b.latN + b.latS) / 2, b.lon]);
-  const data = JSON.stringify({ polygon: [...north, ...south], center, spot, here, bandTooltip });
+function buildHtml(
+  spot: MapPoint,
+  here: MapPoint | null,
+  bandTooltip: string,
+  band: BandSlice[] | null,
+): string {
+  // Eclipse sin banda empaquetada (p. ej. añadido por Remote Config): solo marcadores
+  const north = band?.map((b) => [b.latN, b.lon]) ?? [];
+  const south = band ? [...band].reverse().map((b) => [b.latS, b.lon]) : [];
+  const center = band?.map((b) => [(b.latN + b.latS) / 2, b.lon]) ?? null;
+  const polygon = band ? [...north, ...south] : null;
+  const data = JSON.stringify({ polygon, center, spot, here, bandTooltip });
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -75,13 +85,15 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, bandTooltip: string): 
     attribution: '&copy; OSM &copy; CARTO',
   }).addTo(map);
 
-  L.polygon(D.polygon, {
-    color: '${C.totality}', weight: 1.5, opacity: 0.9,
-    fillColor: '${C.totality}', fillOpacity: 0.18,
-  }).addTo(map).bindTooltip(D.bandTooltip, { sticky: true, className: 'lbl' });
+  if (D.polygon) {
+    L.polygon(D.polygon, {
+      color: '${C.totality}', weight: 1.5, opacity: 0.9,
+      fillColor: '${C.totality}', fillOpacity: 0.18,
+    }).addTo(map).bindTooltip(D.bandTooltip, { sticky: true, className: 'lbl' });
 
-  L.polyline(D.center, { color: '${C.corona}', weight: 2, dashArray: '6 6', opacity: 0.9 })
-    .addTo(map).bindTooltip('Centro: máxima duración', { sticky: true, className: 'lbl' });
+    L.polyline(D.center, { color: '${C.corona}', weight: 2, dashArray: '6 6', opacity: 0.9 })
+      .addTo(map).bindTooltip('Centro: máxima duración', { sticky: true, className: 'lbl' });
+  }
 
   var ptLayer = L.layerGroup().addTo(map);
   function draw(d, fly) {

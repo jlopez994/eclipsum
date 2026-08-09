@@ -1,7 +1,13 @@
 // Ejecutar: npx tsx scripts/selfcheck.ts
 import assert from 'node:assert';
 import { computeLocalEclipse, currentPhase, nextEvent } from '../lib/eclipse';
-import { ECLIPSES, getActiveEclipse, getEclipseById } from '../lib/eclipseCatalog';
+import {
+  ECLIPSES,
+  getActiveEclipse,
+  getEclipseById,
+  parseRemoteCatalog,
+  setRemoteCatalog,
+} from '../lib/eclipseCatalog';
 import { cloudCoverAt } from '../lib/weather';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
 import type { Spot } from '../lib/spots';
@@ -78,6 +84,39 @@ async function main() {
   // haversine: Madrid-Zaragoza ~256 km en línea recta
   const mzKm = haversineKm(40.42, -3.7, 41.65, -0.88);
   assert.ok(Math.abs(mzKm - 256) < 20, `Madrid-Zaragoza plausible: ${mzKm.toFixed(0)} km`);
+
+  // Catálogo por Remote Config: validación y rollover con entrada remota
+  const rcEntry = {
+    id: '2027-08-02-egipto',
+    searchStart: '2027-07-20T00:00:00Z',
+    civilDate: '2027-08-02',
+    label: 'Total · 2 ago 2027',
+    bandLabel: 'BANDA DE TOTALIDAD · 2 AGO 2027',
+    bandTooltip: 'Banda de totalidad · 2 ago 2027',
+    shortDateLabel: '2 AGO',
+    windyFallbackMax: '2027-08-02T10:00:00Z',
+  };
+  assert.equal(parseRemoteCatalog('no es json').length, 0, 'JSON inválido → catálogo vacío');
+  assert.equal(parseRemoteCatalog('{"a":1}').length, 0, 'No-array → vacío');
+  assert.equal(
+    parseRemoteCatalog(JSON.stringify([rcEntry, { id: 'roto', civilDate: 'ayer' }])).length,
+    1,
+    'Entradas malformadas se descartan; válidas pasan',
+  );
+  setRemoteCatalog(JSON.stringify([rcEntry]));
+  assert.equal(getEclipseById('2027-08-02-egipto')?.label, 'Total · 2 ago 2027', 'Entrada RC resoluble por id');
+  assert.equal(
+    getActiveEclipse(new Date('2026-01-01T00:00:00Z')).id,
+    '2026-08-12-iberia',
+    'Con RC extra, 2026 sigue activo antes del evento',
+  );
+  assert.equal(
+    getActiveEclipse(new Date('2027-01-01T00:00:00Z')).id,
+    '2027-08-02-egipto',
+    'Pasado 2026, rollover a la entrada RC',
+  );
+  setRemoteCatalog('[]');
+  assert.equal(getEclipseById('2027-08-02-egipto'), undefined, 'Reset del catálogo remoto');
 
   console.log('selfcheck OK — Zaragoza total', zgz.totalityDurationSec + 's, máximo', max.time.toISOString());
   console.log(

@@ -1,6 +1,6 @@
 import { getAnalytics, logEvent } from '@react-native-firebase/analytics';
 import { fetchAndActivate, getRemoteConfig, getString } from '@react-native-firebase/remote-config';
-import { setRemoteActiveEclipseId } from './eclipseCatalog';
+import { setRemoteActiveEclipseId, setRemoteCatalog } from './eclipseCatalog';
 
 // Dev sin caché para probar banners al momento; release respeta 12 h
 const FETCH_INTERVAL_MS = __DEV__ ? 0 : 12 * 3_600_000;
@@ -21,10 +21,12 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
     const rc = getRemoteConfig();
     // Asignar el objeto completo: en RNFirebase `settings` es un setter; mutar una propiedad no aplica nada
     rc.settings = { minimumFetchIntervalMillis: FETCH_INTERVAL_MS, fetchTimeoutMillis: 30_000 };
-    rc.defaultConfig = { eclipse_message: '', active_eclipse_id: '' };
+    rc.defaultConfig = { eclipse_message: '', active_eclipse_id: '', eclipse_catalog: '[]' };
     await fetchAndActivate(rc);
     const message = getString(rc, 'eclipse_message');
     const activeEclipseId = getString(rc, 'active_eclipse_id');
+    // Orden: primero el catálogo extra, luego el id activo (puede apuntar a una entrada remota)
+    setRemoteCatalog(getString(rc, 'eclipse_catalog'));
     setRemoteActiveEclipseId(activeEclipseId);
     return { message, activeEclipseId };
   } catch {

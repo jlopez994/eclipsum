@@ -13,6 +13,13 @@
       },
       "description": "Id del catálogo (p. ej. 2026-08-12-iberia). Vacío = primer eclipse no pasado.",
       "valueType": "STRING"
+    },
+    "eclipse_catalog": {
+      "defaultValue": {
+        "value": "[]"
+      },
+      "description": "JSON array de eclipses extra sin release. Campos por entrada: id, searchStart (ISO), civilDate (YYYY-MM-DD), label, bandLabel, bandTooltip, shortDateLabel, windyFallbackMax (ISO). Entradas inválidas se ignoran.",
+      "valueType": "STRING"
     }
   }
 }
