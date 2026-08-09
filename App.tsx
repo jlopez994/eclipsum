@@ -129,7 +129,7 @@ function AppInner() {
   useEffect(() => {
     if (!eclipse || !prefs || !permissions.notifications) return;
     if (!Object.values(prefs.alertsOn).some(Boolean)) return;
-    scheduleEclipseAlerts(eclipse, prefs.alertsOn).catch(() => {
+    scheduleEclipseAlerts(eclipse, prefs.alertsOn, prefs.alertSound).catch(() => {
       // sin permiso o error puntual: el usuario puede reprogramar desde Alertas
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -263,7 +263,9 @@ function AppInner() {
             <AlertsScreen
               eclipse={eclipse}
               toggles={prefs.alertsOn}
+              alertSound={prefs.alertSound}
               onToggle={(key, value) => onPrefsChange({ ...prefs, alertsOn: { ...prefs.alertsOn, [key]: value } })}
+              onSoundChange={(sound) => onPrefsChange({ ...prefs, alertSound: sound })}
             />
           ) : (
             <View style={s.loading}>

@@ -4,6 +4,9 @@ import type { Spot } from './spots';
 
 export type AlertToggles = Record<EclipseEvent['key'], boolean>;
 
+/** Sonido de alerta: el WAV propio de la app, o el tono por defecto del sistema. */
+export type AlertSound = 'eclipse' | 'default';
+
 export interface RecentSpot extends Spot {
   /** Veces que se ha elegido este puesto */
   visits: number;
@@ -17,6 +20,8 @@ export interface Prefs {
   recentSpots: RecentSpot[];
   /** Vista de la pestaña mapa: diagrama esquemático o mapa real */
   mapView: 'diagram' | 'real';
+  /** Audio de las notificaciones locales */
+  alertSound: AlertSound;
 }
 
 const KEY = 'eclipsum:prefs';
@@ -27,6 +32,7 @@ export const DEFAULT_PREFS: Prefs = {
   spot: null,
   recentSpots: [],
   mapView: 'diagram',
+  alertSound: 'eclipse',
 };
 
 function sameCoords(a: Spot, b: Spot): boolean {
@@ -70,6 +76,7 @@ export async function loadPrefs(): Promise<Prefs> {
       alertsOn: { ...DEFAULT_PREFS.alertsOn, ...(parsed.alertsOn ?? {}) },
       recentSpots,
       mapView: parsed.mapView === 'real' ? 'real' : 'diagram',
+      alertSound: parsed.alertSound === 'default' ? 'default' : 'eclipse',
     };
   } catch {
     return DEFAULT_PREFS;

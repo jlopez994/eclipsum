@@ -3,6 +3,7 @@ import {
   Animated,
   Easing,
   Linking,
+  type LayoutChangeEvent,
   PanResponder,
   Pressable,
   ScrollView,
@@ -21,19 +22,19 @@ import { Countdown } from '../Countdown';
 import { RealMap } from '../RealMap';
 import { C, F } from '../theme';
 
-// Colapsada: asoman solo countdown + fila de stats; la cronología queda recortada
-const SHEET_MIN = 192;
+/** Fallback hasta medir el peek (handle + countdown + stats). */
+const SHEET_MIN_FALLBACK = 176;
 /** Mínimo de mapa visible con la hoja estirada */
 const SHEET_TOP_GAP = 150;
 
-/** Ancla visual bajo la banda (guía / escala de distancia). */
-const BAND_ANCHOR = 0.355;
-/** Punto sobre la banda cuando hay totalidad. */
-const DOT_TOTAL = 0.26;
-/** Justo fuera de la banda (pocos km): bastante más abajo que DOT_TOTAL para distinguirlo. */
-const DOT_NEAR = 0.42;
-/** Lo más lejos que cabe en el diagrama (sobre la hoja). */
-const DOT_FAR = 0.58;
+/**
+ * Fracciones verticales relativas al lienzo del diagrama (zona sobre la hoja).
+ * Así el contenido usa toda la altura libre sin el hueco muerto encima de la tarjeta.
+ */
+const BAND_ANCHOR = 0.32;
+const DOT_TOTAL = 0.24;
+const DOT_NEAR = 0.52;
+const DOT_FAR = 0.82;
 /** km que mapean a DOT_FAR; más allá se satura. */
 const DIST_SCALE_KM = 150;
 
@@ -103,11 +104,14 @@ function dotTopFraction(isTotal: boolean, totality: TotalityDirection | 'none' |
   return kmFraction(totality.distanceKm);
 }
 
-function useSheet(maxH: number) {
-  const height = useRef(new Animated.Value(SHEET_MIN)).current;
-  const current = useRef(SHEET_MIN);
+function useSheet(maxH: number, minH: number) {
+  const height = useRef(new Animated.Value(minH)).current;
+  const current = useRef(minH);
   const maxRef = useRef(maxH);
+  const minRef = useRef(minH);
   maxRef.current = maxH;
+  minRef.current = minH;
+
   useEffect(() => {
     const id = height.addListener(({ value }) => {
       current.current = value;
@@ -115,10 +119,18 @@ function useSheet(maxH: number) {
     return () => height.removeListener(id);
   }, [height]);
 
+  // Si estaba colapsada y cambia la medida del peek (p. ej. Pixel), reajusta
+  useEffect(() => {
+    if (current.current <= minH + 8) {
+      height.setValue(minH);
+      current.current = minH;
+    }
+  }, [minH, height]);
+
   const snapTo = (v: number) =>
     Animated.spring(height, { toValue: v, useNativeDriver: false, bounciness: 6 }).start();
 
-  const startH = useRef(SHEET_MIN);
+  const startH = useRef(minH);
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -128,14 +140,14 @@ function useSheet(maxH: number) {
         startH.current = current.current;
       },
       onPanResponderMove: (_e, g) => {
-        height.setValue(Math.min(maxRef.current, Math.max(SHEET_MIN, startH.current - g.dy)));
+        height.setValue(Math.min(maxRef.current, Math.max(minRef.current, startH.current - g.dy)));
       },
       onPanResponderRelease: (_e, g) => {
-        const mid = (SHEET_MIN + maxRef.current) / 2;
+        const mid = (minRef.current + maxRef.current) / 2;
         if (Math.abs(g.dy) < 6) {
-          snapTo(startH.current > mid ? SHEET_MIN : maxRef.current);
+          snapTo(startH.current > mid ? minRef.current : maxRef.current);
         } else {
-          snapTo(startH.current - g.dy > mid ? maxRef.current : SHEET_MIN);
+          snapTo(startH.current - g.dy > mid ? maxRef.current : minRef.current);
         }
       },
     }),
@@ -206,7 +218,7 @@ function CompassChip() {
     >
       {heading !== null ? (
         <View style={[s.needleWrap, { transform: [{ rotate: `${-heading}deg` }] }]}>
-          <Svg width={11} height={13} viewBox="0 0 12 14" fill={C.corona}>
+          <Svg width={13} height={15} viewBox="0 0 12 14" fill={C.corona}>
             <Path d="M6 0 L11 13 L6 10.4 L1 13 Z" />
           </Svg>
           <Text style={s.needleN}>N</Text>
@@ -353,9 +365,15 @@ export function MapScreen({
 }: MapScreenProps) {
   const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
+  const [sheetMin, setSheetMin] = useState(SHEET_MIN_FALLBACK);
   // Hoja estirada: ocupa todo menos un asomo de mapa; en pantallas altas cabe la cronología sin scroll
   const sheetMax = Math.max(560, winH - insets.top - SHEET_TOP_GAP);
-  const { height, pan } = useSheet(sheetMax);
+  const { height, pan } = useSheet(sheetMax, sheetMin);
+
+  const onPeekLayout = (e: LayoutChangeEvent) => {
+    const h = Math.ceil(e.nativeEvent.layout.height);
+    if (h > 40 && Math.abs(h - sheetMin) > 1) setSheetMin(h);
+  };
   const isTotal = eclipse.kind === 'total';
   const upcoming = nextEvent(eclipse, now);
   const maxEvent = eclipse.events.find((e) => e.key === 'MAX');
@@ -420,7 +438,7 @@ export function MapScreen({
         />
       )}
       {mapView === 'diagram' && (
-      <>
+      <Animated.View style={[s.diagramStage, { bottom: height }]} pointerEvents="box-none">
       {/* Fondo + costa esquemática */}
       <Svg style={StyleSheet.absoluteFill} viewBox="0 0 390 780" preserveAspectRatio="none">
         <Defs>
@@ -497,10 +515,7 @@ export function MapScreen({
         </View>
       )}
 
-      </>
-      )}
-
-      {mapView === 'diagram' && showHere && (
+      {showHere && (
         <View style={[s.userArea, dotsCollide && s.hereArea, { top: `${hereTop * 100}%` }]}>
           <HereDot />
           <Text style={s.hereLabel}>{hereLabel ?? 'TÚ'}</Text>
@@ -509,20 +524,20 @@ export function MapScreen({
           )}
         </View>
       )}
-      {mapView === 'diagram' && (
-        <View style={[s.userArea, dotsCollide && s.spotArea, { top: `${spotTop * 100}%` }]}>
-          <UserDot />
-          <Text style={s.userLabel} numberOfLines={1}>
-            {showHere || !spotIsGps ? place : 'TU POSICIÓN'}
-          </Text>
-          {!isTotal && <Text style={s.dotPct}>{obscuracion}%</Text>}
-        </View>
-      )}
+      <View style={[s.userArea, dotsCollide && s.spotArea, { top: `${spotTop * 100}%` }]}>
+        <UserDot />
+        <Text style={s.userLabel} numberOfLines={1}>
+          {showHere || !spotIsGps ? place : 'TU POSICIÓN'}
+        </Text>
+        {!isTotal && <Text style={s.dotPct}>{obscuracion}%</Text>}
+      </View>
       {/* Con puntos lado a lado la guía se oculta: km a la banda anclados sobre la hoja */}
-      {mapView === 'diagram' && dotsCollide && !isTotal && totality !== null && totality !== 'none' && (
+      {dotsCollide && !isTotal && totality !== null && totality !== 'none' && (
         <View style={s.totalAnchor} pointerEvents="none">
           <TotalPill distanceKm={totality.distanceKm} bearingDeg={totality.bearingDeg} />
         </View>
+      )}
+      </Animated.View>
       )}
 
       {/* Overlay superior: chips + lugares + aviso divergencia */}
@@ -571,41 +586,45 @@ export function MapScreen({
         )}
       </View>
 
-      {/* Hoja inferior */}
+      {/* Hoja inferior: peek medido = colapsada (solo countdown + stats) */}
       <Animated.View style={[s.sheet, { height }]}>
-        <View {...pan.panHandlers} style={s.handleArea}>
-          <View style={s.handle} />
-          <Text style={s.sheetKicker}>
-            {upcoming ? `${upcoming.label.toUpperCase()} · ${upcoming.key} EN` : 'ECLIPSE FINALIZADO'}
-          </Text>
-          {upcoming && <Countdown target={upcoming.time} style={s.sheetCountdown} />}
+        <View onLayout={onPeekLayout}>
+          <View {...pan.panHandlers} style={s.handleArea}>
+            <View style={s.handle} />
+            <Text style={s.sheetKicker}>
+              {upcoming ? `${upcoming.label.toUpperCase()} · ${upcoming.key} EN` : 'ECLIPSE FINALIZADO'}
+            </Text>
+            {upcoming && <Countdown target={upcoming.time} style={s.sheetCountdown} />}
+          </View>
+          <View style={s.sheetPeekBody}>
+            <View style={s.statsRow}>
+              <View style={s.stat}>
+                <Text style={s.statValue}>{obscuracion}%</Text>
+                <Text style={s.statLabel}>OCULTO AQUÍ</Text>
+              </View>
+              <View style={s.stat}>
+                <Text style={[s.statValue, { color: C.violet }]}>
+                  {bandDuration != null ? `${Math.floor(bandDuration / 60)}m ${bandDuration % 60}s` : '—'}
+                </Text>
+                <Text style={s.statLabel}>EN LA BANDA</Text>
+              </View>
+              <Pressable
+                style={[s.cloudChip, { borderColor: cloud.color + '66' }]}
+                hitSlop={6}
+                accessibilityLabel="Ver previsión de nubes en Windy"
+                onPress={() =>
+                  Linking.openURL(
+                    `https://www.windy.com/?clouds,${spotCoords.lat.toFixed(3)},${spotCoords.lon.toFixed(3)},9`,
+                  ).catch(() => {})
+                }
+              >
+                <View style={[s.cloudDot, { backgroundColor: cloud.color, shadowColor: cloud.color }]} />
+                <Text style={s.cloudText}>{cloud.label}</Text>
+              </Pressable>
+            </View>
+          </View>
         </View>
         <ScrollView style={s.sheetBody} showsVerticalScrollIndicator={false}>
-          <View style={s.statsRow}>
-            <View style={s.stat}>
-              <Text style={s.statValue}>{obscuracion}%</Text>
-              <Text style={s.statLabel}>OCULTO AQUÍ</Text>
-            </View>
-            <View style={s.stat}>
-              <Text style={[s.statValue, { color: C.violet }]}>
-                {bandDuration != null ? `${Math.floor(bandDuration / 60)}m ${bandDuration % 60}s` : '—'}
-              </Text>
-              <Text style={s.statLabel}>EN LA BANDA</Text>
-            </View>
-            <Pressable
-              style={[s.cloudChip, { borderColor: cloud.color + '66' }]}
-              hitSlop={6}
-              accessibilityLabel="Ver previsión de nubes en Windy"
-              onPress={() =>
-                Linking.openURL(
-                  `https://www.windy.com/?clouds,${spotCoords.lat.toFixed(3)},${spotCoords.lon.toFixed(3)},9`,
-                ).catch(() => {})
-              }
-            >
-              <View style={[s.cloudDot, { backgroundColor: cloud.color, shadowColor: cloud.color }]} />
-              <Text style={s.cloudText}>{cloud.label}</Text>
-            </Pressable>
-          </View>
           <View style={s.divider} />
           <View style={s.cronoHeader}>
             <Text style={[s.cronoTitle, { flex: 1 }]} numberOfLines={1}>
@@ -641,9 +660,17 @@ export function MapScreen({
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg, overflow: 'hidden' },
+  /** Lienzo del diagrama: crece/encoge con la hoja para usar toda la altura libre. */
+  diagramStage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    overflow: 'hidden',
+  },
   band: {
     position: 'absolute',
-    top: '16%',
+    top: '14%',
     left: '-32%',
     width: '164%',
     height: 200,
@@ -683,7 +710,7 @@ const s = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: SHEET_MIN + 40,
+    bottom: 28,
     alignItems: 'center',
   },
   totalPill: {
@@ -801,7 +828,7 @@ const s = StyleSheet.create({
     borderRadius: 5,
     overflow: 'hidden',
   },
-  topOverlay: { position: 'absolute', left: 0, right: 0, gap: 12 },
+  topOverlay: { position: 'absolute', left: 0, right: 0, gap: 12, zIndex: 2 },
   chipsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -845,9 +872,9 @@ const s = StyleSheet.create({
     paddingBottom: 4,
   },
   compass: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(21,21,30,0.85)',
     borderWidth: 1,
     borderColor: C.border,
@@ -857,8 +884,8 @@ const s = StyleSheet.create({
   },
   /** Aguja + N giran juntas: la punta señala el norte real */
   needleWrap: { alignItems: 'center', justifyContent: 'center' },
-  needleN: { fontFamily: F.bold, fontSize: 9, lineHeight: 10, color: C.text, marginTop: 1 },
-  compassN: { fontFamily: F.bold, fontSize: 12, color: C.text },
+  needleN: { fontFamily: F.bold, fontSize: 13, lineHeight: 14, color: C.text, marginTop: 1 },
+  compassN: { fontFamily: F.bold, fontSize: 16, color: C.text },
   sheet: {
     position: 'absolute',
     left: 0,
@@ -870,6 +897,7 @@ const s = StyleSheet.create({
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
     overflow: 'hidden',
+    zIndex: 3,
   },
   handleArea: { paddingHorizontal: 24, paddingBottom: 4 },
   handle: {
@@ -893,8 +921,9 @@ const s = StyleSheet.create({
     textShadowColor: 'rgba(255,184,77,0.35)',
     textShadowRadius: 24,
   },
+  sheetPeekBody: { paddingHorizontal: 24, paddingBottom: 14 },
   sheetBody: { paddingHorizontal: 24 },
-  statsRow: { flexDirection: 'row', gap: 10, marginTop: 8, alignItems: 'center' },
+  statsRow: { flexDirection: 'row', gap: 10, marginTop: 4, alignItems: 'center' },
   stat: { flex: 1, gap: 2 },
   statValue: { fontFamily: F.bold, fontSize: 22, color: C.text, fontVariant: ['tabular-nums'] },
   statLabel: { fontFamily: F.medium, fontSize: 10, letterSpacing: 1.5, color: C.dim },
@@ -910,7 +939,7 @@ const s = StyleSheet.create({
   },
   cloudDot: { width: 9, height: 9, borderRadius: 5, shadowOpacity: 1, shadowRadius: 4, elevation: 4 },
   cloudText: { fontFamily: F.semibold, fontSize: 12, color: C.text },
-  divider: { height: 1, backgroundColor: C.border, marginVertical: 20 },
+  divider: { height: 1, backgroundColor: C.border, marginBottom: 20 },
   cronoTitle: {
     fontFamily: F.semibold,
     fontSize: 11,

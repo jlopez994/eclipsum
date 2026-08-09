@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { LocalEclipse } from '../../lib/eclipse';
-import { scheduleEclipseAlerts, sendTestNotification } from '../../lib/notifications';
-import type { AlertToggles } from '../../lib/prefs';
+import { ALERT_SOUND_OPTIONS, scheduleEclipseAlerts, sendTestNotification } from '../../lib/notifications';
+import type { AlertSound, AlertToggles } from '../../lib/prefs';
 import { track } from '../../lib/firebase';
 import { C, F } from '../theme';
 
@@ -18,21 +18,29 @@ const ALERT_META: Record<string, { accent: string; desc: string }> = {
 interface AlertsScreenProps {
   eclipse: LocalEclipse;
   toggles: AlertToggles;
+  alertSound: AlertSound;
   onToggle: (key: keyof AlertToggles, value: boolean) => void;
+  onSoundChange: (sound: AlertSound) => void;
 }
 
 const fmtHM = (d: Date) =>
   d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-export function AlertsScreen({ eclipse, toggles, onToggle }: AlertsScreenProps) {
+export function AlertsScreen({
+  eclipse,
+  toggles,
+  alertSound,
+  onToggle,
+  onSoundChange,
+}: AlertsScreenProps) {
   const insets = useSafeAreaInsets();
   const [status, setStatus] = useState<string | null>(null);
   // Solo cuentan los eventos que existen en esta ubicación (parcial no tiene C2/C3)
   const activeCount = eclipse.events.filter((e) => toggles[e.key]).length;
 
-  const reschedule = async (next: AlertToggles) => {
+  const reschedule = async (next: AlertToggles, sound: AlertSound) => {
     try {
-      const n = await scheduleEclipseAlerts(eclipse, next);
+      const n = await scheduleEclipseAlerts(eclipse, next, sound);
       track('alerts_scheduled', { count: n });
       setStatus(`${n} notificaciones programadas`);
     } catch (e) {
@@ -43,12 +51,18 @@ export function AlertsScreen({ eclipse, toggles, onToggle }: AlertsScreenProps) 
   const handleToggle = (key: keyof AlertToggles) => {
     const next = { ...toggles, [key]: !toggles[key] };
     onToggle(key, !toggles[key]);
-    void reschedule(next);
+    void reschedule(next, alertSound);
+  };
+
+  const handleSound = (sound: AlertSound) => {
+    if (sound === alertSound) return;
+    onSoundChange(sound);
+    void reschedule(toggles, sound);
   };
 
   const onTest = async () => {
     try {
-      await sendTestNotification();
+      await sendTestNotification(alertSound);
       setStatus('Notificación de prueba en 5 segundos…');
     } catch (e) {
       setStatus(e instanceof Error ? e.message : 'Error en notificación de prueba');
@@ -65,6 +79,27 @@ export function AlertsScreen({ eclipse, toggles, onToggle }: AlertsScreenProps) 
         </View>
       </View>
       <ScrollView style={s.list} showsVerticalScrollIndicator={false}>
+        <Text style={s.section}>SONIDO</Text>
+        <View style={s.soundCard}>
+          {ALERT_SOUND_OPTIONS.map((opt, i) => {
+            const on = alertSound === opt.id;
+            return (
+              <Pressable
+                key={opt.id}
+                onPress={() => handleSound(opt.id)}
+                style={[s.soundRow, i < ALERT_SOUND_OPTIONS.length - 1 && s.soundDivider]}
+              >
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={s.soundLabel}>{opt.label}</Text>
+                  <Text style={s.soundHint}>{opt.hint}</Text>
+                </View>
+                <View style={[s.radio, on && s.radioOn]}>{on && <View style={s.radioDot} />}</View>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={[s.section, { marginTop: 22 }]}>HITOS</Text>
         {eclipse.events.map((e, i) => {
           const meta = ALERT_META[e.key];
           const on = toggles[e.key];
@@ -133,6 +168,36 @@ const s = StyleSheet.create({
   },
   countText: { fontFamily: F.medium, fontSize: 14, color: C.dim },
   list: { flex: 1, paddingHorizontal: 24, marginTop: 22 },
+  section: { fontFamily: F.semibold, fontSize: 11, letterSpacing: 2.5, color: C.dim, marginBottom: 10 },
+  soundCard: {
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 18,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  soundRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  soundDivider: { borderBottomWidth: 1, borderBottomColor: C.border },
+  soundLabel: { fontFamily: F.semibold, fontSize: 15, color: C.text },
+  soundHint: { fontFamily: F.regular, fontSize: 12, color: C.dim, marginTop: 2 },
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: C.knobTrack,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioOn: { borderColor: C.corona },
+  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.corona },
   row: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   leftCol: {
     width: 16,
