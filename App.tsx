@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
+import Constants from 'expo-constants';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, AppState, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, Linking, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
@@ -73,6 +74,7 @@ function AppInner() {
   const [remoteMsg, setRemoteMsg] = useState('');
   const [glassesUrl, setGlassesUrl] = useState('');
   const [sponsor, setSponsor] = useState<Sponsor | null>(null);
+  const [updateUrl, setUpdateUrl] = useState('');
   const [catalogEpoch, setCatalogEpoch] = useState(0);
   const [tab, setTab] = useState<TabKey>('mapa');
   const [demo, setDemo] = useState(false);
@@ -99,6 +101,9 @@ function AppInner() {
         setRemoteMsg(r.message);
         setGlassesUrl(r.glassesUrl);
         setSponsor(r.sponsor);
+        // Aviso de actualización sin tienda: RC anuncia versionCode y URL de la APK
+        const ownVc = Constants.expoConfig?.android?.versionCode ?? 0;
+        setUpdateUrl(r.latestVersionCode > ownVc && r.latestApkUrl ? r.latestApkUrl : '');
         // RC puede cambiar el eclipse activo → recalcular circunstancias
         setCatalogEpoch((n) => n + 1);
       });
@@ -276,6 +281,14 @@ function AppInner() {
           <Text style={s.remoteBannerText}>{remoteMsg}</Text>
         </View>
       )}
+      {updateUrl !== '' && (
+        <View style={[s.remoteBanner, { marginTop: remoteMsg !== '' ? 8 : insets.top + 8 }]}>
+          <Text style={s.remoteBannerText}>Hay una versión nueva de Eclipsum</Text>
+          <Text style={s.updateLink} onPress={() => Linking.openURL(updateUrl).catch(() => {})}>
+            DESCARGAR →
+          </Text>
+        </View>
+      )}
       <View style={{ flex: 1 }}>
         {tab === 'mapa' &&
           (eclipse && active ? (
@@ -390,4 +403,12 @@ const s = StyleSheet.create({
     padding: 12,
   },
   remoteBannerText: { color: C.corona, fontFamily: F.semibold, fontSize: 13, textAlign: 'center' },
+  updateLink: {
+    color: C.corona,
+    fontFamily: F.bold,
+    fontSize: 12,
+    letterSpacing: 1,
+    textAlign: 'center',
+    marginTop: 6,
+  },
 });

@@ -25,6 +25,11 @@ if [ -d "/Volumes/DAS/s3" ]; then
   cp "$APK" "$DEST/$LATEST"
   echo "Subida (histórico): $DEST/$NAMED"
   echo "Subida (latest):    $DEST/$LATEST"
+  VC="$(node -p "require('./app.json').expo.android?.versionCode ?? 1" 2>/dev/null || echo "?")"
+  echo ""
+  echo "Para avisar de la actualización en la app, publica en Remote Config:"
+  echo "  latest_version_code = $VC"
+  echo "  latest_apk_url      = <URL CDN de $LATEST>"
 else
   echo "AVISO: /Volumes/DAS no montado — APK solo en local"
   echo "Nombre previsto: $NAMED"

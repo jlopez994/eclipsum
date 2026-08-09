@@ -14,6 +14,10 @@ export interface RemoteExtras {
   glassesUrl: string;
   /** Patrocinador del eclipse activo; null = sin patrocinio */
   sponsor: Sponsor | null;
+  /** versionCode de la última APK publicada; 0 = sin dato */
+  latestVersionCode: number;
+  /** URL de descarga de la última APK; vacío = sin aviso de actualización */
+  latestApkUrl: string;
 }
 
 export interface Sponsor {
@@ -50,18 +54,29 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       eclipse_catalog: '[]',
       glasses_url: '',
       sponsor: '',
+      latest_version_code: '0',
+      latest_apk_url: '',
     };
     await fetchAndActivate(rc);
     const message = getString(rc, 'eclipse_message');
     const activeEclipseId = getString(rc, 'active_eclipse_id');
     const glassesUrl = getString(rc, 'glasses_url');
     const sponsor = parseSponsor(getString(rc, 'sponsor'));
+    const latestVersionCode = Number.parseInt(getString(rc, 'latest_version_code'), 10) || 0;
+    const latestApkUrl = getString(rc, 'latest_apk_url');
     // Orden: primero el catálogo extra, luego el id activo (puede apuntar a una entrada remota)
     setRemoteCatalog(getString(rc, 'eclipse_catalog'));
     setRemoteActiveEclipseId(activeEclipseId);
-    return { message, activeEclipseId, glassesUrl, sponsor };
+    return { message, activeEclipseId, glassesUrl, sponsor, latestVersionCode, latestApkUrl };
   } catch {
-    return { message: '', activeEclipseId: '', glassesUrl: '', sponsor: null };
+    return {
+      message: '',
+      activeEclipseId: '',
+      glassesUrl: '',
+      sponsor: null,
+      latestVersionCode: 0,
+      latestApkUrl: '',
+    };
   }
 }
 
