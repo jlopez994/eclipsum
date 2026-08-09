@@ -1,6 +1,6 @@
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ALERT_SOUND_OPTIONS } from '../../lib/notifications';
+import { ALERT_SOUND_OPTIONS, sendTestNotification } from '../../lib/notifications';
 import { previewAlertSound } from '../../lib/soundPreview';
 import type { AlertSound } from '../../lib/prefs';
 import { C, F } from '../theme';
@@ -24,9 +24,11 @@ export function SettingsScreen({
 }: SettingsScreenProps) {
   const insets = useSafeAreaInsets();
 
-  const selectSound = (id: AlertSound) => {
-    onSoundChange(id);
-    void previewAlertSound(id);
+  // El tono de sistema no es reproducible en la app (content:// no carga en expo-audio):
+  // se escucha con una notificación real, que además valida canal y permisos.
+  const preview = (id: AlertSound) => {
+    if (id === 'default') void sendTestNotification('default').catch(() => {});
+    else void previewAlertSound(id);
   };
 
   return (
@@ -66,7 +68,7 @@ export function SettingsScreen({
                   style={[s.soundRow, i < ALERT_SOUND_OPTIONS.length - 1 && s.rowDivider]}
                 >
                   <Pressable
-                    onPress={() => selectSound(opt.id)}
+                    onPress={() => onSoundChange(opt.id)}
                     style={s.soundMain}
                     accessibilityRole="radio"
                     accessibilityState={{ selected: on }}
@@ -79,7 +81,7 @@ export function SettingsScreen({
                     <View style={[s.radio, on && s.radioOn]}>{on && <View style={s.radioDot} />}</View>
                   </Pressable>
                   <Pressable
-                    onPress={() => void previewAlertSound(opt.id)}
+                    onPress={() => preview(opt.id)}
                     hitSlop={8}
                     accessibilityLabel={`Escuchar ${opt.label}`}
                     style={s.playBtn}

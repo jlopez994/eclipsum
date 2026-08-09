@@ -35,10 +35,8 @@ function sourceFor(sound: AlertSound): AudioSource | null {
     }
     return ECLIPSE_ASSET;
   }
-  // Tono de notificación del sistema sin lanzar aviso (Android)
-  if (Platform.OS === 'android') {
-    return { uri: 'content://settings/system/notification_sound' };
-  }
+  // Tono de sistema: content://settings/... no carga en expo-audio; se previsualiza
+  // con una notificación real (sendTestNotification) desde Ajustes
   return null;
 }
 
