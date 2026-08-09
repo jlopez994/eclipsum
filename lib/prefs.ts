@@ -36,9 +36,9 @@ export const RECENT_CAP = 3;
 export const ALERT_LEAD_PRESETS = [0, 1, 2, 5, 10, 15, 30, 60] as const;
 
 export const DEFAULT_ALERT_LEADS: AlertLeads = {
-  C1: 10,
-  C2: 2,
-  MAX: 1,
+  C1: 0,
+  C2: 0,
+  MAX: 0,
   C3: 0,
   C4: 0,
 };
@@ -59,13 +59,18 @@ function clampLead(n: unknown): number {
 
 function parseAlertLeads(raw: unknown): AlertLeads {
   const src = raw && typeof raw === 'object' ? (raw as Partial<AlertLeads>) : {};
-  return {
+  const leads: AlertLeads = {
     C1: clampLead(src.C1 ?? DEFAULT_ALERT_LEADS.C1),
     C2: clampLead(src.C2 ?? DEFAULT_ALERT_LEADS.C2),
     MAX: clampLead(src.MAX ?? DEFAULT_ALERT_LEADS.MAX),
     C3: clampLead(src.C3 ?? DEFAULT_ALERT_LEADS.C3),
     C4: clampLead(src.C4 ?? DEFAULT_ALERT_LEADS.C4),
   };
+  // Migración: defaults antiguos (10/2/1) → aviso en el contacto
+  if (leads.C1 === 10 && leads.C2 === 2 && leads.MAX === 1 && leads.C3 === 0 && leads.C4 === 0) {
+    return { ...DEFAULT_ALERT_LEADS };
+  }
+  return leads;
 }
 
 /** Siguiente preset de anticipo (ciclo). */

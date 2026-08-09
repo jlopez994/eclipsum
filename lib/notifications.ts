@@ -142,6 +142,15 @@ export async function sendTestNotification(sound: AlertSound = 'eclipse'): Promi
   });
 }
 
+/** Cuántos avisos se programarían con estos toggles/anticipos (mismo filtro que al agendar). */
+export function countEclipseAlerts(
+  eclipse: LocalEclipse,
+  enabled: AlertToggles,
+  leads: AlertLeads = DEFAULT_ALERT_LEADS,
+): number {
+  return buildAlerts(eclipse, enabled, leads).length;
+}
+
 /** Programa alertas locales según toggles y anticipos. Devuelve cuántas quedaron programadas. */
 export async function scheduleEclipseAlerts(
   eclipse: LocalEclipse,

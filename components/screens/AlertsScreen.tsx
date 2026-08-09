@@ -2,14 +2,19 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { LocalEclipse } from '../../lib/eclipse';
-import { alertLeadChipLabel, scheduleEclipseAlerts, sendTestNotification } from '../../lib/notifications';
+import {
+  alertLeadChipLabel,
+  countEclipseAlerts,
+  scheduleEclipseAlerts,
+  sendTestNotification,
+} from '../../lib/notifications';
 import type { AlertLeads, AlertSound, AlertToggles } from '../../lib/prefs';
 import { nextAlertLead } from '../../lib/prefs';
 import { track } from '../../lib/firebase';
 import { C, F } from '../theme';
 
 const ALERT_META: Record<string, { accent: string; desc: string }> = {
-  C1: { accent: C.corona, desc: 'También avisa 24 h y 1 h antes.' },
+  C1: { accent: C.corona, desc: 'Gafas puestas. Extra: avisos fijos 24 h y 1 h antes.' },
   C2: { accent: C.totality, desc: 'En la banda: prepárate para mirar sin gafas.' },
   MAX: { accent: C.totality, desc: 'Punto culminante del eclipse.' },
   C3: { accent: C.danger, desc: 'GAFAS PUESTAS YA. El sol vuelve a ser peligroso.' },
@@ -37,17 +42,19 @@ export function AlertsScreen({
   onLeadChange,
 }: AlertsScreenProps) {
   const insets = useSafeAreaInsets();
-  const [status, setStatus] = useState<string | null>(null);
+  /** Mensajes puntuales (prueba / error). El conteo va siempre en el footer. */
+  const [flash, setFlash] = useState<string | null>(null);
   // Solo cuentan los eventos que existen en esta ubicación (parcial no tiene C2/C3)
   const activeCount = eclipse.events.filter((e) => toggles[e.key]).length;
+  const scheduledCount = countEclipseAlerts(eclipse, toggles, leads);
 
   const reschedule = async (nextToggles: AlertToggles, nextLeads: AlertLeads) => {
     try {
       const n = await scheduleEclipseAlerts(eclipse, nextToggles, alertSound, nextLeads);
       track('alerts_scheduled', { count: n });
-      setStatus(`${n} notificaciones programadas`);
+      setFlash(null);
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : 'Error al programar alertas');
+      setFlash(e instanceof Error ? e.message : 'Error al programar alertas');
     }
   };
 
@@ -67,9 +74,9 @@ export function AlertsScreen({
   const onTest = async () => {
     try {
       await sendTestNotification(alertSound);
-      setStatus('Notificación de prueba en 5 segundos…');
+      setFlash('Notificación de prueba en 5 segundos…');
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : 'Error en notificación de prueba');
+      setFlash(e instanceof Error ? e.message : 'Error en notificación de prueba');
     }
   };
 
@@ -79,9 +86,13 @@ export function AlertsScreen({
         <Text style={s.title}>Alertas</Text>
         <View style={s.countRow}>
           <View style={s.countDot} />
-          <Text style={s.countText}>{activeCount} alertas programadas</Text>
+          <Text style={s.countText}>
+            {activeCount} hitos activos · {scheduledCount} avisos
+          </Text>
         </View>
-        <Text style={s.hint}>Toca el anticipo para cambiar cuándo avisa (0 = en el instante).</Text>
+        <Text style={s.hint}>
+          Un solo aviso por hito (el anticipo lo mueve, no se suma). C1 añade dos avisos fijos: 24 h y 1 h antes.
+        </Text>
       </View>
       <ScrollView style={s.list} showsVerticalScrollIndicator={false}>
         {eclipse.events.map((e, i) => {
@@ -118,10 +129,16 @@ export function AlertsScreen({
                   disabled={!on}
                   hitSlop={6}
                   style={[s.leadChip, { borderColor: on ? meta.accent + '66' : C.border }]}
-                  accessibilityLabel={`Anticipo ${alertLeadChipLabel(lead)}. Tocar para cambiar.`}
+                  accessibilityLabel={
+                    lead <= 0
+                      ? `Avisa en el contacto a las ${fmtHM(e.time)}. Tocar para cambiar anticipo.`
+                      : `Avisa ${alertLeadChipLabel(lead)} del contacto, a las ${fmtHM(fireAt)}. No avisa otra vez en el instante. Tocar para cambiar.`
+                  }
                 >
                   <Text style={[s.leadChipText, { color: on ? meta.accent : C.dim }]}>
-                    Aviso {alertLeadChipLabel(lead)} · {fmtHM(fireAt)}
+                    {lead <= 0
+                      ? `Avisa en el contacto · ${fmtHM(e.time)}`
+                      : `Avisa ${alertLeadChipLabel(lead)} · ${fmtHM(fireAt)}`}
                   </Text>
                 </Pressable>
               </View>
@@ -142,7 +159,7 @@ export function AlertsScreen({
         <Pressable style={s.testButton} onPress={onTest}>
           <Text style={s.testButtonText}>PROBAR NOTIFICACIÓN</Text>
         </Pressable>
-        {status && <Text style={s.status}>{status}</Text>}
+        <Text style={s.status}>{flash ?? `${scheduledCount} avisos programados`}</Text>
       </View>
     </View>
   );
