@@ -10,6 +10,8 @@ export interface RemoteExtras {
   message: string;
   /** Id de catálogo forzado; vacío = resolución local */
   activeEclipseId: string;
+  /** URL de gafas certificadas (afiliado); vacío = botón oculto */
+  glassesUrl: string;
 }
 
 /**
@@ -21,16 +23,17 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
     const rc = getRemoteConfig();
     // Asignar el objeto completo: en RNFirebase `settings` es un setter; mutar una propiedad no aplica nada
     rc.settings = { minimumFetchIntervalMillis: FETCH_INTERVAL_MS, fetchTimeoutMillis: 30_000 };
-    rc.defaultConfig = { eclipse_message: '', active_eclipse_id: '', eclipse_catalog: '[]' };
+    rc.defaultConfig = { eclipse_message: '', active_eclipse_id: '', eclipse_catalog: '[]', glasses_url: '' };
     await fetchAndActivate(rc);
     const message = getString(rc, 'eclipse_message');
     const activeEclipseId = getString(rc, 'active_eclipse_id');
+    const glassesUrl = getString(rc, 'glasses_url');
     // Orden: primero el catálogo extra, luego el id activo (puede apuntar a una entrada remota)
     setRemoteCatalog(getString(rc, 'eclipse_catalog'));
     setRemoteActiveEclipseId(activeEclipseId);
-    return { message, activeEclipseId };
+    return { message, activeEclipseId, glassesUrl };
   } catch {
-    return { message: '', activeEclipseId: '' };
+    return { message: '', activeEclipseId: '', glassesUrl: '' };
   }
 }
 

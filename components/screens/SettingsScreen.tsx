@@ -11,6 +11,8 @@ interface SettingsScreenProps {
   permissions: { location: boolean; notifications: boolean };
   alertSound: AlertSound;
   eclipseLabel: string;
+  /** URL de gafas certificadas (afiliado, vía Remote Config); vacío = botón oculto */
+  glassesUrl?: string;
   onSoundChange: (sound: AlertSound) => void;
   onDemoEclipse: () => void;
 }
@@ -19,6 +21,7 @@ export function SettingsScreen({
   permissions,
   alertSound,
   eclipseLabel,
+  glassesUrl,
   onSoundChange,
   onDemoEclipse,
 }: SettingsScreenProps) {
@@ -107,6 +110,16 @@ export function SettingsScreen({
             <Pressable onPress={() => Linking.openURL(IGN_URL)}>
               <Text style={s.safetyLink}>GUÍA DE SEGURIDAD (IGN) →</Text>
             </Pressable>
+            {!!glassesUrl && (
+              <>
+                <Pressable onPress={() => Linking.openURL(glassesUrl)}>
+                  <Text style={s.safetyLink}>COMPRAR GAFAS CERTIFICADAS →</Text>
+                </Pressable>
+                <Text style={s.affiliateNote}>
+                  Enlace de afiliado: apoya la app sin coste extra para ti.
+                </Text>
+              </>
+            )}
           </View>
         </View>
 
@@ -208,6 +221,7 @@ const s = StyleSheet.create({
   safetyTitle: { fontFamily: F.bold, fontSize: 16, lineHeight: 21, color: C.text },
   safetyBody: { fontFamily: F.regular, fontSize: 13, lineHeight: 19, color: C.dim, marginTop: 8 },
   safetyLink: { fontFamily: F.bold, fontSize: 13, letterSpacing: 1, color: C.corona, marginTop: 12 },
+  affiliateNote: { fontFamily: F.regular, fontSize: 11, color: C.dim, marginTop: 4 },
   aboutValue: { fontFamily: F.medium, fontSize: 13, color: C.dim },
   aboutNote: { fontFamily: F.regular, fontSize: 13, lineHeight: 19, color: C.dim },
 });

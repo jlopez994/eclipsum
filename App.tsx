@@ -71,6 +71,7 @@ function AppInner() {
   const { geo, locating, granted: locationGranted } = useGeo();
   const [permissions, setPermissions] = useState({ location: false, notifications: false });
   const [remoteMsg, setRemoteMsg] = useState('');
+  const [glassesUrl, setGlassesUrl] = useState('');
   const [catalogEpoch, setCatalogEpoch] = useState(0);
   const [tab, setTab] = useState<TabKey>('mapa');
   const [demo, setDemo] = useState(false);
@@ -95,6 +96,7 @@ function AppInner() {
     const pullRemote = () =>
       void fetchRemoteExtras().then((r) => {
         setRemoteMsg(r.message);
+        setGlassesUrl(r.glassesUrl);
         // RC puede cambiar el eclipse activo → recalcular circunstancias
         setCatalogEpoch((n) => n + 1);
       });
@@ -338,6 +340,7 @@ function AppInner() {
             permissions={permissions}
             alertSound={prefs.alertSound}
             eclipseLabel={getActiveEclipse().label}
+            glassesUrl={glassesUrl}
             onSoundChange={(sound) => {
               onPrefsChange({ ...prefs, alertSound: sound });
               if (eclipse && Object.values(prefs.alertsOn).some(Boolean)) {
