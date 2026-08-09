@@ -10,6 +10,12 @@ export type AlertLeads = Record<EclipseEvent['key'], number>;
 /** Sonido de alerta: el WAV propio de la app, o el tono por defecto del sistema. */
 export type AlertSound = 'eclipse' | 'default';
 
+/** Avisos de planificación opcionales antes de C1 (independientes del anticipo del contacto). */
+export interface C1PlanAlerts {
+  before24h: boolean;
+  before1h: boolean;
+}
+
 export interface RecentSpot extends Spot {
   /** Veces que se ha elegido este puesto */
   visits: number;
@@ -19,6 +25,8 @@ export interface Prefs {
   alertsOn: AlertToggles;
   /** Anticipo en minutos del aviso principal por contacto */
   alertLeads: AlertLeads;
+  /** Avisos opcionales de planificación ligados a C1 (apagados por defecto) */
+  c1PlanAlerts: C1PlanAlerts;
   /** Puesto de observación deseado; null solo hasta la 1ª elección / siembra GPS */
   spot: Spot | null;
   /** Puestos habituales (más visitados primero), máx. RECENT_CAP */
@@ -43,9 +51,15 @@ export const DEFAULT_ALERT_LEADS: AlertLeads = {
   C4: 0,
 };
 
+export const DEFAULT_C1_PLAN_ALERTS: C1PlanAlerts = {
+  before24h: false,
+  before1h: false,
+};
+
 export const DEFAULT_PREFS: Prefs = {
   alertsOn: { C1: true, C2: true, MAX: true, C3: true, C4: true },
   alertLeads: { ...DEFAULT_ALERT_LEADS },
+  c1PlanAlerts: { ...DEFAULT_C1_PLAN_ALERTS },
   spot: null,
   recentSpots: [],
   mapView: 'diagram',
@@ -71,6 +85,14 @@ function parseAlertLeads(raw: unknown): AlertLeads {
     return { ...DEFAULT_ALERT_LEADS };
   }
   return leads;
+}
+
+function parseC1PlanAlerts(raw: unknown): C1PlanAlerts {
+  const src = raw && typeof raw === 'object' ? (raw as Partial<C1PlanAlerts>) : {};
+  return {
+    before24h: src.before24h === true,
+    before1h: src.before1h === true,
+  };
 }
 
 /** Siguiente preset de anticipo (ciclo). */
@@ -124,6 +146,7 @@ export async function loadPrefs(): Promise<Prefs> {
       ...parsed,
       alertsOn: { ...DEFAULT_PREFS.alertsOn, ...(parsed.alertsOn ?? {}) },
       alertLeads: parseAlertLeads(parsed.alertLeads),
+      c1PlanAlerts: parseC1PlanAlerts(parsed.c1PlanAlerts),
       recentSpots,
       mapView: parsed.mapView === 'real' ? 'real' : 'diagram',
       alertSound: parsed.alertSound === 'default' ? 'default' : 'eclipse',

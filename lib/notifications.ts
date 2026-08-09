@@ -1,8 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import type { LocalEclipse } from './eclipse';
-import type { AlertLeads, AlertSound, AlertToggles } from './prefs';
-import { DEFAULT_ALERT_LEADS } from './prefs';
+import type { AlertLeads, AlertSound, AlertToggles, C1PlanAlerts } from './prefs';
+import { DEFAULT_ALERT_LEADS, DEFAULT_C1_PLAN_ALERTS } from './prefs';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -57,7 +57,12 @@ export function alertLeadChipLabel(min: number): string {
   return m === 0 ? `−${h} h` : `−${h}h ${m}m`;
 }
 
-function buildAlerts(eclipse: LocalEclipse, enabled: AlertToggles, leads: AlertLeads): Alert[] {
+function buildAlerts(
+  eclipse: LocalEclipse,
+  enabled: AlertToggles,
+  leads: AlertLeads,
+  c1Plan: C1PlanAlerts,
+): Alert[] {
   const byKey = (k: keyof AlertToggles) => (enabled[k] ? eclipse.events.find((e) => e.key === k) : undefined);
   const c1 = byKey('C1');
   const c2 = byKey('C2');
@@ -68,16 +73,25 @@ function buildAlerts(eclipse: LocalEclipse, enabled: AlertToggles, leads: AlertL
 
   const alerts: Alert[] = [];
   if (c1) {
-    // Avisos fijos de planificación + el anticipo configurable del contacto
-    alerts.push(
-      { title: 'Eclipse mañana', body: 'El eclipse solar empieza mañana a esta hora. Prepara las gafas.', time: minus(c1.time, 24 * 60) },
-      { title: 'Eclipse en 1 hora', body: 'Primer contacto (parcial) en 1 hora. Busca horizonte oeste despejado.', time: minus(c1.time, 60) },
-      {
-        title: leads.C1 <= 0 ? '☀️ Empieza el eclipse' : `☀️ Empieza ${fmtLead(leads.C1)}`,
-        body: 'GAFAS DE ECLIPSE PUESTAS para mirar al sol.',
-        time: minus(c1.time, leads.C1),
-      },
-    );
+    if (c1Plan.before24h) {
+      alerts.push({
+        title: 'Eclipse mañana',
+        body: 'El eclipse solar empieza mañana a esta hora. Prepara las gafas.',
+        time: minus(c1.time, 24 * 60),
+      });
+    }
+    if (c1Plan.before1h) {
+      alerts.push({
+        title: 'Eclipse en 1 hora',
+        body: 'Primer contacto (parcial) en 1 hora. Busca horizonte oeste despejado.',
+        time: minus(c1.time, 60),
+      });
+    }
+    alerts.push({
+      title: leads.C1 <= 0 ? '☀️ Empieza el eclipse' : `☀️ Empieza ${fmtLead(leads.C1)}`,
+      body: 'GAFAS DE ECLIPSE PUESTAS para mirar al sol.',
+      time: minus(c1.time, leads.C1),
+    });
   }
   if (c2) {
     alerts.push({
@@ -147,8 +161,9 @@ export function countEclipseAlerts(
   eclipse: LocalEclipse,
   enabled: AlertToggles,
   leads: AlertLeads = DEFAULT_ALERT_LEADS,
+  c1Plan: C1PlanAlerts = DEFAULT_C1_PLAN_ALERTS,
 ): number {
-  return buildAlerts(eclipse, enabled, leads).length;
+  return buildAlerts(eclipse, enabled, leads, c1Plan).length;
 }
 
 /** Programa alertas locales según toggles y anticipos. Devuelve cuántas quedaron programadas. */
@@ -157,13 +172,14 @@ export async function scheduleEclipseAlerts(
   enabled: AlertToggles,
   sound: AlertSound = 'eclipse',
   leads: AlertLeads = DEFAULT_ALERT_LEADS,
+  c1Plan: C1PlanAlerts = DEFAULT_C1_PLAN_ALERTS,
 ): Promise<number> {
   const channelId = await ensurePermissionAndChannel(sound);
 
   // Reprogramar desde cero para evitar duplicados al cambiar toggles
   await Notifications.cancelAllScheduledNotificationsAsync();
 
-  const alerts = buildAlerts(eclipse, enabled, leads);
+  const alerts = buildAlerts(eclipse, enabled, leads, c1Plan);
   for (const a of alerts) {
     await Notifications.scheduleNotificationAsync({
       content: { title: a.title, body: a.body, sound: soundFile(sound) },
