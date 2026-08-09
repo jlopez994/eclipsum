@@ -44,7 +44,7 @@
     },
     "latest_apk_url": {
       "defaultValue": {
-        "value": ""
+        "value": "https://cdn.jlh.app/eclipsum/eclipsum.apk"
       },
       "description": "URL pública de la APK latest (CDN sobre el DAS). Vacío = sin aviso aunque haya versionCode nuevo.",
       "valueType": "STRING"

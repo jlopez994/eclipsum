@@ -29,7 +29,7 @@ if [ -d "/Volumes/DAS/s3" ]; then
   echo ""
   echo "Para avisar de la actualización en la app, publica en Remote Config:"
   echo "  latest_version_code = $VC"
-  echo "  latest_apk_url      = <URL CDN de $LATEST>"
+  echo "  latest_apk_url      = https://cdn.jlh.app/eclipsum/$LATEST"
 else
   echo "AVISO: /Volumes/DAS no montado — APK solo en local"
   echo "Nombre previsto: $NAMED"

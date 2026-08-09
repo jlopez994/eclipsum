@@ -55,7 +55,7 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       glasses_url: '',
       sponsor: '',
       latest_version_code: '0',
-      latest_apk_url: '',
+      latest_apk_url: 'https://cdn.jlh.app/eclipsum/eclipsum.apk',
     };
     await fetchAndActivate(rc);
     const message = getString(rc, 'eclipse_message');
