@@ -12,6 +12,27 @@ export interface RemoteExtras {
   activeEclipseId: string;
   /** URL de gafas certificadas (afiliado); vacío = botón oculto */
   glassesUrl: string;
+  /** Patrocinador del eclipse activo; null = sin patrocinio */
+  sponsor: Sponsor | null;
+}
+
+export interface Sponsor {
+  name: string;
+  url: string;
+}
+
+/** RC `sponsor`: {"name","url"}; inválido o vacío → null (nunca rompe). */
+function parseSponsor(json: string): Sponsor | null {
+  try {
+    const raw: unknown = JSON.parse(json);
+    if (typeof raw !== 'object' || raw === null) return null;
+    const r = raw as Record<string, unknown>;
+    if (typeof r.name !== 'string' || r.name.length === 0) return null;
+    if (typeof r.url !== 'string' || !r.url.startsWith('https://')) return null;
+    return { name: r.name, url: r.url };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -23,17 +44,24 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
     const rc = getRemoteConfig();
     // Asignar el objeto completo: en RNFirebase `settings` es un setter; mutar una propiedad no aplica nada
     rc.settings = { minimumFetchIntervalMillis: FETCH_INTERVAL_MS, fetchTimeoutMillis: 30_000 };
-    rc.defaultConfig = { eclipse_message: '', active_eclipse_id: '', eclipse_catalog: '[]', glasses_url: '' };
+    rc.defaultConfig = {
+      eclipse_message: '',
+      active_eclipse_id: '',
+      eclipse_catalog: '[]',
+      glasses_url: '',
+      sponsor: '',
+    };
     await fetchAndActivate(rc);
     const message = getString(rc, 'eclipse_message');
     const activeEclipseId = getString(rc, 'active_eclipse_id');
     const glassesUrl = getString(rc, 'glasses_url');
+    const sponsor = parseSponsor(getString(rc, 'sponsor'));
     // Orden: primero el catálogo extra, luego el id activo (puede apuntar a una entrada remota)
     setRemoteCatalog(getString(rc, 'eclipse_catalog'));
     setRemoteActiveEclipseId(activeEclipseId);
-    return { message, activeEclipseId, glassesUrl };
+    return { message, activeEclipseId, glassesUrl, sponsor };
   } catch {
-    return { message: '', activeEclipseId: '', glassesUrl: '' };
+    return { message: '', activeEclipseId: '', glassesUrl: '', sponsor: null };
   }
 }
 

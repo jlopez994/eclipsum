@@ -19,6 +19,7 @@ import * as Location from 'expo-location';
 import { nextEvent, type LocalEclipse } from '../../lib/eclipse';
 import { getActiveEclipse } from '../../lib/eclipseCatalog';
 import { bearingLabel, type TotalityDirection } from '../../lib/totality';
+import { track } from '../../lib/firebase';
 import { windyEclipseCloudsUrl } from '../../lib/weather';
 import { Countdown } from '../Countdown';
 import { RealMap } from '../RealMap';
@@ -86,6 +87,8 @@ interface MapScreenProps {
   /** km entre GPS real y spot activo el día del eclipse; null = sin aviso */
   divergenceKm: number | null;
   onRecalcHere: () => void;
+  /** Patrocinador del eclipse (Remote Config); null = sin línea de patrocinio */
+  sponsor?: { name: string; url: string } | null;
 }
 
 const fmtHM = (d: Date) =>
@@ -375,6 +378,7 @@ export function MapScreen({
   onOpenMaps,
   divergenceKm,
   onRecalcHere,
+  sponsor,
 }: MapScreenProps) {
   const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
@@ -694,6 +698,20 @@ export function MapScreen({
               <HorizonDiagram altitudeDeg={maxEvent.altitude} azimuthDeg={maxEvent.azimuth} />
             </>
           )}
+          {sponsor && (
+            <Pressable
+              style={s.sponsorRow}
+              onPress={() => {
+                track('sponsor_click', { name: sponsor.name });
+                Linking.openURL(sponsor.url).catch(() => {});
+              }}
+              accessibilityLabel={`Patrocinador: ${sponsor.name}`}
+            >
+              <Text style={s.sponsorText}>
+                CON EL APOYO DE <Text style={{ color: C.corona }}>{sponsor.name.toUpperCase()}</Text> →
+              </Text>
+            </Pressable>
+          )}
         </ScrollView>
       </Animated.View>
       </Animated.View>
@@ -999,5 +1017,7 @@ const s = StyleSheet.create({
     borderBottomColor: 'rgba(38,38,58,0.5)',
   },
   cronoLabel: { fontFamily: F.semibold, fontSize: 14, color: C.text },
+  sponsorRow: { alignItems: 'center', paddingVertical: 18 },
+  sponsorText: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 2, color: C.dim },
   cronoTime: { fontFamily: F.medium, fontSize: 14, color: C.dim, fontVariant: ['tabular-nums'] },
 });

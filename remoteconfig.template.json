@@ -27,6 +27,13 @@
       },
       "description": "URL de gafas de eclipse certificadas ISO 12312-2 con tag de afiliado. Vacío = botón oculto en Ajustes.",
       "valueType": "STRING"
+    },
+    "sponsor": {
+      "defaultValue": {
+        "value": ""
+      },
+      "description": "Patrocinador del eclipse activo: {\"name\":\"...\",\"url\":\"https://...\"}. Vacío o inválido = sin línea de patrocinio.",
+      "valueType": "STRING"
     }
   }
 }

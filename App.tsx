@@ -17,7 +17,7 @@ import { haversineKm } from './lib/totality';
 import { openInMaps } from './lib/maps';
 import type { Spot } from './lib/spots';
 import { scheduleEclipseAlerts } from './lib/notifications';
-import { fetchRemoteExtras } from './lib/firebase';
+import { fetchRemoteExtras, type Sponsor } from './lib/firebase';
 import { pushRecent } from './lib/prefs';
 import { animateNextLayout } from './lib/anim';
 import { useGeo } from './hooks/useGeo';
@@ -72,6 +72,7 @@ function AppInner() {
   const [permissions, setPermissions] = useState({ location: false, notifications: false });
   const [remoteMsg, setRemoteMsg] = useState('');
   const [glassesUrl, setGlassesUrl] = useState('');
+  const [sponsor, setSponsor] = useState<Sponsor | null>(null);
   const [catalogEpoch, setCatalogEpoch] = useState(0);
   const [tab, setTab] = useState<TabKey>('mapa');
   const [demo, setDemo] = useState(false);
@@ -97,6 +98,7 @@ function AppInner() {
       void fetchRemoteExtras().then((r) => {
         setRemoteMsg(r.message);
         setGlassesUrl(r.glassesUrl);
+        setSponsor(r.sponsor);
         // RC puede cambiar el eclipse activo → recalcular circunstancias
         setCatalogEpoch((n) => n + 1);
       });
@@ -298,6 +300,7 @@ function AppInner() {
               onOpenMaps={() => openInMaps(active.lat, active.lon, active.place)}
               divergenceKm={divergenceKm}
               onRecalcHere={recalcHere}
+              sponsor={sponsor}
             />
           ) : (
             <View style={s.loading}>
