@@ -1,4 +1,5 @@
 import { Body, Equator, Horizon, Observer, SearchLocalSolarEclipse, SearchRiseSet } from 'astronomy-engine';
+import { activeSearchStart } from './eclipseCatalog';
 
 export interface EclipseEvent {
   key: 'C1' | 'C2' | 'MAX' | 'C3' | 'C4';
@@ -20,12 +21,14 @@ export interface LocalEclipse {
   sunset: Date | null;
 }
 
-// ponytail: v1 fija el eclipse del 2026-08-12; parametrizar fecha cuando haya catálogo multi-eclipse
-const SEARCH_START = new Date('2026-08-01T00:00:00Z');
-
-export function computeLocalEclipse(lat: number, lon: number, elevationM = 0): LocalEclipse {
+export function computeLocalEclipse(
+  lat: number,
+  lon: number,
+  elevationM = 0,
+  searchStart: Date = activeSearchStart(),
+): LocalEclipse {
   const observer = new Observer(lat, lon, elevationM);
-  const ec = SearchLocalSolarEclipse(SEARCH_START, observer);
+  const ec = SearchLocalSolarEclipse(searchStart, observer);
 
   const events: EclipseEvent[] = [];
   const push = (key: EclipseEvent['key'], label: string, e?: { time: { date: Date }; altitude: number }) => {

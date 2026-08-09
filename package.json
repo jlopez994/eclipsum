@@ -36,7 +36,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "dev": "bash scripts/dev.sh",
-    "apk": "cd android && JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ANDROID_HOME=\"$HOME/Library/Android/sdk\" ./gradlew assembleRelease && cd .. && bash scripts/publish-apk.sh",
+    "apk": "npx expo prebuild --platform android --no-install && cd android && JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ANDROID_HOME=\"$HOME/Library/Android/sdk\" ./gradlew assembleRelease && cd .. && bash scripts/publish-apk.sh",
     "mensaje": "bash scripts/mensaje.sh"
   },
   "private": true

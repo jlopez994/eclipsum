@@ -1,13 +1,19 @@
 // Ejecutar: npx tsx scripts/selfcheck.ts
 import assert from 'node:assert';
 import { computeLocalEclipse, currentPhase, nextEvent } from '../lib/eclipse';
+import { ECLIPSES, getActiveEclipse, getEclipseById } from '../lib/eclipseCatalog';
 import { cloudCoverAt } from '../lib/weather';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
 import { listSpotOptions, type Spot } from '../lib/spots';
 import { pushRecent, RECENT_CAP, type RecentSpot } from '../lib/prefs';
 
 async function main() {
-  // Zaragoza: dentro de la banda de totalidad del 2026-08-12
+  const active = getActiveEclipse(new Date('2026-01-01T00:00:00Z'));
+  assert.equal(active.id, '2026-08-12-iberia', 'Activo pre-evento = Iberia 2026');
+  assert.ok(getEclipseById('2026-08-12-iberia'), 'Catálogo incluye Iberia 2026');
+  assert.ok(ECLIPSES.length >= 1, 'Catálogo no vacío');
+
+  // Zaragoza: dentro de la banda de totalidad del eclipse activo
   const zgz = computeLocalEclipse(41.65, -0.88, 200);
   assert.equal(zgz.kind, 'total', 'Zaragoza debe ser total');
   assert.ok(zgz.obscuration > 0.999, 'Obscuración ~100%');
@@ -17,6 +23,11 @@ async function main() {
   );
   assert.deepEqual(zgz.events.map((e) => e.key), ['C1', 'C2', 'MAX', 'C3', 'C4'], 'Cinco contactos ordenados');
   const max = zgz.events.find((e) => e.key === 'MAX')!;
+  assert.equal(
+    max.time.toISOString().slice(0, 10),
+    active.civilDate,
+    `Máximo en día civil ${active.civilDate}`,
+  );
   assert.equal(max.time.toISOString().slice(0, 16), '2026-08-12T18:29', 'Máximo 18:29 UTC (20:29 CEST)');
 
   // Sevilla: fuera de la banda → parcial

@@ -12,11 +12,12 @@ import {
   SpaceGrotesk_700Bold,
 } from '@expo-google-fonts/space-grotesk';
 import { computeLocalEclipse, type LocalEclipse } from './lib/eclipse';
+import { getActiveEclipse } from './lib/eclipseCatalog';
 import { haversineKm } from './lib/totality';
 import { openInMaps } from './lib/maps';
 import type { Spot } from './lib/spots';
 import { scheduleEclipseAlerts } from './lib/notifications';
-import { fetchEclipseMessage } from './lib/firebase';
+import { fetchRemoteExtras } from './lib/firebase';
 import { pushRecent } from './lib/prefs';
 import { animateNextLayout } from './lib/anim';
 import { useGeo } from './hooks/useGeo';
@@ -33,6 +34,14 @@ import { C, F } from './components/theme';
 const ECLIPSE_MODE_LEAD_MS = 30 * 60_000;
 const ECLIPSE_MODE_TAIL_MS = 5 * 60_000;
 const COARSE_TICK_MS = 30_000;
+const FINE_TICK_MS = 1_000;
+
+function inFineClockWindow(eclipse: LocalEclipse, t: number): boolean {
+  const first = eclipse.events[0];
+  const last = eclipse.events[eclipse.events.length - 1];
+  if (!first || !last) return false;
+  return t >= first.time.getTime() - ECLIPSE_MODE_LEAD_MS && t <= last.time.getTime() + ECLIPSE_MODE_TAIL_MS;
+}
 
 function cleanPlaceLabel(name: string): string {
   return name.replace(/\s·\sGPS$/, '').replace(/\s·\sManual$/, '').trim();
@@ -62,10 +71,12 @@ function AppInner() {
   const { geo, locating, granted: locationGranted } = useGeo();
   const [permissions, setPermissions] = useState({ location: false, notifications: false });
   const [remoteMsg, setRemoteMsg] = useState('');
+  const [catalogEpoch, setCatalogEpoch] = useState(0);
   const [tab, setTab] = useState<TabKey>('mapa');
   const [demo, setDemo] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const [fineClock, setFineClock] = useState(false);
 
   useEffect(() => {
     setPermissions((p) => ({ ...p, location: locationGranted }));
@@ -81,12 +92,18 @@ function AppInner() {
         setPermissions((p) => ({ ...p, location: status === 'granted' })),
       );
     };
-    void fetchEclipseMessage().then(setRemoteMsg);
+    const pullRemote = () =>
+      void fetchRemoteExtras().then((r) => {
+        setRemoteMsg(r.message);
+        // RC puede cambiar el eclipse activo → recalcular circunstancias
+        setCatalogEpoch((n) => n + 1);
+      });
+    pullRemote();
     refreshPermissions();
     // Al volver a primer plano: Remote Config (respeta caché) y permisos actualizados
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
-        void fetchEclipseMessage().then(setRemoteMsg);
+        pullRemote();
         refreshPermissions();
       }
     });
@@ -94,9 +111,10 @@ function AppInner() {
   }, []);
 
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), COARSE_TICK_MS);
+    const ms = demo || fineClock ? FINE_TICK_MS : COARSE_TICK_MS;
+    const id = setInterval(() => setNow(new Date()), ms);
     return () => clearInterval(id);
-  }, []);
+  }, [demo, fineClock]);
 
   // Sembrar puesto deseado con GPS si aún no hay ninguno guardado
   useEffect(() => {
@@ -120,20 +138,64 @@ function AppInner() {
 
   const eclipse = useMemo(
     () => (active ? computeLocalEclipse(active.lat, active.lon) : null),
-    [active?.lat, active?.lon],
+    // catalogEpoch: RC puede forzar otro eclipse del catálogo
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [active?.lat, active?.lon, catalogEpoch],
   );
+
+  // Reloj fino en la ventana del modo eclipse (fase/seguridad a 1 s)
+  useEffect(() => {
+    if (!eclipse) {
+      setFineClock(false);
+      return;
+    }
+    let exitTimer: ReturnType<typeof setTimeout> | undefined;
+    const first = eclipse.events[0]?.time.getTime();
+    const last = eclipse.events[eclipse.events.length - 1]?.time.getTime();
+    if (first == null || last == null) {
+      setFineClock(false);
+      return;
+    }
+    const start = first - ECLIPSE_MODE_LEAD_MS;
+    const end = last + ECLIPSE_MODE_TAIL_MS;
+    const t = Date.now();
+    if (t > end) {
+      setFineClock(false);
+      return;
+    }
+    if (t >= start) {
+      setFineClock(true);
+      exitTimer = setTimeout(() => setFineClock(false), end - t);
+      return () => clearTimeout(exitTimer);
+    }
+    setFineClock(false);
+    const enterTimer = setTimeout(() => {
+      setFineClock(true);
+      exitTimer = setTimeout(() => setFineClock(false), end - start);
+    }, start - t);
+    return () => {
+      clearTimeout(enterTimer);
+      if (exitTimer) clearTimeout(exitTimer);
+    };
+  }, [eclipse]);
 
   const { cloud, totality, hereOnMap } = useSpotData(active, eclipse, geo);
 
-  // Reprogramar alertas al cambiar de puesto (las horas de contacto varían por ubicación)
+  // Reprogramar alertas al cambiar puesto, toggles o permiso de notificaciones
   useEffect(() => {
     if (!eclipse || !prefs || !permissions.notifications) return;
     if (!Object.values(prefs.alertsOn).some(Boolean)) return;
     scheduleEclipseAlerts(eclipse, prefs.alertsOn, prefs.alertSound, prefs.alertEarly, prefs.c1PlanAlerts).catch(() => {
       // sin permiso o error puntual: el usuario puede reprogramar desde Alertas
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eclipse]);
+  }, [
+    eclipse,
+    permissions.notifications,
+    prefs?.alertsOn,
+    prefs?.alertEarly,
+    prefs?.c1PlanAlerts,
+    prefs?.alertSound,
+  ]);
 
   const selectSpot = useCallback(
     (spot: Spot) => {
@@ -169,13 +231,7 @@ function AppInner() {
   const activeEclipse = demoEclipse ?? eclipse;
 
   // Modo eclipse: automático en ventana del evento, o demo forzada
-  const first = activeEclipse?.events[0];
-  const last = activeEclipse ? activeEclipse.events[activeEclipse.events.length - 1] : undefined;
-  const inEclipseWindow =
-    first !== undefined &&
-    last !== undefined &&
-    now.getTime() >= first.time.getTime() - ECLIPSE_MODE_LEAD_MS &&
-    now.getTime() <= last.time.getTime() + ECLIPSE_MODE_TAIL_MS;
+  const inEclipseWindow = activeEclipse ? inFineClockWindow(activeEclipse, now.getTime()) : false;
 
   // Aviso día D: GPS lejos del puesto elegido (>20 km) → las horas de contacto ya no valen
   const divergenceKm = (() => {
@@ -281,6 +337,7 @@ function AppInner() {
           <SettingsScreen
             permissions={permissions}
             alertSound={prefs.alertSound}
+            eclipseLabel={getActiveEclipse().label}
             onSoundChange={(sound) => {
               onPrefsChange({ ...prefs, alertSound: sound });
               if (eclipse && Object.values(prefs.alertsOn).some(Boolean)) {

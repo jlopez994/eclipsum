@@ -17,6 +17,7 @@ import Svg, { Circle, Defs, Path, RadialGradient, Rect, Stop, Text as SvgText } 
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { nextEvent, type LocalEclipse } from '../../lib/eclipse';
+import { getActiveEclipse } from '../../lib/eclipseCatalog';
 import { bearingLabel, type TotalityDirection } from '../../lib/totality';
 import { windyEclipseCloudsUrl } from '../../lib/weather';
 import { Countdown } from '../Countdown';
@@ -409,15 +410,16 @@ export function MapScreen({
       : null;
 
   // Dato de caché sin red: se marca la antigüedad para no fiarse de nubes viejas
+  const activeEclipseMeta = getActiveEclipse();
   const cloudStale = cloudAgeHours !== null ? ` · ${cloudAgeHours}h` : '';
   const cloud =
     cloudPct === null
       ? { color: C.dim, label: cloudLoading ? 'NUBES…' : 'SIN DATOS' }
       : cloudPct < 25
-        ? { color: C.ok, label: `${cloudPct}% · 12 AGO${cloudStale}` }
+        ? { color: C.ok, label: `${cloudPct}% · ${activeEclipseMeta.shortDateLabel}${cloudStale}` }
         : cloudPct < 60
-          ? { color: C.corona, label: `${cloudPct}% · 12 AGO${cloudStale}` }
-          : { color: C.danger, label: `${cloudPct}% · 12 AGO${cloudStale}` };
+          ? { color: C.corona, label: `${cloudPct}% · ${activeEclipseMeta.shortDateLabel}${cloudStale}` }
+          : { color: C.danger, label: `${cloudPct}% · ${activeEclipseMeta.shortDateLabel}${cloudStale}` };
 
   const obscuracion = (eclipse.obscuration * 100).toFixed(1).replace('.', ',');
   const showHere = hereOnMap !== null;
@@ -496,7 +498,7 @@ export function MapScreen({
         />
         <UmbraSweep />
         <View style={s.bandLine} />
-        <Text style={s.bandLabel}>BANDA DE TOTALIDAD · 12 AGO 2026</Text>
+        <Text style={s.bandLabel}>{activeEclipseMeta.bandLabel}</Text>
         <Text style={s.bandHint}>MÁS DURACIÓN CERCA DEL CENTRO</Text>
       </View>
 
@@ -623,9 +625,9 @@ export function MapScreen({
               <Pressable
                 style={[s.cloudChip, { borderColor: cloud.color + '66' }]}
                 hitSlop={6}
-                accessibilityLabel="Previsión de nubes el 12 ago a la hora del máximo; abrir en Windy"
+                accessibilityLabel={`Previsión de nubes el ${activeEclipseMeta.shortDateLabel.toLowerCase()} a la hora del máximo; abrir en Windy`}
                 onPress={() => {
-                  const when = maxEvent?.time ?? new Date('2026-08-12T18:00:00Z');
+                  const when = maxEvent?.time ?? new Date(activeEclipseMeta.windyFallbackMax);
                   Linking.openURL(windyEclipseCloudsUrl(spotCoords.lat, spotCoords.lon, when)).catch(() => {});
                 }}
               >
@@ -639,7 +641,7 @@ export function MapScreen({
           <View style={s.divider} />
           <View style={s.cronoHeader}>
             <Text style={[s.cronoTitle, { flex: 1 }]} numberOfLines={1}>
-              CRONOLOGÍA EN {place.toUpperCase()} · 12 AGO
+              CRONOLOGÍA EN {place.toUpperCase()} · {activeEclipseMeta.shortDateLabel}
             </Text>
             <Pressable onPress={onOpenMaps} hitSlop={8}>
               <Text style={s.mapsLink}>CÓMO LLEGAR →</Text>

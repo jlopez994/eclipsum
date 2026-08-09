@@ -1,20 +1,36 @@
 /**
- * Genera lib/bandGeo.ts: límites norte/sur de la banda de totalidad del
- * 2026-08-12 por longitud (segmento útil para España y aledaños).
- * Uso: npx tsx scripts/genBand.ts
+ * Genera lib/bandGeo.ts: límites norte/sur de la banda de totalidad por longitud.
+ *
+ * Uso:
+ *   npx tsx scripts/genBand.ts
+ *   npx tsx scripts/genBand.ts --id 2026-08-12-iberia --export BAND_2026
+ *
+ * Sin args usa el eclipse activo del catálogo (o el primero) y export BAND_2026.
+ * Nota: LAT_MAX=60 recorta la umbra al norte de Iberia; subir el tope para bandas polares.
  */
 import { writeFileSync } from 'node:fs';
 import { computeLocalEclipse } from '../lib/eclipse';
+import { ECLIPSES, getEclipseById, type EclipseEntry } from '../lib/eclipseCatalog';
 
-const LON_FROM = -25;
-const LON_TO = 8;
-const LON_STEP = 0.5;
-const LAT_MIN = 30;
-const LAT_MAX = 60;
+function arg(name: string): string | undefined {
+  const i = process.argv.indexOf(name);
+  return i >= 0 ? process.argv[i + 1] : undefined;
+}
+
+const entry: EclipseEntry =
+  (arg('--id') ? getEclipseById(arg('--id')!) : undefined) ?? ECLIPSES[0];
+const exportName = arg('--export') ?? 'BAND_2026';
+const searchStart = new Date(entry.searchStart);
+
+const LON_FROM = Number(arg('--lon-from') ?? -25);
+const LON_TO = Number(arg('--lon-to') ?? 8);
+const LON_STEP = Number(arg('--lon-step') ?? 0.5);
+const LAT_MIN = Number(arg('--lat-min') ?? 30);
+const LAT_MAX = Number(arg('--lat-max') ?? 60);
 
 const isTotal = (lat: number, lon: number): boolean => {
   try {
-    return computeLocalEclipse(lat, lon).kind === 'total';
+    return computeLocalEclipse(lat, lon, 0, searchStart).kind === 'total';
   } catch {
     return false;
   }
@@ -54,14 +70,14 @@ for (let lon = LON_FROM; lon <= LON_TO; lon += LON_STEP) {
   process.stdout.write(`lon ${lon}: ${latS.toFixed(2)}..${latN.toFixed(2)}\n`);
 }
 
-const out = `/** Generado por scripts/genBand.ts — banda de totalidad 2026-08-12 (no editar a mano). */
+const out = `/** Generado por scripts/genBand.ts — banda de totalidad ${entry.civilDate} (id ${entry.id}; no editar a mano). */
 export interface BandSlice {
   lon: number;
   latS: number;
   latN: number;
 }
 
-export const BAND_2026: BandSlice[] = ${JSON.stringify(rows)};
+export const ${exportName}: BandSlice[] = ${JSON.stringify(rows)};
 `;
 writeFileSync(new URL('../lib/bandGeo.ts', import.meta.url), out);
-console.log(`OK — ${rows.length} cortes escritos en lib/bandGeo.ts`);
+console.log(`OK — ${rows.length} cortes escritos en lib/bandGeo.ts (${exportName}, ${entry.id})`);

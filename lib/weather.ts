@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getActiveEclipse } from './eclipseCatalog';
 
 export interface CloudForecast {
   /** Hora local (Date) → nubosidad total % */
@@ -11,19 +12,21 @@ export interface CachedCloudForecast {
   ageMs: number;
 }
 
-/** Fecha del eclipse (UTC civil). Misma ancla que lib/eclipse.ts. */
-export const ECLIPSE_DATE = '2026-08-12';
-
 const CACHE_VER = 'v2';
+
+function civilDate(): string {
+  return getActiveEclipse().civilDate;
+}
 
 /**
  * Nubosidad horaria del día del eclipse vía Open-Meteo (gratis, sin API key).
  * Lanza si no hay red o respuesta inválida — el caller decide cómo degradar.
  */
 export async function fetchCloudCover(lat: number, lon: number): Promise<CloudForecast> {
+  const day = civilDate();
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-    `&hourly=cloud_cover&start_date=${ECLIPSE_DATE}&end_date=${ECLIPSE_DATE}&timezone=UTC`;
+    `&hourly=cloud_cover&start_date=${day}&end_date=${day}&timezone=UTC`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Open-Meteo HTTP ${res.status}`);
   const json = await res.json();
@@ -33,7 +36,7 @@ export async function fetchCloudCover(lat: number, lon: number): Promise<CloudFo
     throw new Error('Respuesta Open-Meteo inesperada');
   }
   const forecast = parseHours(times, covers);
-  if (!isEclipseDayForecast(forecast)) throw new Error('Pronóstico no es del día del eclipse');
+  if (!isEclipseDayForecast(forecast, day)) throw new Error('Pronóstico no es del día del eclipse');
   return forecast;
 }
 
@@ -48,10 +51,11 @@ export async function fetchCloudCoverBatch(
   if (points.length === 1) {
     return [await fetchCloudCover(points[0].lat, points[0].lon).catch(() => null)];
   }
+  const day = civilDate();
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${points.map((p) => p.lat).join(',')}` +
     `&longitude=${points.map((p) => p.lon).join(',')}` +
-    `&hourly=cloud_cover&start_date=${ECLIPSE_DATE}&end_date=${ECLIPSE_DATE}&timezone=UTC`;
+    `&hourly=cloud_cover&start_date=${day}&end_date=${day}&timezone=UTC`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Open-Meteo HTTP ${res.status}`);
   const json = await res.json();
@@ -64,7 +68,7 @@ export async function fetchCloudCoverBatch(
     const covers: unknown = (item as { hourly?: { cloud_cover?: unknown } })?.hourly?.cloud_cover;
     if (!Array.isArray(times) || !Array.isArray(covers) || times.length !== covers.length) return null;
     const forecast = parseHours(times, covers);
-    return isEclipseDayForecast(forecast) ? forecast : null;
+    return isEclipseDayForecast(forecast, day) ? forecast : null;
   });
 }
 
@@ -78,13 +82,13 @@ function parseHours(times: unknown[], covers: unknown[]): CloudForecast {
 }
 
 /** True si todas las horas caen en el día civil UTC del eclipse. */
-function isEclipseDayForecast(forecast: CloudForecast): boolean {
+function isEclipseDayForecast(forecast: CloudForecast, day: string): boolean {
   if (forecast.hours.length === 0) return false;
-  return forecast.hours.every((h) => h.time.toISOString().startsWith(ECLIPSE_DATE));
+  return forecast.hours.every((h) => h.time.toISOString().startsWith(day));
 }
 
-const cacheKey = (lat: number, lon: number) =>
-  `eclipsum:clouds:${CACHE_VER}:${ECLIPSE_DATE}:${lat.toFixed(2)},${lon.toFixed(2)}`;
+const cacheKey = (lat: number, lon: number, day: string) =>
+  `eclipsum:clouds:${CACHE_VER}:${day}:${lat.toFixed(2)},${lon.toFixed(2)}`;
 
 interface StoredForecast {
   at: number;
@@ -97,27 +101,28 @@ interface StoredForecast {
  * estas coordenadas. null = ni red ni caché.
  */
 export async function fetchCloudCoverCached(lat: number, lon: number): Promise<CachedCloudForecast | null> {
+  const day = civilDate();
   try {
     const forecast = await fetchCloudCover(lat, lon);
     const stored: StoredForecast = {
       at: Date.now(),
-      day: ECLIPSE_DATE,
+      day,
       hours: forecast.hours.map((h) => ({ t: h.time.getTime(), c: h.cloudCover })),
     };
-    AsyncStorage.setItem(cacheKey(lat, lon), JSON.stringify(stored)).catch(() => {});
+    AsyncStorage.setItem(cacheKey(lat, lon, day), JSON.stringify(stored)).catch(() => {});
     return { forecast, ageMs: 0 };
   } catch {
     try {
-      const raw = await AsyncStorage.getItem(cacheKey(lat, lon));
+      const raw = await AsyncStorage.getItem(cacheKey(lat, lon, day));
       if (!raw) return null;
       const stored = JSON.parse(raw) as Partial<StoredForecast>;
-      if (stored.day !== ECLIPSE_DATE || typeof stored.at !== 'number' || !Array.isArray(stored.hours)) {
+      if (stored.day !== day || typeof stored.at !== 'number' || !Array.isArray(stored.hours)) {
         return null;
       }
       const forecast: CloudForecast = {
         hours: stored.hours.map((h) => ({ time: new Date(h.t), cloudCover: h.c })),
       };
-      if (!isEclipseDayForecast(forecast)) return null;
+      if (!isEclipseDayForecast(forecast, day)) return null;
       return { forecast, ageMs: Date.now() - stored.at };
     } catch {
       return null;
@@ -138,7 +143,7 @@ export function cloudCoverAt(forecast: CloudForecast, when: Date): number | null
       return Math.round(h[i].cloudCover + f * (h[i + 1].cloudCover - h[i].cloudCover));
     }
   }
-  // Fuera del rango estricto: hora más cercana (sigue siendo del 12 ago si el forecast lo es)
+  // Fuera del rango estricto: hora más cercana (sigue siendo del día del eclipse si el forecast lo es)
   let best = h[0];
   let bestD = Math.abs(h[0].time.getTime() - t);
   for (let i = 1; i < h.length; i++) {
@@ -158,7 +163,8 @@ export function cloudCoverAt(forecast: CloudForecast, when: Date): number | null
  * HH de Windy solo admite 00/03/06/09/12/15/18/21 UTC.
  */
 export function windyEclipseCloudsUrl(lat: number, lon: number, at: Date): string {
+  const day = civilDate();
   const slot = Math.round(at.getUTCHours() / 3) * 3;
   const hh = String(Math.min(21, Math.max(0, slot))).padStart(2, '0');
-  return `https://www.windy.com/?clouds,${ECLIPSE_DATE}-${hh},${lat.toFixed(3)},${lon.toFixed(3)},9`;
+  return `https://www.windy.com/?clouds,${day}-${hh},${lat.toFixed(3)},${lon.toFixed(3)},9`;
 }

@@ -9,6 +9,7 @@ const IGN_URL = 'https://eclipses.ign.es/como-observar-eclipses.html';
 interface SettingsScreenProps {
   permissions: { location: boolean; notifications: boolean };
   alertSound: AlertSound;
+  eclipseLabel: string;
   onSoundChange: (sound: AlertSound) => void;
   onDemoEclipse: () => void;
 }
@@ -16,6 +17,7 @@ interface SettingsScreenProps {
 export function SettingsScreen({
   permissions,
   alertSound,
+  eclipseLabel,
   onSoundChange,
   onDemoEclipse,
 }: SettingsScreenProps) {
@@ -94,7 +96,7 @@ export function SettingsScreen({
               </View>
               <View style={[s.rowItem, s.rowDivider]}>
                 <Text style={s.rowTitle}>Próximo eclipse</Text>
-                <Text style={s.aboutValue}>Total · 12 ago 2026</Text>
+                <Text style={s.aboutValue}>{eclipseLabel}</Text>
               </View>
               <View style={{ padding: 16 }}>
                 <Text style={s.aboutNote}>

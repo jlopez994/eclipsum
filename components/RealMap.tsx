@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { BAND_2026 } from '../lib/bandGeo';
+import { getActiveEclipse } from '../lib/eclipseCatalog';
 import { LEAFLET_CSS, LEAFLET_JS } from '../lib/leafletVendor';
 import { C } from './theme';
 
@@ -22,9 +23,10 @@ interface RealMapProps {
  * Los tiles sí requieren red; la librería ya no depende de ningún CDN.
  */
 export function RealMap({ spot, here }: RealMapProps) {
+  const bandTooltip = getActiveEclipse().bandTooltip;
   const html = useMemo(
-    () => buildHtml(spot, here),
-    [spot.lat, spot.lon, spot.label, here?.lat, here?.lon, here?.label],
+    () => buildHtml(spot, here, bandTooltip),
+    [spot.lat, spot.lon, spot.label, here?.lat, here?.lon, here?.label, bandTooltip],
   );
   return (
     <WebView
@@ -37,11 +39,11 @@ export function RealMap({ spot, here }: RealMapProps) {
   );
 }
 
-function buildHtml(spot: MapPoint, here: MapPoint | null): string {
+function buildHtml(spot: MapPoint, here: MapPoint | null, bandTooltip: string): string {
   const north = BAND_2026.map((b) => [b.latN, b.lon]);
   const south = [...BAND_2026].reverse().map((b) => [b.latS, b.lon]);
   const center = BAND_2026.map((b) => [(b.latN + b.latS) / 2, b.lon]);
-  const data = JSON.stringify({ polygon: [...north, ...south], center, spot, here });
+  const data = JSON.stringify({ polygon: [...north, ...south], center, spot, here, bandTooltip });
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -68,7 +70,7 @@ function buildHtml(spot: MapPoint, here: MapPoint | null): string {
   L.polygon(D.polygon, {
     color: '${C.totality}', weight: 1.5, opacity: 0.9,
     fillColor: '${C.totality}', fillOpacity: 0.18,
-  }).addTo(map).bindTooltip('Banda de totalidad · 12 ago 2026', { sticky: true, className: 'lbl' });
+  }).addTo(map).bindTooltip(D.bandTooltip, { sticky: true, className: 'lbl' });
 
   L.polyline(D.center, { color: '${C.corona}', weight: 2, dashArray: '6 6', opacity: 0.9 })
     .addTo(map).bindTooltip('Centro: máxima duración', { sticky: true, className: 'lbl' });

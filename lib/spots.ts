@@ -1,4 +1,5 @@
 import { computeLocalEclipse } from './eclipse';
+import { getActiveEclipse } from './eclipseCatalog';
 import { haversineKm } from './totality';
 
 export interface Spot {
@@ -16,8 +17,11 @@ export interface SpotOption extends Spot {
   maxTime: Date | null;
 }
 
-/** Municipios de referencia para el eclipse 2026-08-12 (España). El motor decide total/parcial. */
-const CITIES: { name: string; lat: number; lon: number }[] = [
+type City = { name: string; lat: number; lon: number };
+
+/** Municipios de referencia por eclipse. El motor decide total/parcial. */
+const CITIES_BY_ECLIPSE: Record<string, City[]> = {
+  '2026-08-12-iberia': [
   { name: 'A Coruña', lat: 43.36, lon: -8.41 },
   { name: 'Santiago', lat: 42.88, lon: -8.54 },
   { name: 'Lugo', lat: 43.01, lon: -7.56 },
@@ -66,7 +70,12 @@ const CITIES: { name: string; lat: number; lon: number }[] = [
   { name: 'Ciudad Real', lat: 38.99, lon: -3.93 },
   { name: 'Palma', lat: 39.57, lon: 2.65 },
   { name: 'Ibiza', lat: 38.91, lon: 1.43 },
-];
+  ],
+};
+
+function citiesForActive(): City[] {
+  return CITIES_BY_ECLIPSE[getActiveEclipse().id] ?? [];
+}
 
 function toOption(spot: Spot, userLat: number, userLon: number): SpotOption {
   const ec = computeLocalEclipse(spot.lat, spot.lon);
@@ -86,10 +95,11 @@ function toOption(spot: Spot, userLat: number, userLon: number): SpotOption {
  * Cálculo por tandas cediendo el hilo (~10-30 ms por ciudad con astronomy-engine).
  */
 export async function listSpotOptions(userLat: number, userLon: number, limit = 10): Promise<SpotOption[]> {
-  const nearest = CITIES.map((c) => ({
-    ...c,
-    distanceKm: haversineKm(userLat, userLon, c.lat, c.lon),
-  }))
+  const nearest = citiesForActive()
+    .map((c) => ({
+      ...c,
+      distanceKm: haversineKm(userLat, userLon, c.lat, c.lon),
+    }))
     .sort((a, b) => a.distanceKm - b.distanceKm)
     .slice(0, limit);
 

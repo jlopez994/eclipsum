@@ -13,8 +13,10 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// Canales distintos por sonido: en Android el audio del canal es inmutable una vez creado
-const CHANNEL_BASE = 'eclipse-alerts-v3';
+// Canales distintos por sonido: en Android el audio del canal es inmutable una vez creado.
+// Subir versión si cambia el wav o el id del canal (v3 podía quedar con tono de sistema).
+const CHANNEL_BASE = 'eclipse-alerts-v4';
+const LEGACY_CHANNELS = ['eclipse-alerts-v3-eclipse', 'eclipse-alerts-v3-default'];
 
 export const ALERT_SOUND_OPTIONS: { id: AlertSound; label: string; hint: string }[] = [
   { id: 'eclipse', label: 'Eclipsum', hint: 'Sonido propio de la app' },
@@ -114,9 +116,15 @@ function buildAlerts(
   return alerts.filter((a) => a.time.getTime() > Date.now());
 }
 
+async function deleteLegacyChannels(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  await Promise.all(LEGACY_CHANNELS.map((id) => Notifications.deleteNotificationChannelAsync(id).catch(() => {})));
+}
+
 async function ensurePermissionAndChannel(sound: AlertSound): Promise<string> {
   const { status } = await Notifications.requestPermissionsAsync();
   if (status !== 'granted') throw new Error('Permiso de notificaciones denegado');
+  await deleteLegacyChannels();
   const id = channelIdFor(sound);
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync(id, {
@@ -137,10 +145,10 @@ export async function sendTestNotification(sound: AlertSound = 'eclipse'): Promi
       title: '🔔 Prueba Eclipsum',
       body: 'Las alertas funcionan. Listo para el eclipse.',
       sound: soundFile(sound),
-      ...(Platform.OS === 'android' ? { channelId } : {}),
     },
-    // null = presentar ya (sin TIME_INTERVAL, que en Android añade latencia)
-    trigger: null,
+    // En Android 8+ el sonido lo marca el canal: trigger con channelId (no content.channelId).
+    // null solo vale en iOS; en Android sin canal cae en «Miscellaneous» → tono de sistema.
+    trigger: Platform.OS === 'android' ? { channelId } : null,
   });
 }
 

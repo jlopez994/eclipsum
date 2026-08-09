@@ -6,6 +6,13 @@
       },
       "description": "Banner superior de la app. Vacío = oculto.",
       "valueType": "STRING"
+    },
+    "active_eclipse_id": {
+      "defaultValue": {
+        "value": ""
+      },
+      "description": "Id del catálogo (p. ej. 2026-08-12-iberia). Vacío = primer eclipse no pasado.",
+      "valueType": "STRING"
     }
   }
 }
