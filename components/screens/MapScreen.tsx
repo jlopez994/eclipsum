@@ -192,11 +192,14 @@ function HereDot() {
 }
 
 /**
- * Brújula: aguja + N giran juntas y señalan el norte geográfico real
- * (convención de mapas). Sin sensor: N estática, norte = arriba del diagrama.
+ * Brújula de observación: la aguja apunta al azimut del sol en el máximo.
+ * Con sensor, gira respecto al rumbo del móvil — cuando miras bien, la aguja queda arriba.
+ * Sin sensor (emulador): muestra el rumbo cardenal fijo (arriba = N del diagrama).
  */
-function CompassChip() {
+function CompassChip({ targetAzimuthDeg }: { targetAzimuthDeg: number }) {
   const [heading, setHeading] = useState<number | null>(null);
+  const target = ((targetAzimuthDeg % 360) + 360) % 360;
+  const label = bearingLabel(target);
 
   useEffect(() => {
     let sub: Location.LocationSubscription | null = null;
@@ -217,24 +220,24 @@ function CompassChip() {
     };
   }, []);
 
-  // Sin sensor (emulador): chip estático con la N centrada
+  // Con sensor: ángulo relativo (0° = ya miras al sol). Sin sensor: rumbo sobre el diagrama (N arriba).
+  const rotateDeg = heading !== null ? target - heading : target;
+
   return (
     <View
       style={s.compass}
       accessibilityLabel={
-        heading === null ? 'Norte del diagrama: arriba' : `El norte queda a ${Math.round(heading)}°`
+        heading === null
+          ? `Sol en el máximo hacia el ${label}`
+          : `Gira hasta que la aguja apunte arriba. Sol hacia el ${label}`
       }
     >
-      {heading !== null ? (
-        <View style={[s.needleWrap, { transform: [{ rotate: `${-heading}deg` }] }]}>
-          <Svg width={13} height={15} viewBox="0 0 12 14" fill={C.corona}>
-            <Path d="M6 0 L11 13 L6 10.4 L1 13 Z" />
-          </Svg>
-          <Text style={s.needleN}>N</Text>
-        </View>
-      ) : (
-        <Text style={s.compassN}>N</Text>
-      )}
+      <View style={[s.needleWrap, { transform: [{ rotate: `${rotateDeg}deg` }] }]}>
+        <Svg width={13} height={15} viewBox="0 0 12 14" fill={C.corona}>
+          <Path d="M6 0 L11 13 L6 10.4 L1 13 Z" />
+        </Svg>
+        <Text style={s.needleN}>{label}</Text>
+      </View>
     </View>
   );
 }
@@ -581,7 +584,7 @@ export function MapScreen({
               )}
             </Pressable>
           </View>
-          <CompassChip />
+          <CompassChip targetAzimuthDeg={maxEvent?.azimuth ?? 270} />
         </View>
         {divergenceKm !== null && (
           <View style={s.divergence}>
@@ -890,10 +893,9 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  /** Aguja + N giran juntas: la punta señala el norte real */
+  /** Aguja + rumbo: la punta señala hacia dónde mirar el sol en el máximo */
   needleWrap: { alignItems: 'center', justifyContent: 'center' },
-  needleN: { fontFamily: F.bold, fontSize: 13, lineHeight: 14, color: C.text, marginTop: 1 },
-  compassN: { fontFamily: F.bold, fontSize: 16, color: C.text },
+  needleN: { fontFamily: F.bold, fontSize: 11, lineHeight: 12, color: C.text, marginTop: 1 },
   sheet: {
     position: 'absolute',
     left: 0,

@@ -2,38 +2,48 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { LocalEclipse } from '../../lib/eclipse';
-import { scheduleEclipseAlerts, sendTestNotification } from '../../lib/notifications';
-import type { AlertSound, AlertToggles } from '../../lib/prefs';
+import { alertLeadChipLabel, scheduleEclipseAlerts, sendTestNotification } from '../../lib/notifications';
+import type { AlertLeads, AlertSound, AlertToggles } from '../../lib/prefs';
+import { nextAlertLead } from '../../lib/prefs';
 import { track } from '../../lib/firebase';
 import { C, F } from '../theme';
 
 const ALERT_META: Record<string, { accent: string; desc: string }> = {
-  C1: { accent: C.corona, desc: 'Gafas de eclipse puestas para mirar al sol.' },
+  C1: { accent: C.corona, desc: 'También avisa 24 h y 1 h antes.' },
   C2: { accent: C.totality, desc: 'En la banda: prepárate para mirar sin gafas.' },
   MAX: { accent: C.totality, desc: 'Punto culminante del eclipse.' },
   C3: { accent: C.danger, desc: 'GAFAS PUESTAS YA. El sol vuelve a ser peligroso.' },
-  C4: { accent: C.corona, desc: 'Fin del eclipse.' },
+  C4: { accent: C.corona, desc: 'Último contacto.' },
 };
 
 interface AlertsScreenProps {
   eclipse: LocalEclipse;
   toggles: AlertToggles;
+  leads: AlertLeads;
   alertSound: AlertSound;
   onToggle: (key: keyof AlertToggles, value: boolean) => void;
+  onLeadChange: (key: keyof AlertLeads, minutes: number) => void;
 }
 
 const fmtHM = (d: Date) =>
   d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-export function AlertsScreen({ eclipse, toggles, alertSound, onToggle }: AlertsScreenProps) {
+export function AlertsScreen({
+  eclipse,
+  toggles,
+  leads,
+  alertSound,
+  onToggle,
+  onLeadChange,
+}: AlertsScreenProps) {
   const insets = useSafeAreaInsets();
   const [status, setStatus] = useState<string | null>(null);
   // Solo cuentan los eventos que existen en esta ubicación (parcial no tiene C2/C3)
   const activeCount = eclipse.events.filter((e) => toggles[e.key]).length;
 
-  const reschedule = async (next: AlertToggles) => {
+  const reschedule = async (nextToggles: AlertToggles, nextLeads: AlertLeads) => {
     try {
-      const n = await scheduleEclipseAlerts(eclipse, next, alertSound);
+      const n = await scheduleEclipseAlerts(eclipse, nextToggles, alertSound, nextLeads);
       track('alerts_scheduled', { count: n });
       setStatus(`${n} notificaciones programadas`);
     } catch (e) {
@@ -44,7 +54,14 @@ export function AlertsScreen({ eclipse, toggles, alertSound, onToggle }: AlertsS
   const handleToggle = (key: keyof AlertToggles) => {
     const next = { ...toggles, [key]: !toggles[key] };
     onToggle(key, !toggles[key]);
-    void reschedule(next);
+    void reschedule(next, leads);
+  };
+
+  const handleLead = (key: keyof AlertLeads) => {
+    const minutes = nextAlertLead(leads[key]);
+    const next = { ...leads, [key]: minutes };
+    onLeadChange(key, minutes);
+    void reschedule(toggles, next);
   };
 
   const onTest = async () => {
@@ -64,11 +81,14 @@ export function AlertsScreen({ eclipse, toggles, alertSound, onToggle }: AlertsS
           <View style={s.countDot} />
           <Text style={s.countText}>{activeCount} alertas programadas</Text>
         </View>
+        <Text style={s.hint}>Toca el anticipo para cambiar cuándo avisa (0 = en el instante).</Text>
       </View>
       <ScrollView style={s.list} showsVerticalScrollIndicator={false}>
         {eclipse.events.map((e, i) => {
           const meta = ALERT_META[e.key];
           const on = toggles[e.key];
+          const lead = leads[e.key];
+          const fireAt = new Date(e.time.getTime() - lead * 60_000);
           return (
             <View key={e.key} style={[s.row, !on && { opacity: 0.45 }]}>
               <View style={s.leftCol}>
@@ -93,6 +113,17 @@ export function AlertsScreen({ eclipse, toggles, alertSound, onToggle }: AlertsS
                   <Text style={[s.rowTime, { color: meta.accent }]}>{fmtHM(e.time)}</Text>
                 </View>
                 <Text style={s.rowDesc}>{meta.desc}</Text>
+                <Pressable
+                  onPress={() => handleLead(e.key)}
+                  disabled={!on}
+                  hitSlop={6}
+                  style={[s.leadChip, { borderColor: on ? meta.accent + '66' : C.border }]}
+                  accessibilityLabel={`Anticipo ${alertLeadChipLabel(lead)}. Tocar para cambiar.`}
+                >
+                  <Text style={[s.leadChipText, { color: on ? meta.accent : C.dim }]}>
+                    Aviso {alertLeadChipLabel(lead)} · {fmtHM(fireAt)}
+                  </Text>
+                </Pressable>
               </View>
               <Pressable
                 onPress={() => handleToggle(e.key)}
@@ -133,7 +164,8 @@ const s = StyleSheet.create({
     elevation: 4,
   },
   countText: { fontFamily: F.medium, fontSize: 14, color: C.dim },
-  list: { flex: 1, paddingHorizontal: 24, marginTop: 22 },
+  hint: { fontFamily: F.regular, fontSize: 12, lineHeight: 17, color: C.dim, marginTop: 10 },
+  list: { flex: 1, paddingHorizontal: 24, marginTop: 18 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   leftCol: {
     width: 16,
@@ -153,10 +185,20 @@ const s = StyleSheet.create({
     zIndex: 1,
   },
   rowBody: { flex: 1, minWidth: 0, paddingVertical: 12 },
-  rowTitleLine: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  rowTitleLine: { flexDirection: 'row', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' },
   rowTitle: { fontFamily: F.bold, fontSize: 16, color: C.text },
   rowTime: { fontFamily: F.semibold, fontSize: 14, fontVariant: ['tabular-nums'] },
   rowDesc: { fontFamily: F.regular, fontSize: 12.5, lineHeight: 17, color: C.dim, marginTop: 2 },
+  leadChip: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: 'rgba(11,11,16,0.55)',
+  },
+  leadChipText: { fontFamily: F.semibold, fontSize: 12, fontVariant: ['tabular-nums'] },
   track: { width: 52, height: 30, borderRadius: 99, borderWidth: 1 },
   knob: {
     position: 'absolute',

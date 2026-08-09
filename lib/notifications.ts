@@ -1,7 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import type { LocalEclipse } from './eclipse';
-import type { AlertSound, AlertToggles } from './prefs';
+import type { AlertLeads, AlertSound, AlertToggles } from './prefs';
+import { DEFAULT_ALERT_LEADS } from './prefs';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -35,7 +36,28 @@ interface Alert {
   time: Date;
 }
 
-function buildAlerts(eclipse: LocalEclipse, enabled: AlertToggles): Alert[] {
+function fmtLead(min: number): string {
+  if (min <= 0) return 'ahora';
+  if (min === 1) return 'en 1 min';
+  if (min < 60) return `en ${min} min`;
+  if (min === 60) return 'en 1 hora';
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (m === 0) return h === 1 ? 'en 1 hora' : `en ${h} horas`;
+  return `en ${h}h ${m}m`;
+}
+
+/** Etiqueta corta para el chip de UI (anticipo). */
+export function alertLeadChipLabel(min: number): string {
+  if (min <= 0) return 'en el momento';
+  if (min < 60) return `−${min} min`;
+  if (min === 60) return '−1 h';
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `−${h} h` : `−${h}h ${m}m`;
+}
+
+function buildAlerts(eclipse: LocalEclipse, enabled: AlertToggles, leads: AlertLeads): Alert[] {
   const byKey = (k: keyof AlertToggles) => (enabled[k] ? eclipse.events.find((e) => e.key === k) : undefined);
   const c1 = byKey('C1');
   const c2 = byKey('C2');
@@ -46,23 +68,44 @@ function buildAlerts(eclipse: LocalEclipse, enabled: AlertToggles): Alert[] {
 
   const alerts: Alert[] = [];
   if (c1) {
+    // Avisos fijos de planificación + el anticipo configurable del contacto
     alerts.push(
       { title: 'Eclipse mañana', body: 'El eclipse solar empieza mañana a esta hora. Prepara las gafas.', time: minus(c1.time, 24 * 60) },
       { title: 'Eclipse en 1 hora', body: 'Primer contacto (parcial) en 1 hora. Busca horizonte oeste despejado.', time: minus(c1.time, 60) },
-      { title: '☀️ Empieza en 10 min', body: 'GAFAS DE ECLIPSE PUESTAS para mirar al sol.', time: minus(c1.time, 10) },
+      {
+        title: leads.C1 <= 0 ? '☀️ Empieza el eclipse' : `☀️ Empieza ${fmtLead(leads.C1)}`,
+        body: 'GAFAS DE ECLIPSE PUESTAS para mirar al sol.',
+        time: minus(c1.time, leads.C1),
+      },
     );
   }
   if (c2) {
-    alerts.push({ title: '🌑 Totalidad en 2 min', body: 'Prepárate: durante la totalidad puedes mirar sin gafas.', time: minus(c2.time, 2) });
+    alerts.push({
+      title: leads.C2 <= 0 ? '🌑 Totalidad' : `🌑 Totalidad ${fmtLead(leads.C2)}`,
+      body: 'Prepárate: durante la totalidad puedes mirar sin gafas.',
+      time: minus(c2.time, leads.C2),
+    });
   }
   if (max) {
-    alerts.push({ title: '🌗 Máximo en 1 min', body: 'Punto culminante del eclipse.', time: minus(max.time, 1) });
+    alerts.push({
+      title: leads.MAX <= 0 ? '🌗 Máximo' : `🌗 Máximo ${fmtLead(leads.MAX)}`,
+      body: 'Punto culminante del eclipse.',
+      time: minus(max.time, leads.MAX),
+    });
   }
   if (c3) {
-    alerts.push({ title: '⚠️ FIN DE TOTALIDAD', body: 'GAFAS PUESTAS YA. El sol vuelve a ser peligroso.', time: c3.time });
+    alerts.push({
+      title: leads.C3 <= 0 ? '⚠️ FIN DE TOTALIDAD' : `⚠️ Fin de totalidad ${fmtLead(leads.C3)}`,
+      body: 'GAFAS PUESTAS YA. El sol vuelve a ser peligroso.',
+      time: minus(c3.time, leads.C3),
+    });
   }
   if (c4) {
-    alerts.push({ title: 'Fin del eclipse', body: 'Último contacto. Gracias por mirar al cielo con Eclipsum.', time: c4.time });
+    alerts.push({
+      title: leads.C4 <= 0 ? 'Fin del eclipse' : `Fin del eclipse ${fmtLead(leads.C4)}`,
+      body: 'Último contacto. Gracias por mirar al cielo con Eclipsum.',
+      time: minus(c4.time, leads.C4),
+    });
   }
   return alerts.filter((a) => a.time.getTime() > Date.now());
 }
@@ -99,18 +142,19 @@ export async function sendTestNotification(sound: AlertSound = 'eclipse'): Promi
   });
 }
 
-/** Programa alertas locales según toggles. Devuelve cuántas quedaron programadas. */
+/** Programa alertas locales según toggles y anticipos. Devuelve cuántas quedaron programadas. */
 export async function scheduleEclipseAlerts(
   eclipse: LocalEclipse,
   enabled: AlertToggles,
   sound: AlertSound = 'eclipse',
+  leads: AlertLeads = DEFAULT_ALERT_LEADS,
 ): Promise<number> {
   const channelId = await ensurePermissionAndChannel(sound);
 
   // Reprogramar desde cero para evitar duplicados al cambiar toggles
   await Notifications.cancelAllScheduledNotificationsAsync();
 
-  const alerts = buildAlerts(eclipse, enabled);
+  const alerts = buildAlerts(eclipse, enabled, leads);
   for (const a of alerts) {
     await Notifications.scheduleNotificationAsync({
       content: { title: a.title, body: a.body, sound: soundFile(sound) },

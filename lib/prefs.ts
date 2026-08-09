@@ -4,6 +4,9 @@ import type { Spot } from './spots';
 
 export type AlertToggles = Record<EclipseEvent['key'], boolean>;
 
+/** Minutos de anticipo del aviso principal de cada contacto (0 = en el instante). */
+export type AlertLeads = Record<EclipseEvent['key'], number>;
+
 /** Sonido de alerta: el WAV propio de la app, o el tono por defecto del sistema. */
 export type AlertSound = 'eclipse' | 'default';
 
@@ -14,6 +17,8 @@ export interface RecentSpot extends Spot {
 
 export interface Prefs {
   alertsOn: AlertToggles;
+  /** Anticipo en minutos del aviso principal por contacto */
+  alertLeads: AlertLeads;
   /** Puesto de observación deseado; null solo hasta la 1ª elección / siembra GPS */
   spot: Spot | null;
   /** Puestos habituales (más visitados primero), máx. RECENT_CAP */
@@ -27,13 +32,52 @@ export interface Prefs {
 const KEY = 'eclipsum:prefs';
 export const RECENT_CAP = 3;
 
+/** Presets al tocar el chip de anticipo en Alertas. */
+export const ALERT_LEAD_PRESETS = [0, 1, 2, 5, 10, 15, 30, 60] as const;
+
+export const DEFAULT_ALERT_LEADS: AlertLeads = {
+  C1: 10,
+  C2: 2,
+  MAX: 1,
+  C3: 0,
+  C4: 0,
+};
+
 export const DEFAULT_PREFS: Prefs = {
   alertsOn: { C1: true, C2: true, MAX: true, C3: true, C4: true },
+  alertLeads: { ...DEFAULT_ALERT_LEADS },
   spot: null,
   recentSpots: [],
   mapView: 'diagram',
   alertSound: 'eclipse',
 };
+
+function clampLead(n: unknown): number {
+  if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return 0;
+  return Math.min(24 * 60, Math.round(n));
+}
+
+function parseAlertLeads(raw: unknown): AlertLeads {
+  const src = raw && typeof raw === 'object' ? (raw as Partial<AlertLeads>) : {};
+  return {
+    C1: clampLead(src.C1 ?? DEFAULT_ALERT_LEADS.C1),
+    C2: clampLead(src.C2 ?? DEFAULT_ALERT_LEADS.C2),
+    MAX: clampLead(src.MAX ?? DEFAULT_ALERT_LEADS.MAX),
+    C3: clampLead(src.C3 ?? DEFAULT_ALERT_LEADS.C3),
+    C4: clampLead(src.C4 ?? DEFAULT_ALERT_LEADS.C4),
+  };
+}
+
+/** Siguiente preset de anticipo (ciclo). */
+export function nextAlertLead(current: number): number {
+  const list = ALERT_LEAD_PRESETS as readonly number[];
+  const i = list.indexOf(current);
+  if (i < 0) {
+    const greater = list.find((p) => p > current);
+    return greater ?? list[0];
+  }
+  return list[(i + 1) % list.length];
+}
 
 function sameCoords(a: Spot, b: Spot): boolean {
   return Math.abs(a.lat - b.lat) < 0.01 && Math.abs(a.lon - b.lon) < 0.01;
@@ -74,6 +118,7 @@ export async function loadPrefs(): Promise<Prefs> {
       ...DEFAULT_PREFS,
       ...parsed,
       alertsOn: { ...DEFAULT_PREFS.alertsOn, ...(parsed.alertsOn ?? {}) },
+      alertLeads: parseAlertLeads(parsed.alertLeads),
       recentSpots,
       mapView: parsed.mapView === 'real' ? 'real' : 'diagram',
       alertSound: parsed.alertSound === 'default' ? 'default' : 'eclipse',
