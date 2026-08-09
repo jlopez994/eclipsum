@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { BAND_2026 } from '../lib/bandGeo';
@@ -23,18 +23,26 @@ interface RealMapProps {
  * Los tiles sí requieren red; la librería ya no depende de ningún CDN.
  */
 export function RealMap({ spot, here }: RealMapProps) {
-  const bandTooltip = getActiveEclipse().bandTooltip;
-  const html = useMemo(
-    () => buildHtml(spot, here, bandTooltip),
-    [spot.lat, spot.lon, spot.label, here?.lat, here?.lon, here?.label, bandTooltip],
-  );
+  const webRef = useRef<WebView>(null);
+  const [ready, setReady] = useState(false);
+  // HTML congelado al montar: los cambios de puesto se inyectan (flyTo) sin recargar el mapa
+  const [html] = useState(() => buildHtml(spot, here, getActiveEclipse().bandTooltip));
+
+  useEffect(() => {
+    if (!ready) return;
+    const data = JSON.stringify({ spot, here });
+    webRef.current?.injectJavaScript(`window.eclipsumUpdate && window.eclipsumUpdate(${data}); true;`);
+  }, [ready, spot.lat, spot.lon, spot.label, here?.lat, here?.lon, here?.label]);
+
   return (
     <WebView
+      ref={webRef}
       style={s.web}
       source={{ html }}
       originWhitelist={['*']}
       setSupportMultipleWindows={false}
       overScrollMode="never"
+      onLoadEnd={() => setReady(true)}
     />
   );
 }
@@ -75,20 +83,31 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, bandTooltip: string): 
   L.polyline(D.center, { color: '${C.corona}', weight: 2, dashArray: '6 6', opacity: 0.9 })
     .addTo(map).bindTooltip('Centro: máxima duración', { sticky: true, className: 'lbl' });
 
-  var pts = [];
-  function dot(p, fill) {
-    var m = L.circleMarker([p.lat, p.lon], {
-      radius: 8, color: '${C.corona}', weight: 2.5,
-      fillColor: fill ? '${C.text}' : 'transparent', fillOpacity: fill ? 1 : 0,
-    }).addTo(map);
-    m.bindTooltip(p.label, { permanent: true, direction: 'top', offset: [0, -10], className: 'lbl' });
-    pts.push([p.lat, p.lon]);
-  }
-  dot(D.spot, true);
-  if (D.here) dot(D.here, false);
+  var ptLayer = L.layerGroup().addTo(map);
+  function draw(d, fly) {
+    ptLayer.clearLayers();
+    var pts = [];
+    function dot(p, fill) {
+      var m = L.circleMarker([p.lat, p.lon], {
+        radius: 8, color: '${C.corona}', weight: 2.5,
+        fillColor: fill ? '${C.text}' : 'transparent', fillOpacity: fill ? 1 : 0,
+      }).addTo(ptLayer);
+      m.bindTooltip(p.label, { permanent: true, direction: 'top', offset: [0, -10], className: 'lbl' });
+      pts.push([p.lat, p.lon]);
+    }
+    dot(d.spot, true);
+    if (d.here) dot(d.here, false);
 
-  if (pts.length > 1) map.fitBounds(pts, { padding: [70, 70] });
-  else map.setView(pts[0], 7);
+    if (fly) {
+      if (pts.length > 1) map.flyToBounds(pts, { padding: [70, 70], duration: 0.9 });
+      else map.flyTo(pts[0], 7, { duration: 0.9 });
+    } else {
+      if (pts.length > 1) map.fitBounds(pts, { padding: [70, 70] });
+      else map.setView(pts[0], 7);
+    }
+  }
+  draw(D, false);
+  window.eclipsumUpdate = function (d) { draw(d, true); };
 </script>
 </body></html>`;
 }

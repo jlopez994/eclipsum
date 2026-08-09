@@ -14,7 +14,7 @@ import { openInMaps } from '../lib/maps';
 import { listSpotOptions, type Spot, type SpotOption } from '../lib/spots';
 import { cloudCoverAt, fetchCloudCoverBatch } from '../lib/weather';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
-import { animateNextLayout } from '../lib/anim';
+import { animateNextLayout, yieldUI } from '../lib/anim';
 import { C, F } from './theme';
 
 // Referencia peninsular si no hay GPS: distancias aproximadas mejor que nada
@@ -91,56 +91,44 @@ export function SpotSelector({
     let cancelled = false;
     (async () => {
       const ref = userGeo ?? FALLBACK_REF;
-      const next: Section[] = [];
+      let next: Section[] = [];
       const allForClouds: Row[] = [];
+      const publish = () => {
+        if (cancelled) return;
+        animateNextLayout();
+        setSections([...next]);
+      };
 
+      // Deja arrancar la animación del modal antes del primer cálculo pesado
+      await yieldUI();
+      if (cancelled) return;
+
+      let gpsRow: Row | null = null;
       if (userGeo) {
-        const gpsName = displayGpsName(gpsPlace);
         const gpsSpot: Spot = {
-          name: gpsName,
+          name: displayGpsName(gpsPlace),
           lat: userGeo.lat,
           lon: userGeo.lon,
           origin: 'gps',
         };
-        const gpsRow = toRow(gpsSpot, ref);
+        gpsRow = toRow(gpsSpot, ref);
         gpsRow.distanceKm = 0;
         allForClouds.push(gpsRow);
         next.push({ title: 'MI POSICIÓN', rows: [gpsRow] });
-
-        const ec = computeLocalEclipse(userGeo.lat, userGeo.lon);
-        if (ec.kind !== 'total') {
-          const near = await findNearestTotality(userGeo.lat, userGeo.lon).catch(() => null);
-          if (near && !cancelled) {
-            const place = await localityName(near.lat, near.lon);
-            const dir = bearingLabel(near.bearingDeg);
-            const name = place
-              ? `${place} · totalidad`
-              : `Totalidad · ${near.distanceKm} km al ${dir}`;
-            const nearSpot: Spot = { name, lat: near.lat, lon: near.lon, origin: 'nearest' };
-            const nearRow: Row = {
-              name,
-              lat: near.lat,
-              lon: near.lon,
-              origin: 'nearest',
-              distanceKm: near.distanceKm,
-              kind: 'total',
-              obscuration: 1,
-              totalityDurationSec: near.durationSec,
-              maxTime: null,
-              cloudPct: null,
-              selectValue: nearSpot,
-            };
-            allForClouds.push(nearRow);
-            next.push({ title: 'TOTALIDAD MÁS CERCANA', rows: [nearRow] });
-          }
-        }
       }
 
       if (recentSpots.length > 0) {
-        const recentRows = recentSpots.map((s) => toRow(s, ref));
+        const recentRows: Row[] = [];
+        for (const spot of recentSpots) {
+          await yieldUI();
+          if (cancelled) return;
+          recentRows.push(toRow(spot, ref));
+        }
         allForClouds.push(...recentRows);
         next.push({ title: 'HABITUALES', rows: recentRows });
       }
+      // Primer pintado con lo ya calculado; el resto llega por tandas
+      publish();
 
       const options = await listSpotOptions(ref.lat, ref.lon);
       if (cancelled) return;
@@ -151,25 +139,53 @@ export function SpotSelector({
       }));
       allForClouds.push(...featured);
       next.push({ title: 'DESTACADAS', rows: featured });
-      animateNextLayout();
-      setSections(next);
+      publish();
+
+      // Totalidad más cercana: lo más lento (motor + geocoder); se inserta al resolver
+      if (userGeo && gpsRow && gpsRow.kind !== 'total') {
+        const near = await findNearestTotality(userGeo.lat, userGeo.lon).catch(() => null);
+        if (near && !cancelled) {
+          const place = await localityName(near.lat, near.lon);
+          const dir = bearingLabel(near.bearingDeg);
+          const name = place
+            ? `${place} · totalidad`
+            : `Totalidad · ${near.distanceKm} km al ${dir}`;
+          const nearSpot: Spot = { name, lat: near.lat, lon: near.lon, origin: 'nearest' };
+          const nearRow: Row = {
+            name,
+            lat: near.lat,
+            lon: near.lon,
+            origin: 'nearest',
+            distanceKm: near.distanceKm,
+            kind: 'total',
+            obscuration: 1,
+            totalityDurationSec: near.durationSec,
+            maxTime: null,
+            cloudPct: null,
+            selectValue: nearSpot,
+          };
+          allForClouds.push(nearRow);
+          next.splice(1, 0, { title: 'TOTALIDAD MÁS CERCANA', rows: [nearRow] });
+          publish();
+        }
+      }
 
       try {
-        const forecasts = await fetchCloudCoverBatch(allForClouds.map((r) => ({ lat: r.lat, lon: r.lon })));
+        const coords = allForClouds.map((r) => ({ lat: r.lat, lon: r.lon }));
+        const forecasts = await fetchCloudCoverBatch(coords);
         if (cancelled) return;
+        // Por coordenada, no por índice: el orden de secciones ya no coincide con allForClouds
+        const byCoord = new Map(coords.map((c, i) => [`${c.lat},${c.lon}`, forecasts[i]]));
         const refMax = allForClouds.find((r) => r.maxTime)?.maxTime ?? null;
-        let i = 0;
-        animateNextLayout();
-        setSections(
-          next.map((sec) => ({
-            ...sec,
-            rows: sec.rows.map((r) => {
-              const f = forecasts[i++];
-              const when = r.maxTime ?? refMax;
-              return f && when ? { ...r, cloudPct: cloudCoverAt(f, when) } : r;
-            }),
-          })),
-        );
+        next = next.map((sec) => ({
+          ...sec,
+          rows: sec.rows.map((r) => {
+            const f = byCoord.get(`${r.lat},${r.lon}`);
+            const when = r.maxTime ?? refMax;
+            return f && when ? { ...r, cloudPct: cloudCoverAt(f, when) } : r;
+          }),
+        }));
+        publish();
       } catch {
         // sin red: lista sin nubes
       }

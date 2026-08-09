@@ -379,6 +379,22 @@ export function MapScreen({
   const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
   const [sheetMin, setSheetMin] = useState(SHEET_MIN_FALLBACK);
+
+  // Fundido al cambiar de puesto: los datos nuevos entran suaves en vez de saltar
+  const fade = useRef(new Animated.Value(1)).current;
+  const spotKey = `${spotCoords.lat},${spotCoords.lon}`;
+  const prevSpotKey = useRef(spotKey);
+  useEffect(() => {
+    if (prevSpotKey.current === spotKey) return;
+    prevSpotKey.current = spotKey;
+    fade.setValue(0);
+    Animated.timing(fade, {
+      toValue: 1,
+      duration: 450,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [spotKey, fade]);
   // Hoja estirada: ocupa todo menos un asomo de mapa; en pantallas altas cabe la cronología sin scroll
   const sheetMax = Math.max(560, winH - insets.top - SHEET_TOP_GAP);
   const { height, pan } = useSheet(sheetMax, sheetMin);
@@ -457,6 +473,7 @@ export function MapScreen({
 
   return (
     <View style={s.root}>
+      <Animated.View style={[s.fadeFill, { opacity: fade }]}>
       {mapView === 'real' && (
         <RealMap
           spot={{ ...spotCoords, label: place }}
@@ -679,12 +696,14 @@ export function MapScreen({
           )}
         </ScrollView>
       </Animated.View>
+      </Animated.View>
     </View>
   );
 }
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg, overflow: 'hidden' },
+  fadeFill: { flex: 1 },
   /** Lienzo del diagrama: altura fija sobre la hoja colapsada (no se reescala al expandir). */
   diagramStage: {
     position: 'absolute',

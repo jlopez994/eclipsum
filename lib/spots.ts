@@ -105,6 +105,7 @@ export async function listSpotOptions(userLat: number, userLon: number, limit = 
 
   const out: SpotOption[] = [];
   for (const c of nearest) {
+    // Promesa inline y no yieldUI de lib/anim: este módulo debe seguir libre de react-native (selfcheck en Node)
     await new Promise((r) => setTimeout(r, 0));
     out.push(toOption({ name: c.name, lat: c.lat, lon: c.lon, origin: 'city' }, userLat, userLon));
   }

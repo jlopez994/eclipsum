@@ -21,11 +21,30 @@ export interface LocalEclipse {
   sunset: Date | null;
 }
 
+// Resultado determinista por coordenada y eclipse: memo evita recomputar (~10-30 ms por llamada)
+const CACHE = new Map<string, LocalEclipse>();
+const CACHE_MAX = 400;
+
 export function computeLocalEclipse(
   lat: number,
   lon: number,
   elevationM = 0,
   searchStart: Date = activeSearchStart(),
+): LocalEclipse {
+  const key = `${lat.toFixed(4)},${lon.toFixed(4)},${elevationM},${searchStart.getTime()}`;
+  const hit = CACHE.get(key);
+  if (hit) return hit;
+  const result = computeLocalEclipseUncached(lat, lon, elevationM, searchStart);
+  if (CACHE.size >= CACHE_MAX) CACHE.clear(); // ponytail: reset simple; LRU si algún día hiciera falta
+  CACHE.set(key, result);
+  return result;
+}
+
+function computeLocalEclipseUncached(
+  lat: number,
+  lon: number,
+  elevationM: number,
+  searchStart: Date,
 ): LocalEclipse {
   const observer = new Observer(lat, lon, elevationM);
   const ec = SearchLocalSolarEclipse(searchStart, observer);
