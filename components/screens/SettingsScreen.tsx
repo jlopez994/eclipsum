@@ -1,4 +1,5 @@
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ALERT_SOUND_OPTIONS, sendTestNotification } from '../../lib/notifications';
 import { previewAlertSound } from '../../lib/soundPreview';
@@ -129,7 +130,7 @@ export function SettingsScreen({
             <View style={s.card}>
               <View style={[s.rowItem, s.rowDivider]}>
                 <Text style={s.rowTitle}>Versión</Text>
-                <Text style={s.aboutValue}>Eclipsum 1.0</Text>
+                <Text style={s.aboutValue}>Eclipsum {Constants.expoConfig?.version ?? '1.0'}</Text>
               </View>
               <View style={[s.rowItem, s.rowDivider]}>
                 <Text style={s.rowTitle}>Próximo eclipse</Text>
