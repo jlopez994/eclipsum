@@ -1,6 +1,6 @@
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ALERT_SOUND_OPTIONS } from '../../lib/notifications';
+import { ALERT_SOUND_OPTIONS, previewAlertSound } from '../../lib/notifications';
 import type { AlertSound } from '../../lib/prefs';
 import { C, F } from '../theme';
 
@@ -22,6 +22,12 @@ export function SettingsScreen({
   onDemoEclipse,
 }: SettingsScreenProps) {
   const insets = useSafeAreaInsets();
+
+  const selectSound = (id: AlertSound) => {
+    onSoundChange(id);
+    void previewAlertSound(id);
+  };
+
   return (
     <View style={s.root}>
       <Text style={[s.title, { paddingTop: insets.top + 14 }]}>Ajustes</Text>
@@ -54,17 +60,32 @@ export function SettingsScreen({
             {ALERT_SOUND_OPTIONS.map((opt, i) => {
               const on = alertSound === opt.id;
               return (
-                <Pressable
+                <View
                   key={opt.id}
-                  onPress={() => onSoundChange(opt.id)}
                   style={[s.soundRow, i < ALERT_SOUND_OPTIONS.length - 1 && s.rowDivider]}
                 >
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={s.rowTitle}>{opt.label}</Text>
-                    <Text style={s.soundHint}>{opt.hint}</Text>
-                  </View>
-                  <View style={[s.radio, on && s.radioOn]}>{on && <View style={s.radioDot} />}</View>
-                </Pressable>
+                  <Pressable
+                    onPress={() => selectSound(opt.id)}
+                    style={s.soundMain}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: on }}
+                    accessibilityLabel={`${opt.label}. ${opt.hint}`}
+                  >
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={s.rowTitle}>{opt.label}</Text>
+                      <Text style={s.soundHint}>{opt.hint}</Text>
+                    </View>
+                    <View style={[s.radio, on && s.radioOn]}>{on && <View style={s.radioDot} />}</View>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => void previewAlertSound(opt.id)}
+                    hitSlop={8}
+                    accessibilityLabel={`Escuchar ${opt.label}`}
+                    style={s.playBtn}
+                  >
+                    <Text style={s.playIcon}>▶</Text>
+                  </Pressable>
+                </View>
               );
             })}
           </View>
@@ -138,11 +159,29 @@ const s = StyleSheet.create({
   soundRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingRight: 10,
+  },
+  soundMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
+    minWidth: 0,
   },
   soundHint: { fontFamily: F.regular, fontSize: 12, color: C.dim, marginTop: 2 },
+  playBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,196,87,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,196,87,0.35)',
+  },
+  playIcon: { fontFamily: F.bold, fontSize: 12, color: C.corona, marginLeft: 2 },
   radio: {
     width: 22,
     height: 22,

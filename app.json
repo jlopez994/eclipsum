@@ -32,7 +32,18 @@
       [
         "expo-notifications",
         {
-          "sounds": ["./assets/sounds/eclipse.wav"]
+          "sounds": [
+            "./assets/sounds/eclipse.wav"
+          ]
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false,
+          "enableBackgroundRecording": false
         }
       ]
     ]

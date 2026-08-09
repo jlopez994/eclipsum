@@ -414,12 +414,24 @@ export function MapScreen({
   const cloudStale = cloudAgeHours !== null ? ` · ${cloudAgeHours}h` : '';
   const cloud =
     cloudPct === null
-      ? { color: C.dim, label: cloudLoading ? 'NUBES…' : 'SIN DATOS' }
+      ? { color: C.dim, label: cloudLoading ? 'NUBES…' : 'NUBES —', a11y: 'Previsión de nubes no disponible' }
       : cloudPct < 25
-        ? { color: C.ok, label: `${cloudPct}% · ${activeEclipseMeta.shortDateLabel}${cloudStale}` }
+        ? {
+            color: C.ok,
+            label: `Pocas nubes · ${cloudPct}%${cloudStale}`,
+            a11y: `Pocas nubes: nubosidad prevista ${cloudPct}% a la hora del máximo el ${activeEclipseMeta.shortDateLabel.toLowerCase()}`,
+          }
         : cloudPct < 60
-          ? { color: C.corona, label: `${cloudPct}% · ${activeEclipseMeta.shortDateLabel}${cloudStale}` }
-          : { color: C.danger, label: `${cloudPct}% · ${activeEclipseMeta.shortDateLabel}${cloudStale}` };
+          ? {
+              color: C.corona,
+              label: `Nubes medias · ${cloudPct}%${cloudStale}`,
+              a11y: `Nubes medias: nubosidad prevista ${cloudPct}% a la hora del máximo el ${activeEclipseMeta.shortDateLabel.toLowerCase()}`,
+            }
+          : {
+              color: C.danger,
+              label: `Muchas nubes · ${cloudPct}%${cloudStale}`,
+              a11y: `Muchas nubes: nubosidad prevista ${cloudPct}% a la hora del máximo el ${activeEclipseMeta.shortDateLabel.toLowerCase()}`,
+            };
 
   const obscuracion = (eclipse.obscuration * 100).toFixed(1).replace('.', ',');
   const showHere = hereOnMap !== null;
@@ -625,7 +637,7 @@ export function MapScreen({
               <Pressable
                 style={[s.cloudChip, { borderColor: cloud.color + '66' }]}
                 hitSlop={6}
-                accessibilityLabel={`Previsión de nubes el ${activeEclipseMeta.shortDateLabel.toLowerCase()} a la hora del máximo; abrir en Windy`}
+                accessibilityLabel={`${cloud.a11y}; abrir en Windy`}
                 onPress={() => {
                   const when = maxEvent?.time ?? new Date(activeEclipseMeta.windyFallbackMax);
                   Linking.openURL(windyEclipseCloudsUrl(spotCoords.lat, spotCoords.lon, when)).catch(() => {});
