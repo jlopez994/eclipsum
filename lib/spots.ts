@@ -94,7 +94,7 @@ function toOption(spot: Spot, userLat: number, userLon: number): SpotOption {
  * Ciudades más cercanas al usuario con sus circunstancias locales, ordenadas por distancia.
  * Cálculo por tandas cediendo el hilo (~10-30 ms por ciudad con astronomy-engine).
  */
-export async function listSpotOptions(userLat: number, userLon: number, limit = 10): Promise<SpotOption[]> {
+export async function listSpotOptions(userLat: number, userLon: number, limit = 5): Promise<SpotOption[]> {
   const nearest = citiesForActive()
     .map((c) => ({
       ...c,

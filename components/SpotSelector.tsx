@@ -99,6 +99,20 @@ export function SpotSelector({
         setSections([...next]);
       };
 
+      // Aplica nubosidades ya descargadas a las secciones visibles
+      const applyClouds = (byCoord: Map<string, unknown>) => {
+        const refMax = allForClouds.find((r) => r.maxTime)?.maxTime ?? null;
+        next = next.map((sec) => ({
+          ...sec,
+          rows: sec.rows.map((r) => {
+            const f = byCoord.get(`${r.lat},${r.lon}`) as Parameters<typeof cloudCoverAt>[0] | undefined;
+            const when = r.maxTime ?? refMax;
+            return f && when ? { ...r, cloudPct: cloudCoverAt(f, when) } : r;
+          }),
+        }));
+        publish();
+      };
+
       // Deja arrancar la animación del modal antes del primer cálculo pesado
       await yieldUI();
       if (cancelled) return;
@@ -116,6 +130,12 @@ export function SpotSelector({
         allForClouds.push(gpsRow);
         next.push({ title: 'MI POSICIÓN', rows: [gpsRow] });
       }
+
+      // Búsqueda de totalidad lanzada ya: su CPU se solapa con la red de nubes/geocoder
+      const nearestP =
+        userGeo && gpsRow && gpsRow.kind !== 'total'
+          ? findNearestTotality(userGeo.lat, userGeo.lon).catch(() => null)
+          : Promise.resolve(null);
 
       if (recentSpots.length > 0) {
         const recentRows: Row[] = [];
@@ -141,54 +161,43 @@ export function SpotSelector({
       next.push({ title: 'DESTACADAS', rows: featured });
       publish();
 
-      // Totalidad más cercana: lo más lento (motor + geocoder); se inserta al resolver
-      if (userGeo && gpsRow && gpsRow.kind !== 'total') {
-        const near = await findNearestTotality(userGeo.lat, userGeo.lon).catch(() => null);
-        if (near && !cancelled) {
-          const place = await localityName(near.lat, near.lon);
-          const dir = bearingLabel(near.bearingDeg);
-          const name = place
-            ? `${place} · totalidad`
-            : `Totalidad · ${near.distanceKm} km al ${dir}`;
-          const nearSpot: Spot = { name, lat: near.lat, lon: near.lon, origin: 'nearest' };
-          const nearRow: Row = {
-            name,
-            lat: near.lat,
-            lon: near.lon,
-            origin: 'nearest',
-            distanceKm: near.distanceKm,
-            kind: 'total',
-            obscuration: 1,
-            totalityDurationSec: near.durationSec,
-            maxTime: null,
-            cloudPct: null,
-            selectValue: nearSpot,
-          };
-          allForClouds.push(nearRow);
-          next.splice(1, 0, { title: 'TOTALIDAD MÁS CERCANA', rows: [nearRow] });
-          publish();
-        }
+      // Nubes de lo ya visible: red en paralelo con la búsqueda de totalidad
+      const mainCoords = allForClouds.map((r) => ({ lat: r.lat, lon: r.lon }));
+      const cloudsP = fetchCloudCoverBatch(mainCoords)
+        .then((fcs) => new Map(mainCoords.map((c, i) => [`${c.lat},${c.lon}`, fcs[i]])))
+        .catch(() => null); // sin red: lista sin nubes
+
+      const near = await nearestP;
+      if (near && !cancelled) {
+        const place = await localityName(near.lat, near.lon);
+        const dir = bearingLabel(near.bearingDeg);
+        const name = place ? `${place} · totalidad` : `Totalidad · ${near.distanceKm} km al ${dir}`;
+        const nearSpot: Spot = { name, lat: near.lat, lon: near.lon, origin: 'nearest' };
+        const nearRow: Row = {
+          name,
+          lat: near.lat,
+          lon: near.lon,
+          origin: 'nearest',
+          distanceKm: near.distanceKm,
+          kind: 'total',
+          obscuration: 1,
+          totalityDurationSec: near.durationSec,
+          maxTime: null,
+          cloudPct: null,
+          selectValue: nearSpot,
+        };
+        allForClouds.push(nearRow);
+        next.splice(1, 0, { title: 'TOTALIDAD MÁS CERCANA', rows: [nearRow] });
+        publish();
       }
 
-      try {
-        const coords = allForClouds.map((r) => ({ lat: r.lat, lon: r.lon }));
-        const forecasts = await fetchCloudCoverBatch(coords);
-        if (cancelled) return;
-        // Por coordenada, no por índice: el orden de secciones ya no coincide con allForClouds
-        const byCoord = new Map(coords.map((c, i) => [`${c.lat},${c.lon}`, forecasts[i]]));
-        const refMax = allForClouds.find((r) => r.maxTime)?.maxTime ?? null;
-        next = next.map((sec) => ({
-          ...sec,
-          rows: sec.rows.map((r) => {
-            const f = byCoord.get(`${r.lat},${r.lon}`);
-            const when = r.maxTime ?? refMax;
-            return f && when ? { ...r, cloudPct: cloudCoverAt(f, when) } : r;
-          }),
-        }));
-        publish();
-      } catch {
-        // sin red: lista sin nubes
-      }
+      const nearCloudP = near
+        ? fetchCloudCoverBatch([{ lat: near.lat, lon: near.lon }]).catch(() => [])
+        : Promise.resolve([]);
+      const [byCoord, nearFcs] = await Promise.all([cloudsP, nearCloudP]);
+      if (cancelled || !byCoord) return;
+      if (near && nearFcs[0]) byCoord.set(`${near.lat},${near.lon}`, nearFcs[0]);
+      applyClouds(byCoord);
     })();
     return () => {
       cancelled = true;
