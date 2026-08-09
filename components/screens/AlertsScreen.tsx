@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Notifications from 'expo-notifications';
 import type { LocalEclipse } from '../../lib/eclipse';
 import {
   alertLeadChipLabel,
@@ -48,9 +49,30 @@ export function AlertsScreen({
   const insets = useSafeAreaInsets();
   /** Mensajes puntuales (prueba / error). El conteo va siempre en el footer. */
   const [flash, setFlash] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const testClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Solo cuentan los eventos que existen en esta ubicación (parcial no tiene C2/C3)
   const activeCount = eclipse.events.filter((e) => toggles[e.key]).length;
   const scheduledCount = countEclipseAlerts(eclipse, toggles, leads, c1Plan);
+
+  const clearTestFlash = () => {
+    if (testClearRef.current) {
+      clearTimeout(testClearRef.current);
+      testClearRef.current = null;
+    }
+    setFlash(null);
+    setTesting(false);
+  };
+
+  useEffect(() => {
+    const sub = Notifications.addNotificationReceivedListener((n) => {
+      if (n.request.content.title?.includes('Prueba')) clearTestFlash();
+    });
+    return () => {
+      sub.remove();
+      if (testClearRef.current) clearTimeout(testClearRef.current);
+    };
+  }, []);
 
   const reschedule = async (
     nextToggles: AlertToggles,
@@ -86,10 +108,16 @@ export function AlertsScreen({
   };
 
   const onTest = async () => {
+    if (testing) return;
+    setTesting(true);
+    setFlash('Enviando notificación de prueba…');
     try {
       await sendTestNotification(alertSound);
-      setFlash('Notificación de prueba en 5 segundos…');
+      // Por si el listener no llega (app en background / OEM raro)
+      if (testClearRef.current) clearTimeout(testClearRef.current);
+      testClearRef.current = setTimeout(clearTestFlash, 1500);
     } catch (e) {
+      setTesting(false);
       setFlash(e instanceof Error ? e.message : 'Error en notificación de prueba');
     }
   };
@@ -208,8 +236,15 @@ export function AlertsScreen({
         })}
       </ScrollView>
       <View style={s.footer}>
-        <Pressable style={s.testButton} onPress={onTest}>
-          <Text style={s.testButtonText}>PROBAR NOTIFICACIÓN</Text>
+        <Pressable
+          style={[s.testButton, testing && s.testButtonDisabled]}
+          onPress={onTest}
+          disabled={testing}
+          accessibilityState={{ disabled: testing, busy: testing }}
+        >
+          <Text style={[s.testButtonText, testing && s.testButtonTextDisabled]}>
+            {testing ? 'ENVIANDO…' : 'PROBAR NOTIFICACIÓN'}
+          </Text>
         </Pressable>
         <Text style={s.status}>{flash ?? `${scheduledCount} avisos programados`}</Text>
       </View>
@@ -294,6 +329,8 @@ const s = StyleSheet.create({
     padding: 15,
     alignItems: 'center',
   },
+  testButtonDisabled: { opacity: 0.45 },
   testButtonText: { fontFamily: F.bold, fontSize: 14, letterSpacing: 1, color: C.text },
+  testButtonTextDisabled: { color: C.dim },
   status: { fontFamily: F.medium, fontSize: 12, color: C.corona, textAlign: 'center', marginTop: 10 },
 });

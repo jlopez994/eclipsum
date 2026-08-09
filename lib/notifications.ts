@@ -139,7 +139,7 @@ async function ensurePermissionAndChannel(sound: AlertSound): Promise<string> {
   return id;
 }
 
-/** Notificación de prueba en 5 s — para validar canal/permisos antes del día del eclipse. */
+/** Notificación de prueba inmediata — valida canal/permisos. */
 export async function sendTestNotification(sound: AlertSound = 'eclipse'): Promise<void> {
   const channelId = await ensurePermissionAndChannel(sound);
   await Notifications.scheduleNotificationAsync({
@@ -147,12 +147,10 @@ export async function sendTestNotification(sound: AlertSound = 'eclipse'): Promi
       title: '🔔 Prueba Eclipsum',
       body: 'Las alertas funcionan. Listo para el eclipse.',
       sound: soundFile(sound),
+      ...(Platform.OS === 'android' ? { channelId } : {}),
     },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds: 5,
-      channelId,
-    },
+    // null = presentar ya (sin TIME_INTERVAL, que en Android añade latencia)
+    trigger: null,
   });
 }
 
