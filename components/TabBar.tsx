@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { C, F } from './theme';
 
@@ -42,8 +43,9 @@ const TABS: { key: TabKey; label: string }[] = [
 ];
 
 export function TabBar({ active, onChange }: TabBarProps) {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={s.bar}>
+    <View style={[s.bar, { height: 68 + insets.bottom, paddingBottom: insets.bottom }]}>
       {TABS.map((t) => {
         const color = active === t.key ? C.corona : C.dim;
         return (
@@ -59,7 +61,6 @@ export function TabBar({ active, onChange }: TabBarProps) {
 
 const s = StyleSheet.create({
   bar: {
-    height: 68,
     flexDirection: 'row',
     backgroundColor: 'rgba(11,11,16,0.96)',
     borderTopWidth: 1,

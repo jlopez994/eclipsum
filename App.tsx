@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, AppState, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import {
@@ -11,13 +12,16 @@ import {
   SpaceGrotesk_700Bold,
 } from '@expo-google-fonts/space-grotesk';
 import { computeLocalEclipse, type LocalEclipse } from './lib/eclipse';
-import { cloudCoverAt, fetchCloudCoverCached } from './lib/weather';
-import { findNearestTotality, haversineKm, type TotalityDirection } from './lib/totality';
+import { haversineKm } from './lib/totality';
 import { openInMaps } from './lib/maps';
 import type { Spot } from './lib/spots';
 import { scheduleEclipseAlerts } from './lib/notifications';
-import { fetchEclipseMessage, track } from './lib/firebase';
-import { loadPrefs, pushRecent, savePrefs, type Prefs } from './lib/prefs';
+import { fetchEclipseMessage } from './lib/firebase';
+import { pushRecent } from './lib/prefs';
+import { animateNextLayout } from './lib/anim';
+import { useGeo } from './hooks/useGeo';
+import { usePrefs } from './hooks/usePrefs';
+import { REAL_PLACE_KM, useSpotData } from './hooks/useSpotData';
 import { TabBar, type TabKey } from './components/TabBar';
 import { SpotSelector } from './components/SpotSelector';
 import { MapScreen } from './components/screens/MapScreen';
@@ -29,14 +33,6 @@ import { C, F } from './components/theme';
 const ECLIPSE_MODE_LEAD_MS = 30 * 60_000;
 const ECLIPSE_MODE_TAIL_MS = 5 * 60_000;
 const COARSE_TICK_MS = 30_000;
-/** Umbral para mostrar «Tú: …» bajo el chip del puesto */
-const REAL_PLACE_KM = 1;
-
-interface Geo {
-  lat: number;
-  lon: number;
-  place: string;
-}
 
 function cleanPlaceLabel(name: string): string {
   return name.replace(/\s·\sGPS$/, '').replace(/\s·\sManual$/, '').trim();
@@ -53,7 +49,8 @@ function buildDemoEclipse(real: LocalEclipse, now: Date): LocalEclipse {
   };
 }
 
-export default function App() {
+function AppInner() {
+  const insets = useSafeAreaInsets();
   const [fontsLoaded] = useFonts({
     SpaceGrotesk_400Regular,
     SpaceGrotesk_500Medium,
@@ -61,33 +58,18 @@ export default function App() {
     SpaceGrotesk_700Bold,
   });
 
-  const [prefs, setPrefs] = useState<Prefs | null>(null);
-  const [geo, setGeo] = useState<Geo | null>(null);
-  const [locating, setLocating] = useState(true);
+  const { prefs, update: onPrefsChange } = usePrefs();
+  const { geo, locating, granted: locationGranted } = useGeo();
   const [permissions, setPermissions] = useState({ location: false, notifications: false });
-  const [cloudPct, setCloudPct] = useState<number | null>(null);
-  /** Horas de antigüedad del dato de nubes cuando viene de caché; null = fresco o sin dato */
-  const [cloudAgeH, setCloudAgeH] = useState<number | null>(null);
-  const [totality, setTotality] = useState<TotalityDirection | 'none' | null>(null);
-  /** GPS en la escala del diagrama cuando difiere del puesto; null = solapado */
-  const [hereOnMap, setHereOnMap] = useState<{
-    isTotal: boolean;
-    totality: TotalityDirection | 'none' | null;
-    /** km entre GPS y puesto */
-    km: number;
-    /** Obscuración en el GPS, 0..1; null si aún no calculada */
-    obscuration: number | null;
-  } | null>(null);
   const [remoteMsg, setRemoteMsg] = useState('');
   const [tab, setTab] = useState<TabKey>('mapa');
   const [demo, setDemo] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
 
-  const onPrefsChange = useCallback((next: Prefs) => {
-    setPrefs(next);
-    void savePrefs(next);
-  }, []);
+  useEffect(() => {
+    setPermissions((p) => ({ ...p, location: locationGranted }));
+  }, [locationGranted]);
 
   useEffect(() => {
     // Relee permisos sin pedirlos: el usuario puede cambiarlos en Ajustes del sistema
@@ -99,7 +81,6 @@ export default function App() {
         setPermissions((p) => ({ ...p, location: status === 'granted' })),
       );
     };
-    void loadPrefs().then(setPrefs);
     void fetchEclipseMessage().then(setRemoteMsg);
     refreshPermissions();
     // Al volver a primer plano: Remote Config (respeta caché) y permisos actualizados
@@ -115,50 +96,6 @@ export default function App() {
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), COARSE_TICK_MS);
     return () => clearInterval(id);
-  }, []);
-
-  // Resolver posición GPS (única fuente de «dónde estoy»; los puestos van aparte)
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLocating(true);
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (cancelled) return;
-        setPermissions((p) => ({ ...p, location: status === 'granted' }));
-        if (status !== 'granted') {
-          setGeo(null);
-          return;
-        }
-        // GPS puede fallar (emulador, interiores): caemos a la última posición conocida
-        let coords: { lat: number; lon: number } | null = null;
-        try {
-          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-        } catch {
-          const last = await Location.getLastKnownPositionAsync().catch(() => null);
-          if (last) coords = { lat: last.coords.latitude, lon: last.coords.longitude };
-        }
-        if (cancelled) return;
-        if (!coords) {
-          setGeo(null);
-          return;
-        }
-        let place = 'GPS';
-        try {
-          const [addr] = await Location.reverseGeocodeAsync({ latitude: coords.lat, longitude: coords.lon });
-          if (addr?.city) place = `${addr.city} · GPS`;
-        } catch {
-          // sin geocoder: mostramos solo GPS
-        }
-        if (!cancelled) setGeo({ lat: coords.lat, lon: coords.lon, place });
-      } finally {
-        if (!cancelled) setLocating(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   // Sembrar puesto deseado con GPS si aún no hay ninguno guardado
@@ -186,76 +123,7 @@ export default function App() {
     [active?.lat, active?.lon],
   );
 
-  // Nubosidad + totalidad cercana + analytics al cambiar de puesto
-  useEffect(() => {
-    if (!active || !eclipse) return;
-    let cancelled = false;
-    track('eclipse_computed', { kind: eclipse.kind, obscuration: Math.round(eclipse.obscuration * 100) });
-    const maxEvent = eclipse.events.find((e) => e.key === 'MAX');
-    fetchCloudCoverCached(active.lat, active.lon).then((c) => {
-      if (cancelled) return;
-      if (!c || !maxEvent) {
-        setCloudPct(null);
-        setCloudAgeH(null);
-        return;
-      }
-      setCloudPct(cloudCoverAt(c.forecast, maxEvent.time));
-      // Solo marcamos antigüedad si el dato viene de caché con más de media hora
-      setCloudAgeH(c.ageMs > 30 * 60_000 ? Math.max(1, Math.round(c.ageMs / 3_600_000)) : null);
-    });
-    if (eclipse.kind === 'total') {
-      setTotality(null);
-    } else {
-      findNearestTotality(active.lat, active.lon)
-        .then((t) => !cancelled && setTotality(t ?? 'none'))
-        .catch(() => !cancelled && setTotality('none'));
-    }
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active?.lat, active?.lon, eclipse]);
-
-  // Segundo punto: GPS real en la escala de la banda cuando no coincide con el puesto
-  useEffect(() => {
-    if (!geo || !active) {
-      setHereOnMap(null);
-      return;
-    }
-    const km = haversineKm(geo.lat, geo.lon, active.lat, active.lon);
-    if (km < REAL_PLACE_KM) {
-      setHereOnMap(null);
-      return;
-    }
-    let cancelled = false;
-    const kmRound = Math.round(km);
-    // Provisional ya: que el punto se vea sin esperar al cálculo de km a la banda
-    setHereOnMap({ isTotal: false, totality: 'none', km: kmRound, obscuration: null });
-    try {
-      const hereEc = computeLocalEclipse(geo.lat, geo.lon);
-      if (hereEc.kind === 'total') {
-        if (!cancelled)
-          setHereOnMap({ isTotal: true, totality: null, km: kmRound, obscuration: hereEc.obscuration });
-        return () => {
-          cancelled = true;
-        };
-      }
-      findNearestTotality(geo.lat, geo.lon)
-        .then((t) => {
-          if (!cancelled)
-            setHereOnMap({ isTotal: false, totality: t ?? 'none', km: kmRound, obscuration: hereEc.obscuration });
-        })
-        .catch(() => {
-          if (!cancelled)
-            setHereOnMap({ isTotal: false, totality: 'none', km: kmRound, obscuration: hereEc.obscuration });
-        });
-    } catch {
-      if (!cancelled) setHereOnMap({ isTotal: false, totality: 'none', km: kmRound, obscuration: null });
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [geo?.lat, geo?.lon, active?.lat, active?.lon]);
+  const { cloud, totality, hereOnMap } = useSpotData(active, eclipse, geo);
 
   // Reprogramar alertas al cambiar de puesto (las horas de contacto varían por ubicación)
   useEffect(() => {
@@ -270,6 +138,7 @@ export default function App() {
   const selectSpot = useCallback(
     (spot: Spot) => {
       if (!prefs) return;
+      animateNextLayout();
       const recentSpots = spot.origin === 'gps' ? prefs.recentSpots : pushRecent(prefs.recentSpots, spot);
       onPrefsChange({ ...prefs, spot, recentSpots });
     },
@@ -278,6 +147,7 @@ export default function App() {
 
   const recalcHere = useCallback(() => {
     if (!prefs || !geo) return;
+    animateNextLayout();
     const spot: Spot = {
       name: cleanPlaceLabel(geo.place) || 'Mi posición',
       lat: geo.lat,
@@ -342,7 +212,7 @@ export default function App() {
     <View style={s.root}>
       <StatusBar style="light" />
       {remoteMsg !== '' && (
-        <View style={s.remoteBanner}>
+        <View style={[s.remoteBanner, { marginTop: insets.top + 8 }]}>
           <Text style={s.remoteBannerText}>{remoteMsg}</Text>
         </View>
       )}
@@ -355,17 +225,17 @@ export default function App() {
               hereLabel={hereLabel}
               spotIsGps={active.origin === 'gps'}
               hereOnMap={hereOnMap}
-              cloudPct={cloudPct}
-              cloudAgeHours={cloudAgeH}
+              cloudPct={cloud.pct}
+              cloudAgeHours={cloud.ageH}
+              cloudLoading={cloud.loading}
               totality={totality}
               now={now}
               spotCoords={{ lat: active.lat, lon: active.lon }}
               hereCoords={hereOnMap && geo ? { lat: geo.lat, lon: geo.lon } : null}
-              mapView={prefs?.mapView ?? 'diagram'}
-              onToggleMapView={() => {
-                if (prefs)
-                  onPrefsChange({ ...prefs, mapView: prefs.mapView === 'real' ? 'diagram' : 'real' });
-              }}
+              mapView={prefs.mapView}
+              onToggleMapView={() =>
+                onPrefsChange({ ...prefs, mapView: prefs.mapView === 'real' ? 'diagram' : 'real' })
+              }
               onOpenSelector={() => setSelectorOpen(true)}
               onOpenMaps={() => openInMaps(active.lat, active.lon, active.place)}
               divergenceKm={divergenceKm}
@@ -418,13 +288,20 @@ export default function App() {
   );
 }
 
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppInner />
+    </SafeAreaProvider>
+  );
+}
+
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: C.bg },
   loadingText: { color: C.dim, fontSize: 14, fontFamily: F.medium },
   chooseLink: { color: C.corona, fontSize: 14, fontFamily: F.bold, letterSpacing: 1 },
   remoteBanner: {
-    marginTop: 44,
     marginHorizontal: 16,
     backgroundColor: C.surface,
     borderWidth: 1,

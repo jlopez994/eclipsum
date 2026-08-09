@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { LocalEclipse } from '../../lib/eclipse';
 import { scheduleEclipseAlerts, sendTestNotification } from '../../lib/notifications';
 import type { AlertToggles } from '../../lib/prefs';
@@ -24,6 +25,7 @@ const fmtHM = (d: Date) =>
   d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 export function AlertsScreen({ eclipse, toggles, onToggle }: AlertsScreenProps) {
+  const insets = useSafeAreaInsets();
   const [status, setStatus] = useState<string | null>(null);
   // Solo cuentan los eventos que existen en esta ubicación (parcial no tiene C2/C3)
   const activeCount = eclipse.events.filter((e) => toggles[e.key]).length;
@@ -55,7 +57,7 @@ export function AlertsScreen({ eclipse, toggles, onToggle }: AlertsScreenProps) 
 
   return (
     <View style={s.root}>
-      <View style={s.header}>
+      <View style={[s.header, { paddingTop: insets.top + 14 }]}>
         <Text style={s.title}>Alertas</Text>
         <View style={s.countRow}>
           <View style={s.countDot} />
@@ -116,7 +118,7 @@ export function AlertsScreen({ eclipse, toggles, onToggle }: AlertsScreenProps) 
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
-  header: { paddingHorizontal: 24, paddingTop: 26 },
+  header: { paddingHorizontal: 24 },
   title: { fontFamily: F.bold, fontSize: 32, letterSpacing: -0.5, color: C.text },
   countRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   countDot: {

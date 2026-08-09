@@ -14,6 +14,7 @@ import { openInMaps } from '../lib/maps';
 import { listSpotOptions, type Spot, type SpotOption } from '../lib/spots';
 import { cloudCoverAt, fetchCloudCoverBatch } from '../lib/weather';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
+import { animateNextLayout } from '../lib/anim';
 import { C, F } from './theme';
 
 // Referencia peninsular si no hay GPS: distancias aproximadas mejor que nada
@@ -150,6 +151,7 @@ export function SpotSelector({
       }));
       allForClouds.push(...featured);
       next.push({ title: 'DESTACADAS', rows: featured });
+      animateNextLayout();
       setSections(next);
 
       try {
@@ -157,6 +159,7 @@ export function SpotSelector({
         if (cancelled) return;
         const refMax = allForClouds.find((r) => r.maxTime)?.maxTime ?? null;
         let i = 0;
+        animateNextLayout();
         setSections(
           next.map((sec) => ({
             ...sec,

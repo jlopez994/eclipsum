@@ -8,8 +8,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, Path, RadialGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
@@ -19,9 +21,10 @@ import { Countdown } from '../Countdown';
 import { RealMap } from '../RealMap';
 import { C, F } from '../theme';
 
-const SHEET_MIN = 236;
-const SHEET_MAX = 560;
-const SHEET_SNAP_THRESHOLD = 380;
+// Colapsada: asoman solo countdown + fila de stats; la cronología queda recortada
+const SHEET_MIN = 192;
+/** Mínimo de mapa visible con la hoja estirada */
+const SHEET_TOP_GAP = 150;
 
 /** Ancla visual bajo la banda (guía / escala de distancia). */
 const BAND_ANCHOR = 0.355;
@@ -64,6 +67,8 @@ interface MapScreenProps {
   cloudPct: number | null;
   /** Antigüedad en horas del dato de nubes cuando viene de caché sin red; null = fresco */
   cloudAgeHours: number | null;
+  /** Nubosidad del puesto en curso de carga */
+  cloudLoading: boolean;
   totality: TotalityDirection | 'none' | null;
   now: Date;
   /** Coordenadas del puesto activo (para el mapa real) */
@@ -98,9 +103,11 @@ function dotTopFraction(isTotal: boolean, totality: TotalityDirection | 'none' |
   return kmFraction(totality.distanceKm);
 }
 
-function useSheet() {
+function useSheet(maxH: number) {
   const height = useRef(new Animated.Value(SHEET_MIN)).current;
   const current = useRef(SHEET_MIN);
+  const maxRef = useRef(maxH);
+  maxRef.current = maxH;
   useEffect(() => {
     const id = height.addListener(({ value }) => {
       current.current = value;
@@ -121,13 +128,14 @@ function useSheet() {
         startH.current = current.current;
       },
       onPanResponderMove: (_e, g) => {
-        height.setValue(Math.min(SHEET_MAX, Math.max(SHEET_MIN, startH.current - g.dy)));
+        height.setValue(Math.min(maxRef.current, Math.max(SHEET_MIN, startH.current - g.dy)));
       },
       onPanResponderRelease: (_e, g) => {
+        const mid = (SHEET_MIN + maxRef.current) / 2;
         if (Math.abs(g.dy) < 6) {
-          snapTo(startH.current > SHEET_SNAP_THRESHOLD ? SHEET_MIN : SHEET_MAX);
+          snapTo(startH.current > mid ? SHEET_MIN : maxRef.current);
         } else {
-          snapTo(startH.current - g.dy > SHEET_SNAP_THRESHOLD ? SHEET_MAX : SHEET_MIN);
+          snapTo(startH.current - g.dy > mid ? maxRef.current : SHEET_MIN);
         }
       },
     }),
@@ -163,8 +171,8 @@ function HereDot() {
 }
 
 /**
- * Brújula: la N gira con el rumbo del móvil (arriba del chip = dirección en la que miras).
- * Si no hay sensor (emulador), no se muestra.
+ * Brújula: aguja + N giran juntas y señalan el norte geográfico real
+ * (convención de mapas). Sin sensor: N estática, norte = arriba del diagrama.
  */
 function CompassChip() {
   const [heading, setHeading] = useState<number | null>(null);
@@ -192,15 +200,17 @@ function CompassChip() {
   return (
     <View
       style={s.compass}
-      accessibilityLabel={heading === null ? 'Norte del diagrama: arriba' : `Norte: ${Math.round(heading)}°`}
+      accessibilityLabel={
+        heading === null ? 'Norte del diagrama: arriba' : `El norte queda a ${Math.round(heading)}°`
+      }
     >
       {heading !== null ? (
-        <>
-          <View style={s.compassTick} />
-          <View style={[s.compassDial, { transform: [{ rotate: `${-heading}deg` }] }]}>
-            <Text style={s.compassN}>N</Text>
-          </View>
-        </>
+        <View style={[s.needleWrap, { transform: [{ rotate: `${-heading}deg` }] }]}>
+          <Svg width={11} height={13} viewBox="0 0 12 14" fill={C.corona}>
+            <Path d="M6 0 L11 13 L6 10.4 L1 13 Z" />
+          </Svg>
+          <Text style={s.needleN}>N</Text>
+        </View>
       ) : (
         <Text style={s.compassN}>N</Text>
       )}
@@ -329,6 +339,7 @@ export function MapScreen({
   hereOnMap,
   cloudPct,
   cloudAgeHours,
+  cloudLoading,
   totality,
   now,
   spotCoords,
@@ -340,7 +351,11 @@ export function MapScreen({
   divergenceKm,
   onRecalcHere,
 }: MapScreenProps) {
-  const { height, pan } = useSheet();
+  const insets = useSafeAreaInsets();
+  const { height: winH } = useWindowDimensions();
+  // Hoja estirada: ocupa todo menos un asomo de mapa; en pantallas altas cabe la cronología sin scroll
+  const sheetMax = Math.max(560, winH - insets.top - SHEET_TOP_GAP);
+  const { height, pan } = useSheet(sheetMax);
   const isTotal = eclipse.kind === 'total';
   const upcoming = nextEvent(eclipse, now);
   const maxEvent = eclipse.events.find((e) => e.key === 'MAX');
@@ -367,7 +382,7 @@ export function MapScreen({
   const cloudStale = cloudAgeHours !== null ? ` · ${cloudAgeHours}h` : '';
   const cloud =
     cloudPct === null
-      ? { color: C.dim, label: 'SIN DATOS' }
+      ? { color: C.dim, label: cloudLoading ? 'NUBES…' : 'SIN DATOS' }
       : cloudPct < 25
         ? { color: C.ok, label: `${cloudPct}% NUBES${cloudStale}` }
         : cloudPct < 60
@@ -511,7 +526,7 @@ export function MapScreen({
       )}
 
       {/* Overlay superior: chips + lugares + aviso divergencia */}
-      <View style={s.topOverlay} pointerEvents="box-none">
+      <View style={[s.topOverlay, { top: insets.top + 8 }]} pointerEvents="box-none">
         <View style={s.chipsRow} pointerEvents="box-none">
           <View style={s.chipGroup}>
             <Pressable style={s.chipLocation} onPress={onOpenSelector}>
@@ -786,7 +801,7 @@ const s = StyleSheet.create({
     borderRadius: 5,
     overflow: 'hidden',
   },
-  topOverlay: { position: 'absolute', top: 44, left: 0, right: 0, gap: 12 },
+  topOverlay: { position: 'absolute', left: 0, right: 0, gap: 12 },
   chipsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -840,26 +855,9 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  /** Marca fija: dirección hacia la que apunta la parte superior del móvil */
-  compassTick: {
-    position: 'absolute',
-    top: 3,
-    width: 0,
-    height: 0,
-    borderLeftWidth: 4,
-    borderRightWidth: 4,
-    borderBottomWidth: 6,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: C.corona,
-    zIndex: 2,
-  },
-  compassDial: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    paddingTop: 5,
-  },
+  /** Aguja + N giran juntas: la punta señala el norte real */
+  needleWrap: { alignItems: 'center', justifyContent: 'center' },
+  needleN: { fontFamily: F.bold, fontSize: 9, lineHeight: 10, color: C.text, marginTop: 1 },
   compassN: { fontFamily: F.bold, fontSize: 12, color: C.text },
   sheet: {
     position: 'absolute',

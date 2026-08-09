@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { useKeepAwake } from 'expo-keep-awake';
 import { currentPhase, nextEvent, type LocalEclipse } from '../../lib/eclipse';
@@ -79,6 +80,7 @@ function CoronaRing({ glow, border, inner }: { glow: string; border: string; inn
 
 export function EclipseModeScreen({ eclipse, place, now, isDemo, onExitDemo }: EclipseModeScreenProps) {
   useKeepAwake();
+  const insets = useSafeAreaInsets();
   const phase = currentPhase(eclipse, now);
   const upcoming = nextEvent(eclipse, now);
   const inTotality = phase?.safeToLook === true;
@@ -101,7 +103,7 @@ export function EclipseModeScreen({ eclipse, place, now, isDemo, onExitDemo }: E
 
   return (
     <View style={s.root}>
-      <View style={s.topRow}>
+      <View style={[s.topRow, { paddingTop: insets.top + 14 }]}>
         <Clock />
         <Pressable onPress={isDemo ? onExitDemo : undefined}>
           <Text style={s.modeTag}>

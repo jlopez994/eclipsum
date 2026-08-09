@@ -12,7 +12,9 @@ Notifications.setNotificationHandler({
   }),
 });
 
-const CHANNEL_ID = 'eclipse-alerts';
+// v2: canal con sonido propio — los canales Android son inmutables una vez creados
+const CHANNEL_ID = 'eclipse-alerts-v2';
+const SOUND = 'eclipse.wav';
 
 interface Alert {
   title: string;
@@ -59,7 +61,8 @@ async function ensurePermissionAndChannel(): Promise<void> {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
       name: 'Alertas de eclipse',
       importance: Notifications.AndroidImportance.MAX,
-      sound: undefined, // canal usa el sonido por defecto del sistema
+      sound: SOUND,
+      vibrationPattern: [0, 250, 150, 250, 150, 500],
     });
   }
 }
@@ -68,7 +71,7 @@ async function ensurePermissionAndChannel(): Promise<void> {
 export async function sendTestNotification(): Promise<void> {
   await ensurePermissionAndChannel();
   await Notifications.scheduleNotificationAsync({
-    content: { title: '🔔 Prueba Eclipsum', body: 'Las alertas funcionan. Listo para el eclipse.', sound: true },
+    content: { title: '🔔 Prueba Eclipsum', body: 'Las alertas funcionan. Listo para el eclipse.', sound: SOUND },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
       seconds: 5,
@@ -87,7 +90,7 @@ export async function scheduleEclipseAlerts(eclipse: LocalEclipse, enabled: Aler
   const alerts = buildAlerts(eclipse, enabled);
   for (const a of alerts) {
     await Notifications.scheduleNotificationAsync({
-      content: { title: a.title, body: a.body, sound: true },
+      content: { title: a.title, body: a.body, sound: SOUND },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
         date: a.time,

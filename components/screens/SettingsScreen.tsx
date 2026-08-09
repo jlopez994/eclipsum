@@ -1,4 +1,5 @@
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F } from '../theme';
 
 const IGN_URL = 'https://eclipses.ign.es/como-observar-eclipses.html';
@@ -9,9 +10,10 @@ interface SettingsScreenProps {
 }
 
 export function SettingsScreen({ permissions, onDemoEclipse }: SettingsScreenProps) {
+  const insets = useSafeAreaInsets();
   return (
     <View style={s.root}>
-      <Text style={s.title}>Ajustes</Text>
+      <Text style={[s.title, { paddingTop: insets.top + 14 }]}>Ajustes</Text>
       <ScrollView style={s.body} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 22, paddingBottom: 36 }}>
         <Text style={s.hint}>
           El puesto de observación se elige en el mapa, tocando el nombre del lugar arriba a la izquierda.
@@ -85,7 +87,6 @@ const s = StyleSheet.create({
     letterSpacing: -0.5,
     color: C.text,
     paddingHorizontal: 24,
-    paddingTop: 26,
     paddingBottom: 8,
   },
   body: { flex: 1, paddingHorizontal: 24, paddingTop: 8 },
