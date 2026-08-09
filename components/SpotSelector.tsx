@@ -11,7 +11,7 @@ import {
 import * as Location from 'expo-location';
 import { computeLocalEclipse } from '../lib/eclipse';
 import { openInMaps } from '../lib/maps';
-import { listSpotOptions, type Spot, type SpotOption } from '../lib/spots';
+import type { Spot, SpotOption } from '../lib/spots';
 import { cloudCoverAt, fetchCloudCoverBatch } from '../lib/weather';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
 import { animateNextLayout, yieldUI } from '../lib/anim';
@@ -148,17 +148,6 @@ export function SpotSelector({
         next.push({ title: 'HABITUALES', rows: recentRows });
       }
       // Primer pintado con lo ya calculado; el resto llega por tandas
-      publish();
-
-      const options = await listSpotOptions(ref.lat, ref.lon);
-      if (cancelled) return;
-      const featured: Row[] = options.map((o) => ({
-        ...o,
-        cloudPct: null,
-        selectValue: { name: o.name, lat: o.lat, lon: o.lon, origin: o.origin },
-      }));
-      allForClouds.push(...featured);
-      next.push({ title: 'DESTACADAS', rows: featured });
       publish();
 
       // Nubes de lo ya visible: red en paralelo con la búsqueda de totalidad

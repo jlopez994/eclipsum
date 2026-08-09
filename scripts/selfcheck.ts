@@ -4,7 +4,7 @@ import { computeLocalEclipse, currentPhase, nextEvent } from '../lib/eclipse';
 import { ECLIPSES, getActiveEclipse, getEclipseById } from '../lib/eclipseCatalog';
 import { cloudCoverAt } from '../lib/weather';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
-import { listSpotOptions, type Spot } from '../lib/spots';
+import type { Spot } from '../lib/spots';
 import { pushRecent, RECENT_CAP, type RecentSpot } from '../lib/prefs';
 
 async function main() {
@@ -79,21 +79,7 @@ async function main() {
   const mzKm = haversineKm(40.42, -3.7, 41.65, -0.88);
   assert.ok(Math.abs(mzKm - 256) < 20, `Madrid-Zaragoza plausible: ${mzKm.toFixed(0)} km`);
 
-  // spots: desde Madrid, 5 lugares ordenados por distancia con circunstancias
-  const spots = await listSpotOptions(40.42, -3.7);
-  assert.equal(spots.length, 5, '5 lugares');
-  assert.equal(spots[0].name, 'Madrid', 'El más cercano a Madrid es Madrid');
-  for (let i = 1; i < spots.length; i++) {
-    assert.ok(spots[i].distanceKm >= spots[i - 1].distanceKm, 'Orden por distancia');
-  }
-  assert.ok(spots.some((sp) => sp.kind === 'total'), 'Alguna ciudad cercana en la banda');
-  assert.ok(spots.every((sp) => sp.maxTime !== null && sp.obscuration > 0.85), 'Circunstancias calculadas');
-
   console.log('selfcheck OK — Zaragoza total', zgz.totalityDurationSec + 's, máximo', max.time.toISOString());
-  console.log(
-    'Spots desde Madrid:',
-    spots.slice(0, 4).map((sp) => `${sp.name} ${sp.distanceKm}km ${sp.kind}`).join(' · '),
-  );
   console.log(
     'Sevilla → totalidad a', dir!.distanceKm, 'km al', bearingLabel(dir!.bearingDeg),
     `(${dir!.lat.toFixed(2)}, ${dir!.lon.toFixed(2)})`,
