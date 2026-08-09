@@ -1,6 +1,7 @@
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ALERT_SOUND_OPTIONS, previewAlertSound } from '../../lib/notifications';
+import { ALERT_SOUND_OPTIONS } from '../../lib/notifications';
+import { previewAlertSound } from '../../lib/soundPreview';
 import type { AlertSound } from '../../lib/prefs';
 import { C, F } from '../theme';
 

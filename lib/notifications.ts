@@ -1,6 +1,5 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import type { LocalEclipse } from './eclipse';
 import type { AlertEarly, AlertSound, AlertToggles, C1PlanAlerts } from './prefs';
 import { ALERT_EARLY_SECONDS, DEFAULT_ALERT_EARLY, DEFAULT_C1_PLAN_ALERTS } from './prefs';
@@ -31,35 +30,6 @@ function channelIdFor(sound: AlertSound): string {
 /** Nombre de fichero (custom) o 'default' (sistema). */
 function soundFile(sound: AlertSound): string {
   return sound === 'eclipse' ? 'eclipse.wav' : 'default';
-}
-
-const ECLIPSE_PREVIEW = require('../assets/sounds/eclipse.wav');
-let eclipsePlayer: ReturnType<typeof createAudioPlayer> | null = null;
-let audioModeReady = false;
-
-async function playEclipsePreview(): Promise<void> {
-  if (!audioModeReady) {
-    await setAudioModeAsync({ playsInSilentMode: true, interruptionMode: 'mixWithOthers' });
-    audioModeReady = true;
-  }
-  if (!eclipsePlayer) {
-    eclipsePlayer = createAudioPlayer(ECLIPSE_PREVIEW, { keepAudioSessionActive: true });
-  }
-  await eclipsePlayer.seekTo(0);
-  eclipsePlayer.play();
-}
-
-/** Escucha el tono elegido: custom en app; sistema vía notificación real. */
-export async function previewAlertSound(sound: AlertSound): Promise<void> {
-  try {
-    if (sound === 'eclipse') {
-      await playEclipsePreview();
-      return;
-    }
-    await sendTestNotification('default');
-  } catch {
-    // preview best-effort
-  }
 }
 
 interface Alert {
