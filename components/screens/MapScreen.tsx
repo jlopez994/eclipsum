@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Animated,
+  Easing,
+  Linking,
+  PanResponder,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Svg, { Circle, Defs, Path, RadialGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
@@ -196,6 +206,23 @@ function CompassChip() {
   );
 }
 
+/** Píldora «TOTAL a X km al N» con flecha orientada al rumbo real. */
+function TotalPill({ distanceKm, bearingDeg }: { distanceKm: number; bearingDeg: number }) {
+  return (
+    <View style={s.totalPill}>
+      <View style={{ transform: [{ rotate: `${bearingDeg}deg` }] }}>
+        <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={C.violet} strokeWidth={2.5}>
+          <Path d="M12 19V5M6 11l6-6 6 6" />
+        </Svg>
+      </View>
+      <Text style={s.totalPillText}>
+        <Text style={{ color: C.violet, fontFamily: F.bold }}>TOTAL</Text> a{' '}
+        <Text style={{ color: C.corona }}>{distanceKm} km</Text> al {bearingLabel(bearingDeg)}
+      </Text>
+    </View>
+  );
+}
+
 /** Altura del sol a escala: observador, horizonte y ángulo real. */
 function HorizonDiagram({ altitudeDeg, azimuthDeg }: { altitudeDeg: number; azimuthDeg: number }) {
   const rad = (altitudeDeg * Math.PI) / 180;
@@ -208,11 +235,13 @@ function HorizonDiagram({ altitudeDeg, azimuthDeg }: { altitudeDeg: number; azim
   const sx = ox + r * cos;
   const sy = oy - r * sin;
   const altTxt = altitudeDeg.toFixed(1).replace('.', ',');
-  // Referencia: un puño con el brazo estirado cubre ~10°
-  const fistRad = (10 * Math.PI) / 180;
-  const fistR = 150;
-  const fx = ox + fistR * Math.cos(fistRad);
-  const fy = oy - fistR * Math.sin(fistRad);
+  // Referencia a ojo: un puño con el brazo estirado cubre ~10°
+  const fistTxt =
+    altitudeDeg < 7.5
+      ? 'menos de un puño'
+      : altitudeDeg < 12.5
+        ? 'aproximadamente un puño'
+        : `unos ${(altitudeDeg / 10).toFixed(1).replace('.', ',')} puños`;
   return (
     <View accessibilityLabel={`Sol a ${altTxt}° sobre el horizonte ${bearingLabel(azimuthDeg)}`}>
       <Svg width="100%" height={110} viewBox="0 0 300 110">
@@ -225,16 +254,11 @@ function HorizonDiagram({ altitudeDeg, azimuthDeg }: { altitudeDeg: number; azim
         <Circle cx={190} cy={oy - 8} r={5} fill="#1D1D2C" />
         <Rect x={189} y={oy - 5} width={2} height={5} fill="#1D1D2C" />
         <Path d={`M0 ${oy} H300`} stroke="#2A2A3C" strokeWidth={1.5} />
-        {/* Línea de referencia a 10° */}
+        {/* Cuña sombreada: hace tangible el ángulo real */}
         <Path
-          d={`M${ox} ${oy} L${fx.toFixed(1)} ${fy.toFixed(1)}`}
-          stroke="rgba(242,239,233,0.25)"
-          strokeWidth={1}
-          strokeDasharray="3 4"
+          d={`M${ox} ${oy} L${sx} ${sy} A${r} ${r} 0 0 1 ${ox + r} ${oy} Z`}
+          fill="rgba(255,184,77,0.08)"
         />
-        <SvgText x={fx + 4} y={fy + 3} fill="rgba(242,239,233,0.45)" fontSize={9}>
-          10°
-        </SvgText>
         <Path
           d={`M${ox} ${oy} L${sx} ${sy}`}
           stroke="rgba(255,184,77,0.5)"
@@ -256,7 +280,10 @@ function HorizonDiagram({ altitudeDeg, azimuthDeg }: { altitudeDeg: number; azim
           HORIZONTE {bearingLabel(azimuthDeg)}
         </SvgText>
       </Svg>
-      <Text style={s.horizonNote}>Referencia: un puño con el brazo estirado cubre ≈ 10°.</Text>
+      <Text style={s.horizonNote}>
+        A ojo: {fistTxt} con el brazo estirado sobre el horizonte (un puño ≈ 10°).
+        {altitudeDeg < 12 ? ` Busca horizonte ${bearingLabel(azimuthDeg)} totalmente despejado.` : ''}
+      </Text>
     </View>
   );
 }
@@ -312,11 +339,6 @@ export function MapScreen({
   const isTotal = eclipse.kind === 'total';
   const upcoming = nextEvent(eclipse, now);
   const maxEvent = eclipse.events.find((e) => e.key === 'MAX');
-  const sunHint =
-    maxEvent && maxEvent.altitude > 0
-      ? `El sol estará a ${maxEvent.altitude.toFixed(1).replace('.', ',')}° sobre el horizonte ${bearingLabel(maxEvent.azimuth)} durante el máximo.`
-      : 'El sol estará muy bajo: busca horizonte oeste totalmente despejado.';
-
   // Cronología con el ocaso intercalado; los contactos bajo el horizonte no se ven
   const cronoRows = [
     ...eclipse.events.map((e) => ({
@@ -445,12 +467,11 @@ export function MapScreen({
           style={[s.guideKmWrap, { top: `${(guideTop + guideHeightFrac / 2) * 100}%` }]}
           pointerEvents="none"
         >
-          <Text style={s.guideKmText}>
-            {guideKm} km
-            {!showHere && totality !== null && totality !== 'none'
-              ? ` al ${bearingLabel(totality.bearingDeg)}`
-              : ''}
-          </Text>
+          {!showHere && totality !== null && totality !== 'none' ? (
+            <TotalPill distanceKm={totality.distanceKm} bearingDeg={totality.bearingDeg} />
+          ) : (
+            <Text style={s.guideKmText}>{guideKm} km</Text>
+          )}
         </View>
       )}
 
@@ -461,10 +482,8 @@ export function MapScreen({
         <View style={[s.userArea, dotsCollide && s.hereArea, { top: `${hereTop * 100}%` }]}>
           <HereDot />
           <Text style={s.hereLabel}>{hereLabel ?? 'TÚ'}</Text>
-          {(hereOnMap.isTotal || hereOnMap.obscuration !== null) && (
-            <Text style={[s.dotPct, hereOnMap.isTotal && { color: C.violet }]}>
-              {hereOnMap.isTotal ? 'TOTAL' : fmtPct(hereOnMap.obscuration ?? 0)}
-            </Text>
+          {!hereOnMap.isTotal && hereOnMap.obscuration !== null && (
+            <Text style={s.dotPct}>{fmtPct(hereOnMap.obscuration)}</Text>
           )}
         </View>
       )}
@@ -474,9 +493,13 @@ export function MapScreen({
           <Text style={s.userLabel} numberOfLines={1}>
             {showHere || !spotIsGps ? place : 'TU POSICIÓN'}
           </Text>
-          <Text style={[s.dotPct, isTotal && { color: C.violet }]}>
-            {isTotal ? 'TOTAL' : `${obscuracion}%`}
-          </Text>
+          {!isTotal && <Text style={s.dotPct}>{obscuracion}%</Text>}
+        </View>
+      )}
+      {/* Con puntos lado a lado la guía se oculta: km a la banda anclados sobre la hoja */}
+      {mapView === 'diagram' && dotsCollide && !isTotal && totality !== null && totality !== 'none' && (
+        <View style={s.totalAnchor} pointerEvents="none">
+          <TotalPill distanceKm={totality.distanceKm} bearingDeg={totality.bearingDeg} />
         </View>
       )}
 
@@ -547,10 +570,19 @@ export function MapScreen({
               </Text>
               <Text style={s.statLabel}>EN LA BANDA</Text>
             </View>
-            <View style={[s.cloudChip, { borderColor: cloud.color + '66' }]}>
+            <Pressable
+              style={[s.cloudChip, { borderColor: cloud.color + '66' }]}
+              hitSlop={6}
+              accessibilityLabel="Ver previsión de nubes en Windy"
+              onPress={() =>
+                Linking.openURL(
+                  `https://www.windy.com/?clouds,${spotCoords.lat.toFixed(3)},${spotCoords.lon.toFixed(3)},9`,
+                ).catch(() => {})
+              }
+            >
               <View style={[s.cloudDot, { backgroundColor: cloud.color, shadowColor: cloud.color }]} />
               <Text style={s.cloudText}>{cloud.label}</Text>
-            </View>
+            </Pressable>
           </View>
           <View style={s.divider} />
           <View style={s.cronoHeader}>
@@ -579,7 +611,6 @@ export function MapScreen({
               <HorizonDiagram altitudeDeg={maxEvent.altitude} azimuthDeg={maxEvent.azimuth} />
             </>
           )}
-          <Text style={s.hint}>Arrastra la hoja para ver más. {sunHint}</Text>
         </ScrollView>
       </Animated.View>
     </View>
@@ -626,6 +657,25 @@ const s = StyleSheet.create({
     borderStyle: 'dashed',
   },
   guideKmWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center', marginTop: -10 },
+  totalAnchor: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: SHEET_MIN + 40,
+    alignItems: 'center',
+  },
+  totalPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(21,21,30,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(124,108,255,0.55)',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  totalPillText: { fontFamily: F.semibold, fontSize: 11, color: C.text },
   guideKmText: {
     fontFamily: F.semibold,
     fontSize: 11,
@@ -646,7 +696,14 @@ const s = StyleSheet.create({
     color: 'rgba(124,108,255,0.6)',
   },
   umbra: { position: 'absolute', top: '50%', marginTop: -70, left: 0, width: 140, height: 140 },
-  horizonNote: { fontFamily: F.regular, fontSize: 11, color: C.dim, marginTop: 2 },
+  horizonNote: {
+    fontFamily: F.regular,
+    fontSize: 11,
+    lineHeight: 16,
+    color: C.dim,
+    marginTop: 2,
+    marginBottom: 14,
+  },
   viewToggle: {
     width: 36,
     height: 36,
@@ -866,5 +923,4 @@ const s = StyleSheet.create({
   },
   cronoLabel: { fontFamily: F.semibold, fontSize: 14, color: C.text },
   cronoTime: { fontFamily: F.medium, fontSize: 14, color: C.dim, fontVariant: ['tabular-nums'] },
-  hint: { fontFamily: F.regular, fontSize: 12, lineHeight: 18, color: C.dim, marginVertical: 14 },
 });
