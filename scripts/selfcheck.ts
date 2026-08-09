@@ -3,7 +3,8 @@ import assert from 'node:assert';
 import { computeLocalEclipse, currentPhase, nextEvent } from '../lib/eclipse';
 import { cloudCoverAt } from '../lib/weather';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
-import { listSpotOptions } from '../lib/spots';
+import { listSpotOptions, type Spot } from '../lib/spots';
+import { pushRecent, RECENT_CAP, type RecentSpot } from '../lib/prefs';
 
 async function main() {
   // Zaragoza: dentro de la banda de totalidad del 2026-08-12
@@ -51,6 +52,16 @@ async function main() {
   assert.ok(['N', 'NE', 'E'].includes(bearingLabel(dir!.bearingDeg)), `Rumbo hacia la banda: ${bearingLabel(dir!.bearingDeg)}`);
   const check = computeLocalEclipse(dir!.lat, dir!.lon);
   assert.equal(check.kind, 'total', 'Punto devuelto realmente es total');
+
+  // pushRecent: acumula visitas, ordena por más visitado, tope RECENT_CAP
+  const mk = (name: string, lat: number): Spot => ({ name, lat, lon: 0, origin: 'manual' });
+  let rec: RecentSpot[] = [];
+  for (const sp of [mk('A', 1), mk('B', 2), mk('A', 1), mk('C', 3), mk('D', 4)]) {
+    rec = pushRecent(rec, sp);
+  }
+  assert.equal(rec.length, RECENT_CAP, 'Tope de habituales');
+  assert.deepEqual(rec.map((r) => r.name), ['A', 'D', 'C'], 'Más visitado primero; empate → más reciente');
+  assert.equal(rec[0].visits, 2, 'Contador acumulado');
 
   // haversine: Madrid-Zaragoza ~256 km en línea recta
   const mzKm = haversineKm(40.42, -3.7, 41.65, -0.88);

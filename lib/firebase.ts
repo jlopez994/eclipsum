@@ -1,8 +1,8 @@
 import { getAnalytics, logEvent } from '@react-native-firebase/analytics';
 import { fetchAndActivate, getRemoteConfig, getString } from '@react-native-firebase/remote-config';
 
-// ponytail: 0 = sin caché mientras probamos; subir a 12h antes de publicar
-const FETCH_INTERVAL_MS = 0;
+// Dev sin caché para probar banners al momento; release respeta 12 h
+const FETCH_INTERVAL_MS = __DEV__ ? 0 : 12 * 3_600_000;
 
 /**
  * Mensaje remoto configurable desde consola Firebase (parámetro `eclipse_message`).

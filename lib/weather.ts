@@ -1,6 +1,14 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 export interface CloudForecast {
   /** Hora local (Date) → nubosidad total % */
   hours: { time: Date; cloudCover: number }[];
+}
+
+export interface CachedCloudForecast {
+  forecast: CloudForecast;
+  /** ms desde la descarga; 0 = recién obtenida de red */
+  ageMs: number;
 }
 
 const ECLIPSE_DATE = '2026-08-12'; // ponytail: fecha fija v1, igual que lib/eclipse.ts
@@ -56,6 +64,42 @@ export async function fetchCloudCoverBatch(
       hours: times.map((t, i) => ({ time: new Date(String(t) + ':00Z'), cloudCover: Number(covers[i]) })),
     };
   });
+}
+
+const cacheKey = (lat: number, lon: number) => `eclipsum:clouds:${lat.toFixed(2)},${lon.toFixed(2)}`;
+
+interface StoredForecast {
+  at: number;
+  hours: { t: number; c: number }[];
+}
+
+/**
+ * Red primero (y guarda en caché); sin red, última respuesta guardada para
+ * estas coordenadas. null = ni red ni caché.
+ */
+export async function fetchCloudCoverCached(lat: number, lon: number): Promise<CachedCloudForecast | null> {
+  try {
+    const forecast = await fetchCloudCover(lat, lon);
+    const stored: StoredForecast = {
+      at: Date.now(),
+      hours: forecast.hours.map((h) => ({ t: h.time.getTime(), c: h.cloudCover })),
+    };
+    AsyncStorage.setItem(cacheKey(lat, lon), JSON.stringify(stored)).catch(() => {});
+    return { forecast, ageMs: 0 };
+  } catch {
+    try {
+      const raw = await AsyncStorage.getItem(cacheKey(lat, lon));
+      if (!raw) return null;
+      const stored = JSON.parse(raw) as Partial<StoredForecast>;
+      if (typeof stored.at !== 'number' || !Array.isArray(stored.hours)) return null;
+      return {
+        forecast: { hours: stored.hours.map((h) => ({ time: new Date(h.t), cloudCover: h.c })) },
+        ageMs: Date.now() - stored.at,
+      };
+    } catch {
+      return null;
+    }
+  }
 }
 
 /** Nubosidad interpolada a la hora dada, o null si fuera de rango. */

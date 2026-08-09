@@ -62,6 +62,8 @@ interface MapScreenProps {
     obscuration: number | null;
   } | null;
   cloudPct: number | null;
+  /** Antigüedad en horas del dato de nubes cuando viene de caché sin red; null = fresco */
+  cloudAgeHours: number | null;
   totality: TotalityDirection | 'none' | null;
   now: Date;
   /** Coordenadas del puesto activo (para el mapa real) */
@@ -326,6 +328,7 @@ export function MapScreen({
   spotIsGps,
   hereOnMap,
   cloudPct,
+  cloudAgeHours,
   totality,
   now,
   spotCoords,
@@ -360,14 +363,16 @@ export function MapScreen({
       ? totality.durationSec
       : null;
 
+  // Dato de caché sin red: se marca la antigüedad para no fiarse de nubes viejas
+  const cloudStale = cloudAgeHours !== null ? ` · ${cloudAgeHours}h` : '';
   const cloud =
     cloudPct === null
       ? { color: C.dim, label: 'SIN DATOS' }
       : cloudPct < 25
-        ? { color: C.ok, label: `${cloudPct}% NUBES` }
+        ? { color: C.ok, label: `${cloudPct}% NUBES${cloudStale}` }
         : cloudPct < 60
-          ? { color: C.corona, label: `${cloudPct}% NUBES` }
-          : { color: C.danger, label: `${cloudPct}% NUBES` };
+          ? { color: C.corona, label: `${cloudPct}% NUBES${cloudStale}` }
+          : { color: C.danger, label: `${cloudPct}% NUBES${cloudStale}` };
 
   const obscuracion = (eclipse.obscuration * 100).toFixed(1).replace('.', ',');
   const showHere = hereOnMap !== null;

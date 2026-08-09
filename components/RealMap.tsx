@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { BAND_2026 } from '../lib/bandGeo';
+import { LEAFLET_CSS, LEAFLET_JS } from '../lib/leafletVendor';
 import { C } from './theme';
 
 interface MapPoint {
@@ -16,8 +17,9 @@ interface RealMapProps {
 }
 
 /**
- * Mapa real (Leaflet + tiles Carto dark, sin API key) con la banda de
- * totalidad dibujada encima y marcadores de puesto y GPS.
+ * Mapa real (Leaflet embebido en el HTML + tiles Carto dark, sin API key) con
+ * la banda de totalidad dibujada encima y marcadores de puesto y GPS.
+ * Los tiles sí requieren red; la librería ya no depende de ningún CDN.
  */
 export function RealMap({ spot, here }: RealMapProps) {
   const html = useMemo(
@@ -43,8 +45,8 @@ function buildHtml(spot: MapPoint, here: MapPoint | null): string {
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>${LEAFLET_CSS}</style>
+<script>${LEAFLET_JS}</script>
 <style>
   html, body, #map { margin: 0; height: 100%; background: ${C.bg}; }
   .lbl { background: rgba(11,11,18,0.85); color: ${C.text}; border: 1px solid ${C.border};

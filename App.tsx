@@ -11,7 +11,7 @@ import {
   SpaceGrotesk_700Bold,
 } from '@expo-google-fonts/space-grotesk';
 import { computeLocalEclipse, type LocalEclipse } from './lib/eclipse';
-import { cloudCoverAt, fetchCloudCover } from './lib/weather';
+import { cloudCoverAt, fetchCloudCoverCached } from './lib/weather';
 import { findNearestTotality, haversineKm, type TotalityDirection } from './lib/totality';
 import { openInMaps } from './lib/maps';
 import type { Spot } from './lib/spots';
@@ -66,6 +66,8 @@ export default function App() {
   const [locating, setLocating] = useState(true);
   const [permissions, setPermissions] = useState({ location: false, notifications: false });
   const [cloudPct, setCloudPct] = useState<number | null>(null);
+  /** Horas de antigüedad del dato de nubes cuando viene de caché; null = fresco o sin dato */
+  const [cloudAgeH, setCloudAgeH] = useState<number | null>(null);
   const [totality, setTotality] = useState<TotalityDirection | 'none' | null>(null);
   /** GPS en la escala del diagrama cuando difiere del puesto; null = solapado */
   const [hereOnMap, setHereOnMap] = useState<{
@@ -190,11 +192,17 @@ export default function App() {
     let cancelled = false;
     track('eclipse_computed', { kind: eclipse.kind, obscuration: Math.round(eclipse.obscuration * 100) });
     const maxEvent = eclipse.events.find((e) => e.key === 'MAX');
-    fetchCloudCover(active.lat, active.lon)
-      .then((f) => {
-        if (!cancelled && maxEvent) setCloudPct(cloudCoverAt(f, maxEvent.time));
-      })
-      .catch(() => !cancelled && setCloudPct(null));
+    fetchCloudCoverCached(active.lat, active.lon).then((c) => {
+      if (cancelled) return;
+      if (!c || !maxEvent) {
+        setCloudPct(null);
+        setCloudAgeH(null);
+        return;
+      }
+      setCloudPct(cloudCoverAt(c.forecast, maxEvent.time));
+      // Solo marcamos antigüedad si el dato viene de caché con más de media hora
+      setCloudAgeH(c.ageMs > 30 * 60_000 ? Math.max(1, Math.round(c.ageMs / 3_600_000)) : null);
+    });
     if (eclipse.kind === 'total') {
       setTotality(null);
     } else {
@@ -348,6 +356,7 @@ export default function App() {
               spotIsGps={active.origin === 'gps'}
               hereOnMap={hereOnMap}
               cloudPct={cloudPct}
+              cloudAgeHours={cloudAgeH}
               totality={totality}
               now={now}
               spotCoords={{ lat: active.lat, lon: active.lon }}

@@ -138,7 +138,7 @@ export function SpotSelector({
       if (recentSpots.length > 0) {
         const recentRows = recentSpots.map((s) => toRow(s, ref));
         allForClouds.push(...recentRows);
-        next.push({ title: 'RECIENTES', rows: recentRows });
+        next.push({ title: 'HABITUALES', rows: recentRows });
       }
 
       const options = await listSpotOptions(ref.lat, ref.lon);
@@ -197,7 +197,10 @@ export function SpotSelector({
         setSearchError('No encontrado. Prueba «ciudad» o «ciudad, provincia».');
         return;
       }
-      onSelect({ name: q, lat: results[0].latitude, lon: results[0].longitude, origin: 'manual' });
+      const { latitude, longitude } = results[0];
+      // Nombre canónico del geocoder inverso: «madrid» y «Madrid, España» acaban iguales
+      const name = (await localityName(latitude, longitude)) ?? q;
+      onSelect({ name, lat: latitude, lon: longitude, origin: 'manual' });
       setQuery('');
       onClose();
     } catch {
