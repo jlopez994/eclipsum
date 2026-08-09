@@ -11,7 +11,10 @@ export interface CachedCloudForecast {
   ageMs: number;
 }
 
-const ECLIPSE_DATE = '2026-08-12'; // ponytail: fecha fija v1, igual que lib/eclipse.ts
+/** Fecha del eclipse (UTC civil). Misma ancla que lib/eclipse.ts. */
+export const ECLIPSE_DATE = '2026-08-12';
+
+const CACHE_VER = 'v2';
 
 /**
  * Nubosidad horaria del día del eclipse vía Open-Meteo (gratis, sin API key).
@@ -29,9 +32,9 @@ export async function fetchCloudCover(lat: number, lon: number): Promise<CloudFo
   if (!Array.isArray(times) || !Array.isArray(covers) || times.length !== covers.length) {
     throw new Error('Respuesta Open-Meteo inesperada');
   }
-  return {
-    hours: times.map((t, i) => ({ time: new Date(String(t) + ':00Z'), cloudCover: Number(covers[i]) })),
-  };
+  const forecast = parseHours(times, covers);
+  if (!isEclipseDayForecast(forecast)) throw new Error('Pronóstico no es del día del eclipse');
+  return forecast;
 }
 
 /**
@@ -60,16 +63,32 @@ export async function fetchCloudCoverBatch(
     const times: unknown = (item as { hourly?: { time?: unknown } })?.hourly?.time;
     const covers: unknown = (item as { hourly?: { cloud_cover?: unknown } })?.hourly?.cloud_cover;
     if (!Array.isArray(times) || !Array.isArray(covers) || times.length !== covers.length) return null;
-    return {
-      hours: times.map((t, i) => ({ time: new Date(String(t) + ':00Z'), cloudCover: Number(covers[i]) })),
-    };
+    const forecast = parseHours(times, covers);
+    return isEclipseDayForecast(forecast) ? forecast : null;
   });
 }
 
-const cacheKey = (lat: number, lon: number) => `eclipsum:clouds:${lat.toFixed(2)},${lon.toFixed(2)}`;
+function parseHours(times: unknown[], covers: unknown[]): CloudForecast {
+  return {
+    hours: times.map((t, i) => ({
+      time: new Date(String(t) + (String(t).endsWith('Z') ? '' : ':00Z')),
+      cloudCover: Number(covers[i]),
+    })),
+  };
+}
+
+/** True si todas las horas caen en el día civil UTC del eclipse. */
+function isEclipseDayForecast(forecast: CloudForecast): boolean {
+  if (forecast.hours.length === 0) return false;
+  return forecast.hours.every((h) => h.time.toISOString().startsWith(ECLIPSE_DATE));
+}
+
+const cacheKey = (lat: number, lon: number) =>
+  `eclipsum:clouds:${CACHE_VER}:${ECLIPSE_DATE}:${lat.toFixed(2)},${lon.toFixed(2)}`;
 
 interface StoredForecast {
   at: number;
+  day: string;
   hours: { t: number; c: number }[];
 }
 
@@ -82,6 +101,7 @@ export async function fetchCloudCoverCached(lat: number, lon: number): Promise<C
     const forecast = await fetchCloudCover(lat, lon);
     const stored: StoredForecast = {
       at: Date.now(),
+      day: ECLIPSE_DATE,
       hours: forecast.hours.map((h) => ({ t: h.time.getTime(), c: h.cloudCover })),
     };
     AsyncStorage.setItem(cacheKey(lat, lon), JSON.stringify(stored)).catch(() => {});
@@ -91,18 +111,21 @@ export async function fetchCloudCoverCached(lat: number, lon: number): Promise<C
       const raw = await AsyncStorage.getItem(cacheKey(lat, lon));
       if (!raw) return null;
       const stored = JSON.parse(raw) as Partial<StoredForecast>;
-      if (typeof stored.at !== 'number' || !Array.isArray(stored.hours)) return null;
-      return {
-        forecast: { hours: stored.hours.map((h) => ({ time: new Date(h.t), cloudCover: h.c })) },
-        ageMs: Date.now() - stored.at,
+      if (stored.day !== ECLIPSE_DATE || typeof stored.at !== 'number' || !Array.isArray(stored.hours)) {
+        return null;
+      }
+      const forecast: CloudForecast = {
+        hours: stored.hours.map((h) => ({ time: new Date(h.t), cloudCover: h.c })),
       };
+      if (!isEclipseDayForecast(forecast)) return null;
+      return { forecast, ageMs: Date.now() - stored.at };
     } catch {
       return null;
     }
   }
 }
 
-/** Nubosidad interpolada a la hora dada, o null si fuera de rango. */
+/** Nubosidad interpolada a la hora dada, o la hora más cercana del día del eclipse. */
 export function cloudCoverAt(forecast: CloudForecast, when: Date): number | null {
   const h = forecast.hours;
   if (h.length === 0) return null;
@@ -115,5 +138,27 @@ export function cloudCoverAt(forecast: CloudForecast, when: Date): number | null
       return Math.round(h[i].cloudCover + f * (h[i + 1].cloudCover - h[i].cloudCover));
     }
   }
-  return null;
+  // Fuera del rango estricto: hora más cercana (sigue siendo del 12 ago si el forecast lo es)
+  let best = h[0];
+  let bestD = Math.abs(h[0].time.getTime() - t);
+  for (let i = 1; i < h.length; i++) {
+    const d = Math.abs(h[i].time.getTime() - t);
+    if (d < bestD) {
+      bestD = d;
+      best = h[i];
+    }
+  }
+  // Evitar muestrear «hoy» si por error llega un when muy lejos del eclipse (>36 h)
+  if (bestD > 36 * 3_600_000) return null;
+  return Math.round(best.cloudCover);
+}
+
+/**
+ * Enlace a Windy centrado en el máximo del eclipse (no en «ahora»).
+ * HH de Windy solo admite 00/03/06/09/12/15/18/21 UTC.
+ */
+export function windyEclipseCloudsUrl(lat: number, lon: number, at: Date): string {
+  const slot = Math.round(at.getUTCHours() / 3) * 3;
+  const hh = String(Math.min(21, Math.max(0, slot))).padStart(2, '0');
+  return `https://www.windy.com/?clouds,${ECLIPSE_DATE}-${hh},${lat.toFixed(3)},${lon.toFixed(3)},9`;
 }

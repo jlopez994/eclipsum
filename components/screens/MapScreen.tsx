@@ -18,12 +18,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { nextEvent, type LocalEclipse } from '../../lib/eclipse';
 import { bearingLabel, type TotalityDirection } from '../../lib/totality';
+import { windyEclipseCloudsUrl } from '../../lib/weather';
 import { Countdown } from '../Countdown';
 import { RealMap } from '../RealMap';
 import { C, F } from '../theme';
 
-/** Fallback hasta medir el peek (handle + countdown + stats). */
-const SHEET_MIN_FALLBACK = 176;
+/** Fallback bajo: mejor recortar un instante que asomar la cronología. */
+const SHEET_MIN_FALLBACK = 140;
 /** Mínimo de mapa visible con la hoja estirada */
 const SHEET_TOP_GAP = 150;
 
@@ -109,6 +110,7 @@ function useSheet(maxH: number, minH: number) {
   const current = useRef(minH);
   const maxRef = useRef(maxH);
   const minRef = useRef(minH);
+  const prevMinRef = useRef(minH);
   maxRef.current = maxH;
   minRef.current = minH;
 
@@ -119,9 +121,16 @@ function useSheet(maxH: number, minH: number) {
     return () => height.removeListener(id);
   }, [height]);
 
-  // Si estaba colapsada y cambia la medida del peek (p. ej. Pixel), reajusta
+  // Al medir el peek (p. ej. al volver al tab), reancorar si estaba colapsada.
+  // Ojo: el fallback inicial suele ser MAYOR que el peek real — no basta con
+  // `current <= minH + 8` porque entonces no encoje y asoma la cronología.
   useEffect(() => {
-    if (current.current <= minH + 8) {
+    const prevMin = prevMinRef.current;
+    prevMinRef.current = minH;
+    if (minH === prevMin) return;
+    const collapsed = Math.abs(current.current - prevMin) <= 10 || current.current <= minH + 10;
+    if (collapsed) {
+      height.stopAnimation();
       height.setValue(minH);
       current.current = minH;
     }
@@ -402,10 +411,10 @@ export function MapScreen({
     cloudPct === null
       ? { color: C.dim, label: cloudLoading ? 'NUBES…' : 'SIN DATOS' }
       : cloudPct < 25
-        ? { color: C.ok, label: `${cloudPct}% NUBES${cloudStale}` }
+        ? { color: C.ok, label: `${cloudPct}% · 12 AGO${cloudStale}` }
         : cloudPct < 60
-          ? { color: C.corona, label: `${cloudPct}% NUBES${cloudStale}` }
-          : { color: C.danger, label: `${cloudPct}% NUBES${cloudStale}` };
+          ? { color: C.corona, label: `${cloudPct}% · 12 AGO${cloudStale}` }
+          : { color: C.danger, label: `${cloudPct}% · 12 AGO${cloudStale}` };
 
   const obscuracion = (eclipse.obscuration * 100).toFixed(1).replace('.', ',');
   const showHere = hereOnMap !== null;
@@ -438,7 +447,7 @@ export function MapScreen({
         />
       )}
       {mapView === 'diagram' && (
-      <Animated.View style={[s.diagramStage, { bottom: height }]} pointerEvents="box-none">
+      <View style={[s.diagramStage, { bottom: sheetMin }]} pointerEvents="box-none">
       {/* Fondo + costa esquemática */}
       <Svg style={StyleSheet.absoluteFill} viewBox="0 0 390 780" preserveAspectRatio="none">
         <Defs>
@@ -537,7 +546,7 @@ export function MapScreen({
           <TotalPill distanceKm={totality.distanceKm} bearingDeg={totality.bearingDeg} />
         </View>
       )}
-      </Animated.View>
+      </View>
       )}
 
       {/* Overlay superior: chips + lugares + aviso divergencia */}
@@ -611,12 +620,11 @@ export function MapScreen({
               <Pressable
                 style={[s.cloudChip, { borderColor: cloud.color + '66' }]}
                 hitSlop={6}
-                accessibilityLabel="Ver previsión de nubes en Windy"
-                onPress={() =>
-                  Linking.openURL(
-                    `https://www.windy.com/?clouds,${spotCoords.lat.toFixed(3)},${spotCoords.lon.toFixed(3)},9`,
-                  ).catch(() => {})
-                }
+                accessibilityLabel="Previsión de nubes el 12 ago a la hora del máximo; abrir en Windy"
+                onPress={() => {
+                  const when = maxEvent?.time ?? new Date('2026-08-12T18:00:00Z');
+                  Linking.openURL(windyEclipseCloudsUrl(spotCoords.lat, spotCoords.lon, when)).catch(() => {});
+                }}
               >
                 <View style={[s.cloudDot, { backgroundColor: cloud.color, shadowColor: cloud.color }]} />
                 <Text style={s.cloudText}>{cloud.label}</Text>
@@ -660,7 +668,7 @@ export function MapScreen({
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg, overflow: 'hidden' },
-  /** Lienzo del diagrama: crece/encoge con la hoja para usar toda la altura libre. */
+  /** Lienzo del diagrama: altura fija sobre la hoja colapsada (no se reescala al expandir). */
   diagramStage: {
     position: 'absolute',
     top: 0,

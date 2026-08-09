@@ -1,15 +1,24 @@
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ALERT_SOUND_OPTIONS } from '../../lib/notifications';
+import type { AlertSound } from '../../lib/prefs';
 import { C, F } from '../theme';
 
 const IGN_URL = 'https://eclipses.ign.es/como-observar-eclipses.html';
 
 interface SettingsScreenProps {
   permissions: { location: boolean; notifications: boolean };
+  alertSound: AlertSound;
+  onSoundChange: (sound: AlertSound) => void;
   onDemoEclipse: () => void;
 }
 
-export function SettingsScreen({ permissions, onDemoEclipse }: SettingsScreenProps) {
+export function SettingsScreen({
+  permissions,
+  alertSound,
+  onSoundChange,
+  onDemoEclipse,
+}: SettingsScreenProps) {
   const insets = useSafeAreaInsets();
   return (
     <View style={s.root}>
@@ -34,6 +43,28 @@ export function SettingsScreen({ permissions, onDemoEclipse }: SettingsScreenPro
                 {permissions.notifications ? 'PERMITIDO' : 'DENEGADO'}
               </Text>
             </View>
+          </View>
+        </View>
+
+        <View>
+          <Text style={s.section}>SONIDO DE ALERTAS</Text>
+          <View style={s.card}>
+            {ALERT_SOUND_OPTIONS.map((opt, i) => {
+              const on = alertSound === opt.id;
+              return (
+                <Pressable
+                  key={opt.id}
+                  onPress={() => onSoundChange(opt.id)}
+                  style={[s.soundRow, i < ALERT_SOUND_OPTIONS.length - 1 && s.rowDivider]}
+                >
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={s.rowTitle}>{opt.label}</Text>
+                    <Text style={s.soundHint}>{opt.hint}</Text>
+                  </View>
+                  <View style={[s.radio, on && s.radioOn]}>{on && <View style={s.radioDot} />}</View>
+                </Pressable>
+              );
+            })}
           </View>
         </View>
 
@@ -102,6 +133,25 @@ const s = StyleSheet.create({
   rowItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16 },
   rowDivider: { borderBottomWidth: 1, borderBottomColor: C.border },
   rowTitle: { fontFamily: F.semibold, fontSize: 15, color: C.text },
+  soundRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  soundHint: { fontFamily: F.regular, fontSize: 12, color: C.dim, marginTop: 2 },
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: C.knobTrack,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioOn: { borderColor: C.corona },
+  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.corona },
   activeTag: { fontFamily: F.medium, fontSize: 12, color: C.ok },
   deniedTag: { fontFamily: F.medium, fontSize: 12, color: C.danger },
   safetyCard: {

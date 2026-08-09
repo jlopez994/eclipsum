@@ -265,7 +265,6 @@ function AppInner() {
               toggles={prefs.alertsOn}
               alertSound={prefs.alertSound}
               onToggle={(key, value) => onPrefsChange({ ...prefs, alertsOn: { ...prefs.alertsOn, [key]: value } })}
-              onSoundChange={(sound) => onPrefsChange({ ...prefs, alertSound: sound })}
             />
           ) : (
             <View style={s.loading}>
@@ -273,7 +272,17 @@ function AppInner() {
             </View>
           ))}
         {tab === 'ajustes' && (
-          <SettingsScreen permissions={permissions} onDemoEclipse={() => setDemo(true)} />
+          <SettingsScreen
+            permissions={permissions}
+            alertSound={prefs.alertSound}
+            onSoundChange={(sound) => {
+              onPrefsChange({ ...prefs, alertSound: sound });
+              if (eclipse && Object.values(prefs.alertsOn).some(Boolean)) {
+                scheduleEclipseAlerts(eclipse, prefs.alertsOn, sound).catch(() => {});
+              }
+            }}
+            onDemoEclipse={() => setDemo(true)}
+          />
         )}
       </View>
       <TabBar active={tab} onChange={setTab} />

@@ -43,7 +43,8 @@ async function main() {
     ],
   };
   assert.equal(cloudCoverAt(forecast, new Date('2026-08-12T18:30:00Z')), 40, 'Interpolación lineal');
-  assert.equal(cloudCoverAt(forecast, new Date('2026-08-12T22:00:00Z')), null, 'Fuera de rango → null');
+  assert.equal(cloudCoverAt(forecast, new Date('2026-08-12T22:00:00Z')), 60, 'Hora cercana del día del eclipse');
+  assert.equal(cloudCoverAt(forecast, new Date('2026-08-09T12:00:00Z')), null, 'Día actual → null');
 
   // findNearestTotality desde Sevilla (parcial) — banda queda al norte
   const dir = await findNearestTotality(37.39, -5.99);
