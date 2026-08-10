@@ -35,3 +35,16 @@ else
   echo "AVISO: /Volumes/DAS no montado — APK solo en local"
   echo "Nombre previsto: $NAMED"
 fi
+
+# GitHub Release b<versionCode> con la APK adjunta (best-effort: sin gh o sin red no rompe)
+TAG="b${VC}"
+if command -v gh >/dev/null 2>&1; then
+  if gh release create "$TAG" "$APK#eclipsum-${VERSION}-b${VC}.apk" \
+    --title "Eclipsum ${VERSION} (build ${VC})" \
+    --notes "APK ${VERSION} · versionCode ${VC} · canal ${LATEST%.apk}. CDN: https://cdn.jlh.app/eclipsum/${LATEST}" \
+    2>/dev/null; then
+    echo "GitHub Release: $TAG creada con la APK"
+  else
+    echo "AVISO: release $TAG no creada (¿ya existe o gh sin auth?)"
+  fi
+fi
