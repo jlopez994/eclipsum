@@ -16,6 +16,7 @@ import Svg, { Circle, Defs, Path, RadialGradient, Rect, Stop } from 'react-nativ
 import { LinearGradient } from 'expo-linear-gradient';
 import { nextEvent, type LocalEclipse } from '../../lib/eclipse';
 import { bandOf, getActiveEclipse } from '../../lib/eclipseCatalog';
+import { localeTag, t, type I18nKey } from '../../lib/i18n';
 import { type TotalityDirection } from '../../lib/totality';
 import { track, type Sponsor } from '../../lib/firebase';
 import { windyEclipseCloudsUrl } from '../../lib/weather';
@@ -98,7 +99,7 @@ interface MapScreenProps {
 }
 
 const fmtHM = (d: Date) =>
-  d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 const fmtPct = (o: number) => `${(o * 100).toFixed(1).replace('.', ',')}%`;
 
@@ -171,12 +172,12 @@ export function MapScreen({
   const cronoRows = [
     ...eclipse.events.map((e) => ({
       key: e.key as string,
-      label: e.label,
+      label: t(`event.${e.key}` as I18nKey),
       time: e.time,
       belowHorizon: e.altitude < 0,
     })),
     ...(eclipse.sunset
-      ? [{ key: 'OC', label: 'Ocaso del sol', time: eclipse.sunset, belowHorizon: false }]
+      ? [{ key: 'OC', label: t('event.OC'), time: eclipse.sunset, belowHorizon: false }]
       : []),
   ].sort((a, b) => a.time.getTime() - b.time.getTime());
 
@@ -189,26 +190,23 @@ export function MapScreen({
   // Dato de caché sin red: se marca la antigüedad para no fiarse de nubes viejas
   const activeEclipseMeta = getActiveEclipse();
   const cloudStale = cloudAgeHours !== null ? ` · ${cloudAgeHours}h` : '';
+  const cloudLevel = cloudPct === null ? null : cloudPct < 25 ? 'few' : cloudPct < 60 ? 'mid' : 'many';
   const cloud =
-    cloudPct === null
-      ? { color: C.dim, label: cloudLoading ? 'NUBES…' : 'NUBES —', a11y: 'Previsión de nubes no disponible' }
-      : cloudPct < 25
-        ? {
-            color: C.ok,
-            label: `Pocas nubes · ${cloudPct}%${cloudStale}`,
-            a11y: `Pocas nubes: nubosidad prevista ${cloudPct}% a la hora del máximo el ${activeEclipseMeta.shortDateLabel.toLowerCase()}`,
-          }
-        : cloudPct < 60
-          ? {
-              color: C.corona,
-              label: `Nubes medias · ${cloudPct}%${cloudStale}`,
-              a11y: `Nubes medias: nubosidad prevista ${cloudPct}% a la hora del máximo el ${activeEclipseMeta.shortDateLabel.toLowerCase()}`,
-            }
-          : {
-              color: C.danger,
-              label: `Muchas nubes · ${cloudPct}%${cloudStale}`,
-              a11y: `Muchas nubes: nubosidad prevista ${cloudPct}% a la hora del máximo el ${activeEclipseMeta.shortDateLabel.toLowerCase()}`,
-            };
+    cloudLevel === null || cloudPct === null
+      ? {
+          color: C.dim,
+          label: cloudLoading ? t('map.clouds.loading') : t('map.clouds.none'),
+          a11y: t('map.clouds.noneA11y'),
+        }
+      : {
+          color: cloudLevel === 'few' ? C.ok : cloudLevel === 'mid' ? C.corona : C.danger,
+          label: t(`map.clouds.${cloudLevel}` as I18nKey, { pct: cloudPct, stale: cloudStale }),
+          a11y: t('map.clouds.a11y', {
+            level: t(`map.clouds.${cloudLevel}.word` as I18nKey),
+            pct: cloudPct,
+            date: activeEclipseMeta.shortDateLabel.toLowerCase(),
+          }),
+        };
 
   const obscuracion = (eclipse.obscuration * 100).toFixed(1).replace('.', ',');
   const showHere = hereOnMap !== null;
@@ -242,7 +240,7 @@ export function MapScreen({
           // no pinta la banda hasta cambiar de eclipse o de vista)
           key={`${activeEclipseMeta.id}${bandOf(activeEclipseMeta) ? ':band' : ''}`}
           spot={{ ...spotCoords, label: place }}
-          here={hereCoords ? { ...hereCoords, label: hereLabel ?? 'TÚ' } : null}
+          here={hereCoords ? { ...hereCoords, label: hereLabel ?? t('map.you') } : null}
           onSelectPoint={onSelectMapPoint}
         />
 
@@ -295,7 +293,7 @@ export function MapScreen({
         <UmbraSweep />
         <View style={s.bandLine} />
         <Text style={s.bandLabel}>{activeEclipseMeta.bandLabel}</Text>
-        <Text style={s.bandHint}>MÁS DURACIÓN CERCA DEL CENTRO</Text>
+        <Text style={s.bandHint}>{t('map.bandHint')}</Text>
       </View>
 
 
@@ -328,7 +326,7 @@ export function MapScreen({
       {showHere && (
         <View style={[s.userArea, dotsCollide && s.hereArea, { top: `${hereTop * 100}%` }]}>
           <HereDot />
-          <Text style={s.hereLabel}>{hereLabel ?? 'TÚ'}</Text>
+          <Text style={s.hereLabel}>{hereLabel ?? t('map.you')}</Text>
           {!hereOnMap.isTotal && hereOnMap.obscuration !== null && (
             <Text style={s.dotPct}>{fmtPct(hereOnMap.obscuration)}</Text>
           )}
@@ -337,7 +335,7 @@ export function MapScreen({
       <View style={[s.userArea, dotsCollide && s.spotArea, { top: `${spotTop * 100}%` }]}>
         <UserDot />
         <Text style={s.userLabel} numberOfLines={1}>
-          {showHere || !spotIsGps ? place : 'TU POSICIÓN'}
+          {showHere || !spotIsGps ? place : t('map.yourPosition')}
         </Text>
         {!isTotal && <Text style={s.dotPct}>{obscuracion}%</Text>}
       </View>
@@ -367,7 +365,7 @@ export function MapScreen({
               style={s.viewToggle}
               onPress={onToggleMapView}
               hitSlop={8}
-              accessibilityLabel={mapView === 'diagram' ? 'Ver mapa real' : 'Ver diagrama'}
+              accessibilityLabel={mapView === 'diagram' ? t('map.viewReal') : t('map.viewDiagram')}
             >
               {mapView === 'diagram' ? (
                 <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={C.dim} strokeWidth={2}>
@@ -386,11 +384,9 @@ export function MapScreen({
         </View>
         {divergenceKm !== null && (
           <View style={s.divergence}>
-            <Text style={s.divergenceText}>
-              Estás a {Math.round(divergenceKm)} km de tu puesto de observación
-            </Text>
+            <Text style={s.divergenceText}>{t('map.divergence', { km: Math.round(divergenceKm) })}</Text>
             <Text style={s.divergenceAction} onPress={onRecalcHere}>
-              RECALCULAR AQUÍ →
+              {t('map.recalc')}
             </Text>
           </View>
         )}
@@ -402,7 +398,12 @@ export function MapScreen({
           <View {...pan.panHandlers} style={s.handleArea}>
             <View style={s.handle} />
             <Text style={s.sheetKicker}>
-              {upcoming ? `${upcoming.label.toUpperCase()} · ${upcoming.key} EN` : 'ECLIPSE FINALIZADO'}
+              {upcoming
+                ? t('map.kicker', {
+                    label: t(`event.${upcoming.key}` as I18nKey).toUpperCase(),
+                    key: upcoming.key === 'MAX' ? t('event.maxShort') : upcoming.key,
+                  })
+                : t('map.finished')}
             </Text>
             {upcoming && <Countdown target={upcoming.time} style={s.sheetCountdown} />}
           </View>
@@ -410,18 +411,18 @@ export function MapScreen({
             <View style={s.statsRow}>
               <View style={s.stat}>
                 <Text style={s.statValue}>{obscuracion}%</Text>
-                <Text style={s.statLabel}>OCULTO AQUÍ</Text>
+                <Text style={s.statLabel}>{t('map.hiddenHere')}</Text>
               </View>
               <View style={s.stat}>
                 <Text style={[s.statValue, { color: C.violet }]}>
                   {bandDuration != null ? `${Math.floor(bandDuration / 60)}m ${bandDuration % 60}s` : '—'}
                 </Text>
-                <Text style={s.statLabel}>EN LA BANDA</Text>
+                <Text style={s.statLabel}>{t('map.inBand')}</Text>
               </View>
               <Pressable
                 style={[s.cloudChip, { borderColor: cloud.color + '66' }]}
                 hitSlop={6}
-                accessibilityLabel={`${cloud.a11y}; abrir en Windy`}
+                accessibilityLabel={t('map.clouds.openWindy', { a11y: cloud.a11y })}
                 onPress={() => {
                   const when = maxEvent?.time ?? new Date(activeEclipseMeta.windyFallbackMax);
                   Linking.openURL(windyEclipseCloudsUrl(spotCoords.lat, spotCoords.lon, when)).catch(() => {});
@@ -437,19 +438,21 @@ export function MapScreen({
           <View style={s.divider} />
           <View style={s.cronoHeader}>
             <Text style={[s.cronoTitle, { flex: 1 }]} numberOfLines={1}>
-              CRONOLOGÍA EN {place.toUpperCase()} · {activeEclipseMeta.shortDateLabel}
+              {t('map.crono', { place: place.toUpperCase(), date: activeEclipseMeta.shortDateLabel })}
             </Text>
             <Pressable onPress={onOpenMaps} hitSlop={8}>
-              <Text style={s.mapsLink}>CÓMO LLEGAR →</Text>
+              <Text style={s.mapsLink}>{t('map.directions')}</Text>
             </Pressable>
           </View>
           {cronoRows.map((e) => (
             <View key={e.key} style={s.cronoRow}>
               <Text style={[s.cronoLabel, (e.time <= now || e.belowHorizon) && { color: C.dim }]}>
-                <Text style={{ color: EVENT_ACCENT[e.key] ?? C.dim }}>{e.key === 'MAX' ? 'MÁX' : e.key}</Text>
+                <Text style={{ color: EVENT_ACCENT[e.key] ?? C.dim }}>
+                  {e.key === 'MAX' ? t('event.maxShort') : e.key}
+                </Text>
                 {'  '}
                 {e.label}
-                {e.belowHorizon ? ' · bajo el horizonte' : ''}
+                {e.belowHorizon ? t('map.belowHorizon') : ''}
               </Text>
               <Text style={[s.cronoTime, e.belowHorizon && { color: C.dim }]}>{fmtHM(e.time)}</Text>
             </View>
@@ -457,7 +460,7 @@ export function MapScreen({
           {maxEvent && maxEvent.altitude > 0 && (
             <>
               <View style={s.divider} />
-              <Text style={s.cronoTitle}>SOL EN EL MÁXIMO</Text>
+              <Text style={s.cronoTitle}>{t('map.sunAtMax')}</Text>
               <HorizonDiagram altitudeDeg={maxEvent.altitude} azimuthDeg={maxEvent.azimuth} />
             </>
           )}
@@ -469,12 +472,12 @@ export function MapScreen({
                 Linking.openURL(sponsor.url).catch(() => {});
               }}
               accessibilityRole="link"
-              accessibilityLabel={`Patrocinador: ${sponsor.name}`}
+              accessibilityLabel={t('map.sponsor.a11y', { name: sponsor.name })}
             >
-              <Text style={s.sponsorKicker}>CON EL APOYO DE</Text>
+              <Text style={s.sponsorKicker}>{t('map.sponsor.kicker')}</Text>
               <Text style={s.sponsorName}>{sponsor.name}</Text>
               {!!sponsor.tagline && <Text style={s.sponsorTagline}>{sponsor.tagline}</Text>}
-              <Text style={s.sponsorCta}>CONOCER MÁS →</Text>
+              <Text style={s.sponsorCta}>{t('map.sponsor.cta')}</Text>
             </Pressable>
           )}
         </ScrollView>

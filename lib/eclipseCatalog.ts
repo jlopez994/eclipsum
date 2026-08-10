@@ -5,6 +5,7 @@
  */
 import { NextGlobalSolarEclipse, SearchGlobalSolarEclipse, type GlobalSolarEclipseInfo } from 'astronomy-engine';
 import { bandForEclipse, type BandSlice } from './bandGeo';
+import { getLang, t, type I18nKey, type Lang } from './i18n';
 
 export interface EclipseEntry {
   id: string;
@@ -156,32 +157,36 @@ function eclipseEndMs(entry: EclipseEntry): number {
   return new Date(`${entry.civilDate}T23:59:59Z`).getTime() + 6 * 3_600_000;
 }
 
-const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-const KIND_LABEL: Record<string, string> = { total: 'Total', annular: 'Anular', partial: 'Parcial' };
-const BAND_WORD: Record<string, string> = { total: 'totalidad', annular: 'anularidad' };
+const MES: Record<Lang, string[]> = {
+  es: ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'],
+  en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+};
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
 /** Margen del ancla searchStart: SearchLocalSolarEclipse busca el primer eclipse local tras ella. */
 const SEARCH_START_DAYS_BEFORE = 15;
 
-/** Entrada de catálogo derivada de un eclipse global del motor (labels en español). */
+/** Entrada de catálogo derivada de un eclipse global del motor (labels en el idioma activo). */
 export function entryFromGlobalEclipse(ev: GlobalSolarEclipseInfo): EclipseEntry {
   const peak = ev.peak.date;
   const kind = ev.kind as string;
   const civilDate = peak.toISOString().slice(0, 10);
   const d = peak.getUTCDate();
-  const mes = MES[peak.getUTCMonth()];
+  const mes = MES[getLang()][peak.getUTCMonth()];
   const year = peak.getUTCFullYear();
   const fecha = `${d} ${mes} ${year}`;
   const fechaMayus = `${d} ${mes.toUpperCase()} ${year}`;
-  const word = BAND_WORD[kind];
+  const kindLabel = kind === 'total' || kind === 'annular' || kind === 'partial' ? t(`kind.${kind}` as I18nKey) : kind;
+  const word = kind === 'total' || kind === 'annular' ? t(`band.word.${kind}` as I18nKey) : null;
   return {
     id: `${civilDate}-${kind}`,
     searchStart: `${new Date(peak.getTime() - SEARCH_START_DAYS_BEFORE * DAY_MS).toISOString().slice(0, 10)}T00:00:00Z`,
     civilDate,
-    label: `${KIND_LABEL[kind] ?? kind} · ${fecha}`,
-    bandLabel: word ? `BANDA DE ${word.toUpperCase()} · ${fechaMayus}` : `ECLIPSE PARCIAL · ${fechaMayus}`,
-    bandTooltip: word ? `Banda de ${word} · ${fecha}` : `Eclipse parcial · ${fecha}`,
+    label: `${kindLabel} · ${fecha}`,
+    bandLabel: word
+      ? t('band.label', { word: word.toUpperCase(), date: fechaMayus })
+      : t('band.label.partial', { date: fechaMayus }),
+    bandTooltip: word ? t('band.tooltip', { word, date: fecha }) : t('band.tooltip.partial', { date: fecha }),
     shortDateLabel: `${d} ${mes.toUpperCase()}`,
     windyFallbackMax: new Date(Math.round(peak.getTime() / HOUR_MS) * HOUR_MS)
       .toISOString()
@@ -204,7 +209,8 @@ let upcomingCache: { key: string; list: EclipseEntry[] } | null = null;
  * Nunca lanza: motor fallando → solo catálogo.
  */
 export function upcomingEclipses(count: number, now: Date = new Date()): EclipseEntry[] {
-  const key = `${now.toISOString().slice(0, 10)}:${catalogVersion}`;
+  // Idioma en la clave: las entradas del motor llevan labels horneados
+  const key = `${now.toISOString().slice(0, 10)}:${catalogVersion}:${getLang()}`;
   if (upcomingCache?.key !== key) {
     const t = now.getTime();
     const out = allEclipses().filter((e) => eclipseEndMs(e) >= t);
@@ -225,6 +231,7 @@ export function upcomingEclipses(count: number, now: Date = new Date()): Eclipse
 
 /** Memo del automático hasta que pase (monótono en el tiempo; setRemoteCatalog lo invalida). */
 let autoCache: EclipseEntry | null = null;
+let autoCacheLang = '';
 
 /**
  * Eclipse activo, por prioridad: selección del usuario (si sigue vigente) →
@@ -236,8 +243,9 @@ export function getActiveEclipse(now: Date = new Date()): EclipseEntry {
     const forced = getEclipseById(remoteActiveId);
     if (forced) return forced;
   }
-  if (!autoCache || eclipseEndMs(autoCache) < now.getTime()) {
+  if (!autoCache || autoCacheLang !== getLang() || eclipseEndMs(autoCache) < now.getTime()) {
     autoCache = upcomingEclipses(1, now)[0] ?? null;
+    autoCacheLang = getLang();
   }
   if (autoCache) return autoCache;
   const all = allEclipses();

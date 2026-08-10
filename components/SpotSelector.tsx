@@ -13,6 +13,7 @@ import { computeLocalEclipse } from '../lib/eclipse';
 import { openInMaps } from '../lib/maps';
 import type { Spot, SpotOption } from '../lib/spots';
 import { cloudCoverAt, fetchCloudCoverBatch } from '../lib/weather';
+import { localeTag, t } from '../lib/i18n';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
 import { animateNextLayout, yieldUI } from '../lib/anim';
 import { C, F } from './theme';
@@ -37,7 +38,7 @@ interface Row extends SpotOption {
 
 type Section = { title: string; rows: Row[] };
 
-const fmtHM = (d: Date) => d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+const fmtHM = (d: Date) => d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' });
 
 function isActive(row: Row, activeSpot: Spot | null): boolean {
   if (activeSpot === null) return false;
@@ -69,7 +70,7 @@ export async function localityName(lat: number, lon: number): Promise<string | n
 }
 
 function displayGpsName(gpsPlace: string): string {
-  return gpsPlace.replace(/\s·\sGPS$/, '') || 'Tu posición';
+  return gpsPlace.replace(/\s·\sGPS$/, '') || t('spot.yourPosition');
 }
 
 export function SpotSelector({
@@ -128,7 +129,7 @@ export function SpotSelector({
         gpsRow = toRow(gpsSpot, ref);
         gpsRow.distanceKm = 0;
         allForClouds.push(gpsRow);
-        next.push({ title: 'MI POSICIÓN', rows: [gpsRow] });
+        next.push({ title: t('spot.myPosition'), rows: [gpsRow] });
       }
 
       // Búsqueda de totalidad lanzada ya: su CPU se solapa con la red de nubes/geocoder
@@ -145,7 +146,7 @@ export function SpotSelector({
           recentRows.push(toRow(spot, ref));
         }
         allForClouds.push(...recentRows);
-        next.push({ title: 'HABITUALES', rows: recentRows });
+        next.push({ title: t('spot.recent'), rows: recentRows });
       }
       // Primer pintado con lo ya calculado; el resto llega por tandas
       publish();
@@ -160,7 +161,9 @@ export function SpotSelector({
       if (near && !cancelled) {
         const place = await localityName(near.lat, near.lon);
         const dir = bearingLabel(near.bearingDeg);
-        const name = place ? `${place} · totalidad` : `Totalidad · ${near.distanceKm} km al ${dir}`;
+        const name = place
+          ? t('spot.totalitySuffix', { place })
+          : t('spot.totalityAt', { km: near.distanceKm, dir });
         const nearSpot: Spot = { name, lat: near.lat, lon: near.lon, origin: 'nearest' };
         const nearRow: Row = {
           name,
@@ -176,7 +179,7 @@ export function SpotSelector({
           selectValue: nearSpot,
         };
         allForClouds.push(nearRow);
-        next.splice(1, 0, { title: 'TOTALIDAD MÁS CERCANA', rows: [nearRow] });
+        next.splice(1, 0, { title: t('spot.nearestTotality'), rows: [nearRow] });
         publish();
       }
 
@@ -211,7 +214,7 @@ export function SpotSelector({
     try {
       const results = await Location.geocodeAsync(q);
       if (results.length === 0) {
-        setSearchError('No encontrado. Prueba «ciudad» o «ciudad, provincia».');
+        setSearchError(t('spot.notFound'));
         return;
       }
       const { latitude, longitude } = results[0];
@@ -221,7 +224,7 @@ export function SpotSelector({
       setQuery('');
       onClose();
     } catch {
-      setSearchError('Buscador no disponible. Comprueba la conexión.');
+      setSearchError(t('spot.searchOffline'));
     } finally {
       setSearching(false);
     }
@@ -237,11 +240,11 @@ export function SpotSelector({
       <Pressable style={s.backdrop} onPress={onClose} />
       <View style={s.panel}>
         <View style={s.handle} />
-        <Text style={s.title}>PUESTO DE OBSERVACIÓN</Text>
+        <Text style={s.title}>{t('spot.title')}</Text>
         <View style={s.searchRow}>
           <TextInput
             style={s.input}
-            placeholder="Buscar lugar (o «lat, lon»)"
+            placeholder={t('spot.searchPlaceholder')}
             placeholderTextColor={C.dim}
             value={query}
             onChangeText={setQuery}
@@ -250,12 +253,12 @@ export function SpotSelector({
             autoCorrect={false}
           />
           <Pressable style={[s.searchButton, searching && { opacity: 0.6 }]} onPress={applySearch} disabled={searching}>
-            <Text style={s.searchButtonText}>{searching ? '…' : 'IR'}</Text>
+            <Text style={s.searchButtonText}>{searching ? '…' : t('spot.go')}</Text>
           </Pressable>
         </View>
         {searchError && <Text style={s.error}>{searchError}</Text>}
         <ScrollView style={s.list} showsVerticalScrollIndicator={false}>
-          {sections === null && <Text style={s.loading}>Calculando lugares cercanos…</Text>}
+          {sections === null && <Text style={s.loading}>{t('spot.computing')}</Text>}
           {sections?.map((sec) => (
             <View key={sec.title}>
               <Text style={s.sectionTitle}>{sec.title}</Text>
@@ -271,14 +274,14 @@ export function SpotSelector({
                           {row.name}
                         </Text>
                         <Text style={s.rowMeta}>
-                          {row.origin === 'gps' ? 'aquí' : `${row.distanceKm} km`}
-                          {row.maxTime ? ` · máx ${fmtHM(row.maxTime)}` : ''}
-                          {row.cloudPct !== null ? ` · ${row.cloudPct}% nubes` : ''}
+                          {row.origin === 'gps' ? t('spot.here') : `${row.distanceKm} km`}
+                          {row.maxTime ? ` · ${t('spot.max', { time: fmtHM(row.maxTime) })}` : ''}
+                          {row.cloudPct !== null ? ` · ${t('spot.clouds', { pct: row.cloudPct })}` : ''}
                         </Text>
                       </View>
                       {row.kind === 'total' ? (
                         <Text style={s.rowTotal}>
-                          TOTAL
+                          {t('spot.total')}
                           {row.totalityDurationSec != null
                             ? ` ${Math.floor(row.totalityDurationSec / 60)}m${String(row.totalityDurationSec % 60).padStart(2, '0')}s`
                             : ''}
@@ -293,7 +296,7 @@ export function SpotSelector({
                       onPress={() => openInMaps(row.lat, row.lon, row.name)}
                       hitSlop={8}
                     >
-                      <Text style={s.mapsBtnText}>MAPS</Text>
+                      <Text style={s.mapsBtnText}>{t('spot.maps')}</Text>
                     </Pressable>
                   </View>
                 );

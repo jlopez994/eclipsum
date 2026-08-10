@@ -3,8 +3,9 @@ import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-na
 import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bandOf, upcomingEclipses, type EclipseEntry } from '../../lib/eclipseCatalog';
-import { ALERT_SOUND_OPTIONS, sendTestNotification } from '../../lib/notifications';
+import { alertSoundOptions, sendTestNotification } from '../../lib/notifications';
 import { previewAlertSound } from '../../lib/soundPreview';
+import { t, type Lang } from '../../lib/i18n';
 import type { AlertSound } from '../../lib/prefs';
 import { DRILL_PARTIAL, DRILL_TOTALITY, type DrillConfig } from '../../lib/drill';
 import { C, F } from '../theme';
@@ -20,6 +21,9 @@ interface SettingsScreenProps {
   glassesUrl?: string;
   onSoundChange: (sound: AlertSound) => void;
   onDemoEclipse: () => void;
+  /** Idioma elegido; '' = automático (sistema) */
+  language: Lang | '';
+  onLanguageChange: (lang: Lang | '') => void;
   /** Recibe el día civil elegido; '' = automático */
   onSelectEclipse: (day: string) => void;
   /** Tramos del simulacro (persisten en prefs) */
@@ -33,15 +37,15 @@ const UPCOMING_COUNT = 5;
 
 function fmtCountdown(civilDate: string): string {
   const d = Math.max(0, Math.ceil((Date.parse(`${civilDate}T00:00:00Z`) - Date.now()) / 86_400_000));
-  return d === 0 ? 'Hoy' : d === 1 ? 'Mañana' : `En ${d} días`;
+  return d === 0 ? t('settings.upcoming.today') : d === 1 ? t('settings.upcoming.tomorrow') : t('settings.upcoming.inDays', { n: d });
 }
 
 /** «Pico 41°N 3°O» a partir del pico global (solo entradas autogeneradas). */
 function fmtPeak(e: EclipseEntry): string | null {
   if (e.peakLat === undefined || e.peakLon === undefined) return null;
   const lat = `${Math.abs(e.peakLat).toFixed(0)}°${e.peakLat >= 0 ? 'N' : 'S'}`;
-  const lon = `${Math.abs(e.peakLon).toFixed(0)}°${e.peakLon >= 0 ? 'E' : 'O'}`;
-  return `Pico ${lat} ${lon}`;
+  const lon = `${Math.abs(e.peakLon).toFixed(0)}°${e.peakLon >= 0 ? 'E' : t('bearing.W')}`;
+  return t('settings.upcoming.peak', { lat, lon });
 }
 
 /** 90 → «1m 30s»; 120 → «2 min» */
@@ -55,14 +59,23 @@ function fmtTotality(sec: number): string {
 function Stepper({ onLess, onMore, a11y }: { onLess: () => void; onMore: () => void; a11y: string }) {
   return (
     <View style={s.stepper}>
-      <Pressable style={s.stepBtn} onPress={onLess} hitSlop={6} accessibilityLabel={`Reducir ${a11y}`}>
+      <Pressable style={s.stepBtn} onPress={onLess} hitSlop={6} accessibilityLabel={t('settings.drill.less', { what: a11y })}>
         <Text style={s.stepTxt}>−</Text>
       </Pressable>
-      <Pressable style={s.stepBtn} onPress={onMore} hitSlop={6} accessibilityLabel={`Aumentar ${a11y}`}>
+      <Pressable style={s.stepBtn} onPress={onMore} hitSlop={6} accessibilityLabel={t('settings.drill.more', { what: a11y })}>
         <Text style={s.stepTxt}>+</Text>
       </Pressable>
     </View>
   );
+}
+
+/** Opciones del selector de idioma: nombre nativo fijo, «Automático» localizado. */
+function languageOptions(): { id: Lang | ''; label: string; hint: string }[] {
+  return [
+    { id: '', label: t('settings.language.auto'), hint: t('settings.language.autoHint') },
+    { id: 'es', label: 'Español', hint: '' },
+    { id: 'en', label: 'English', hint: '' },
+  ];
 }
 
 export function SettingsScreen({
@@ -71,6 +84,8 @@ export function SettingsScreen({
   glassesUrl,
   onSoundChange,
   onDemoEclipse,
+  language,
+  onLanguageChange,
   activeEclipse,
   onSelectEclipse,
   drill,
@@ -94,7 +109,7 @@ export function SettingsScreen({
   const runDrill = () => {
     onStartDrill()
       .then(setDrillMsg)
-      .catch(() => setDrillMsg('Sin permiso de notificaciones'));
+      .catch(() => setDrillMsg(t('notif.permissionDenied')));
   };
 
   // El tono de sistema no es reproducible en la app (content:// no carga en expo-audio):
@@ -104,41 +119,40 @@ export function SettingsScreen({
     else void previewAlertSound(id);
   };
 
+  const soundOptions = alertSoundOptions();
   return (
     <View style={s.root}>
-      <Text style={[s.title, { paddingTop: insets.top + 14 }]}>Ajustes</Text>
+      <Text style={[s.title, { paddingTop: insets.top + 14 }]}>{t('settings.title')}</Text>
       <ScrollView style={s.body} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 22, paddingBottom: 36 }}>
-        <Text style={s.hint}>
-          El puesto de observación se elige en el mapa, tocando el nombre del lugar arriba a la izquierda.
-        </Text>
+        <Text style={s.hint}>{t('settings.hint')}</Text>
 
         <View>
-          <Text style={s.section}>PERMISOS</Text>
+          <Text style={s.section}>{t('settings.permissions')}</Text>
           <View style={s.card}>
             <View style={[s.rowItem, s.rowDivider]}>
-              <Text style={s.rowTitle}>Ubicación</Text>
+              <Text style={s.rowTitle}>{t('settings.location')}</Text>
               <Text style={permissions.location ? s.activeTag : s.deniedTag}>
-                {permissions.location ? 'PERMITIDO' : 'DENEGADO'}
+                {permissions.location ? t('settings.granted') : t('settings.denied')}
               </Text>
             </View>
             <View style={s.rowItem}>
-              <Text style={s.rowTitle}>Notificaciones</Text>
+              <Text style={s.rowTitle}>{t('settings.notifications')}</Text>
               <Text style={permissions.notifications ? s.activeTag : s.deniedTag}>
-                {permissions.notifications ? 'PERMITIDO' : 'DENEGADO'}
+                {permissions.notifications ? t('settings.granted') : t('settings.denied')}
               </Text>
             </View>
           </View>
         </View>
 
         <View>
-          <Text style={s.section}>SONIDO DE ALERTAS</Text>
+          <Text style={s.section}>{t('settings.sound')}</Text>
           <View style={s.card}>
-            {ALERT_SOUND_OPTIONS.map((opt, i) => {
+            {soundOptions.map((opt, i) => {
               const on = alertSound === opt.id;
               return (
                 <View
                   key={opt.id}
-                  style={[s.soundRow, i < ALERT_SOUND_OPTIONS.length - 1 && s.rowDivider]}
+                  style={[s.soundRow, i < soundOptions.length - 1 && s.rowDivider]}
                 >
                   <Pressable
                     onPress={() => onSoundChange(opt.id)}
@@ -156,7 +170,7 @@ export function SettingsScreen({
                   <Pressable
                     onPress={() => preview(opt.id)}
                     hitSlop={8}
-                    accessibilityLabel={`Escuchar ${opt.label}`}
+                    accessibilityLabel={t('settings.sound.play', { label: opt.label })}
                     style={s.playBtn}
                   >
                     <Text style={s.playIcon}>▶</Text>
@@ -168,63 +182,81 @@ export function SettingsScreen({
         </View>
 
         <View>
-          <Text style={[s.section, { color: C.danger }]}>SEGURIDAD OCULAR</Text>
+          <Text style={s.section}>{t('settings.language')}</Text>
+          <View style={s.card}>
+            {languageOptions().map((opt, i, arr) => {
+              const on = language === opt.id;
+              return (
+                <Pressable
+                  key={opt.id || 'auto'}
+                  onPress={() => onLanguageChange(opt.id)}
+                  style={[s.rowItem, i < arr.length - 1 && s.rowDivider]}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={opt.hint ? `${opt.label}. ${opt.hint}` : opt.label}
+                >
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={s.rowTitle}>{opt.label}</Text>
+                    {!!opt.hint && <Text style={s.soundHint}>{opt.hint}</Text>}
+                  </View>
+                  <View style={[s.radio, on && s.radioOn]}>{on && <View style={s.radioDot} />}</View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View>
+          <Text style={[s.section, { color: C.danger }]}>{t('settings.safety')}</Text>
           <View style={s.safetyCard}>
             <Text style={s.safetyTitle}>
-              Nunca mires al sol sin gafas certificadas <Text style={{ color: C.danger }}>ISO 12312-2</Text>
+              {t('settings.safety.title')}
+              <Text style={{ color: C.danger }}>ISO 12312-2</Text>
             </Text>
-            <Text style={s.safetyBody}>
-              Solo durante la totalidad es seguro mirar sin protección. La app te avisará del inicio y del fin
-              exactos.
-            </Text>
+            <Text style={s.safetyBody}>{t('settings.safety.body')}</Text>
             <Pressable onPress={() => Linking.openURL(IGN_URL)}>
-              <Text style={s.safetyLink}>GUÍA DE SEGURIDAD (IGN) →</Text>
+              <Text style={s.safetyLink}>{t('settings.safety.guide')}</Text>
             </Pressable>
             {!!glassesUrl && (
               <>
                 <Pressable onPress={() => Linking.openURL(glassesUrl)}>
-                  <Text style={s.safetyLink}>COMPRAR GAFAS CERTIFICADAS →</Text>
+                  <Text style={s.safetyLink}>{t('settings.safety.buy')}</Text>
                 </Pressable>
-                <Text style={s.affiliateNote}>
-                  Enlace de afiliado: apoya la app sin coste extra para ti.
-                </Text>
+                <Text style={s.affiliateNote}>{t('settings.safety.affiliate')}</Text>
               </>
             )}
           </View>
         </View>
 
         <View>
-          <Text style={s.section}>SIMULACRO</Text>
+          <Text style={s.section}>{t('settings.drill')}</Text>
           <View style={s.card}>
             <View style={[s.rowItem, s.rowDivider]}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={s.rowTitle}>Parcial (C1→C2)</Text>
-                <Text style={s.soundHint}>{fmtTotality(drill.partialSec)} por tramo</Text>
+                <Text style={s.rowTitle}>{t('settings.drill.partial')}</Text>
+                <Text style={s.soundHint}>{t('settings.drill.partialHint', { dur: fmtTotality(drill.partialSec) })}</Text>
               </View>
               <Stepper
                 onLess={() => step('partialSec', -1)}
                 onMore={() => step('partialSec', 1)}
-                a11y="parcial del simulacro"
+                a11y={t('settings.drill.partialA11y')}
               />
             </View>
             <View style={[s.rowItem, s.rowDivider]}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={s.rowTitle}>Totalidad (C2→C3)</Text>
+                <Text style={s.rowTitle}>{t('settings.drill.totality')}</Text>
                 <Text style={s.soundHint}>{fmtTotality(drill.totalitySec)}</Text>
               </View>
               <Stepper
                 onLess={() => step('totalitySec', -1)}
                 onMore={() => step('totalitySec', 1)}
-                a11y="totalidad del simulacro"
+                a11y={t('settings.drill.totalityA11y')}
               />
             </View>
-            <Pressable style={s.rowItem} onPress={runDrill} accessibilityLabel="Iniciar simulacro">
+            <Pressable style={s.rowItem} onPress={runDrill} accessibilityLabel={t('settings.drill.startA11y')}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={[s.rowTitle, { color: C.corona }]}>Iniciar simulacro</Text>
-                <Text style={s.soundHint}>
-                  {drillMsg ??
-                    'Modo eclipse con C1 en 2 min y avisos [PRUEBA] según tus alertas. Las reales no se tocan.'}
-                </Text>
+                <Text style={[s.rowTitle, { color: C.corona }]}>{t('settings.drill.start')}</Text>
+                <Text style={s.soundHint}>{drillMsg ?? t('settings.drill.startHint')}</Text>
               </View>
               <Text style={s.playIcon}>▶</Text>
             </Pressable>
@@ -232,11 +264,11 @@ export function SettingsScreen({
         </View>
 
         <View>
-          <Text style={s.section}>PRÓXIMOS ECLIPSES</Text>
+          <Text style={s.section}>{t('settings.upcoming')}</Text>
           <View style={s.card}>
             {upcoming.map((e, i) => {
               const on = e.civilDate === activeEclipse.civilDate;
-              const sub = [fmtCountdown(e.civilDate), fmtPeak(e), bandOf(e) ? 'Banda en el mapa' : null]
+              const sub = [fmtCountdown(e.civilDate), fmtPeak(e), bandOf(e) ? t('settings.upcoming.band') : null]
                 .filter(Boolean)
                 .join(' · ');
               return (
@@ -252,38 +284,36 @@ export function SettingsScreen({
                     <Text style={s.rowTitle}>{e.label}</Text>
                     <Text style={s.soundHint}>{sub}</Text>
                   </View>
-                  {on && <Text style={s.upcomingActive}>ACTIVO</Text>}
+                  {on && <Text style={s.upcomingActive}>{t('settings.upcoming.active')}</Text>}
                   <View style={[s.radio, on && s.radioOn, { marginLeft: 10 }]}>{on && <View style={s.radioDot} />}</View>
                 </Pressable>
               );
             })}
           </View>
           <Text style={s.upcomingNote}>
-            Por defecto se sigue el más próximo{isManualSelection ? ' — ahora tienes uno elegido a mano' : ''}. Cada
-            eclipse guarda su puesto y alertas; los avisos programados son los del activo.
+            {t('settings.upcoming.note', { manual: isManualSelection ? t('settings.upcoming.noteManual') : '' })}
           </Text>
         </View>
 
         <View>
-          <Text style={s.section}>ACERCA DE</Text>
+          <Text style={s.section}>{t('settings.about')}</Text>
           <Pressable onLongPress={onDemoEclipse} delayLongPress={1500}>
             <View style={s.card}>
               <View style={[s.rowItem, s.rowDivider]}>
-                <Text style={s.rowTitle}>Versión</Text>
+                <Text style={s.rowTitle}>{t('settings.version')}</Text>
                 <Text style={s.aboutValue}>
                   Eclipsum {Constants.expoConfig?.version ?? '1.0'}
-                  {Constants.expoConfig?.android?.versionCode ? ` (build ${Constants.expoConfig.android.versionCode})` : ''}
+                  {Constants.expoConfig?.android?.versionCode
+                    ? ` (${t('settings.build', { n: Constants.expoConfig.android.versionCode })})`
+                    : ''}
                 </Text>
               </View>
               <View style={[s.rowItem, s.rowDivider]}>
-                <Text style={s.rowTitle}>Eclipse activo</Text>
+                <Text style={s.rowTitle}>{t('settings.activeEclipse')}</Text>
                 <Text style={s.aboutValue}>{activeEclipse.label}</Text>
               </View>
               <View style={{ padding: 16 }}>
-                <Text style={s.aboutNote}>
-                  Los horarios del eclipse se calculan en tu móvil y funcionan sin conexión. Solo el
-                  pronóstico de nubes y el buscador de lugares necesitan internet.
-                </Text>
+                <Text style={s.aboutNote}>{t('settings.aboutNote')}</Text>
               </View>
             </View>
           </Pressable>

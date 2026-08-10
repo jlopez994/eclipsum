@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { clampDrill, DEFAULT_DRILL, type DrillConfig } from './drill';
 import type { EclipseEvent } from './eclipse';
+import type { Lang } from './i18n';
 import type { Spot } from './spots';
 
 export type AlertToggles = Record<EclipseEvent['key'], boolean>;
@@ -55,6 +56,8 @@ export interface Prefs {
   alertSound: AlertSound;
   /** Tramos del modo simulacro */
   drill: DrillConfig;
+  /** Idioma de la app; '' = automático (el del sistema) */
+  language: Lang | '';
 }
 
 const KEY = 'eclipsum:prefs';
@@ -89,6 +92,7 @@ export const DEFAULT_PREFS: Prefs = {
   mapView: 'diagram',
   alertSound: 'eclipse',
   drill: { ...DEFAULT_DRILL },
+  language: '',
 };
 
 /** Contexto del eclipse con día civil `day`; defaults si aún no tiene nada guardado. */
@@ -212,6 +216,7 @@ export async function loadPrefs(migrationDay: string): Promise<Prefs> {
       mapView: parsed.mapView === 'real' ? 'real' : 'diagram',
       alertSound: parsed.alertSound === 'default' ? 'default' : 'eclipse',
       drill: clampDrill(parsed.drill),
+      language: parsed.language === 'es' || parsed.language === 'en' ? parsed.language : '',
     };
   } catch {
     return DEFAULT_PREFS;

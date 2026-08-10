@@ -1,5 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import { t, type I18nKey } from './i18n';
 import type { LocalEclipse } from './eclipse';
 import type { AlertEarly, AlertSound, AlertToggles, C1PlanAlerts } from './prefs';
 import { ALERT_EARLY_SECONDS, DEFAULT_ALERT_EARLY, DEFAULT_C1_PLAN_ALERTS } from './prefs';
@@ -18,10 +19,13 @@ Notifications.setNotificationHandler({
 const CHANNEL_BASE = 'eclipse-alerts-v4';
 const LEGACY_CHANNELS = ['eclipse-alerts-v3-eclipse', 'eclipse-alerts-v3-default'];
 
-export const ALERT_SOUND_OPTIONS: { id: AlertSound; label: string; hint: string }[] = [
-  { id: 'eclipse', label: 'Eclipsum', hint: 'Sonido propio de la app' },
-  { id: 'default', label: 'Sistema', hint: 'Tono por defecto del móvil' },
-];
+/** Opciones de sonido con labels en el idioma activo (resueltas al render). */
+export function alertSoundOptions(): { id: AlertSound; label: string; hint: string }[] {
+  return [
+    { id: 'eclipse', label: t('sound.eclipse'), hint: t('sound.eclipseHint') },
+    { id: 'default', label: t('sound.default'), hint: t('sound.defaultHint') },
+  ];
+}
 
 function channelIdFor(sound: AlertSound): string {
   return `${CHANNEL_BASE}-${sound}`;
@@ -47,31 +51,22 @@ function minusMinutes(d: Date, min: number): Date {
 }
 
 /**
- * Copys por hito: `exact` en el contacto (instrucción), `early` unos segundos antes
- * (aviso previo — nunca ordena ponerse las gafas todavía).
+ * Copys por hito, resueltos en el idioma activo al PROGRAMAR: `exact` en el
+ * contacto (instrucción), `early` unos segundos antes (aviso previo).
+ * Cambio de idioma → App reprograma (prefs.language en las deps del efecto).
  */
-const ALERT_COPY: Record<keyof AlertToggles, { early: { title: string; body: string }; exact: { title: string; body: string } }> = {
-  C1: {
-    early: { title: '☀️ El eclipse empieza en unos segundos', body: 'Aviso previo: ten las gafas a mano.' },
-    exact: { title: '☀️ Empieza el eclipse', body: 'GAFAS DE ECLIPSE PUESTAS para mirar al sol.' },
-  },
-  C2: {
-    early: { title: '🌑 Totalidad en unos segundos', body: 'Aviso previo: en nada podrás mirar sin gafas.' },
-    exact: { title: '🌑 Totalidad', body: 'Ya puedes mirar sin gafas. Disfruta.' },
-  },
-  MAX: {
-    early: { title: '🌗 Máximo en unos segundos', body: 'Aviso previo del punto culminante.' },
-    exact: { title: '🌗 Máximo', body: 'Punto culminante del eclipse.' },
-  },
-  C3: {
-    early: { title: '⚠️ Fin de totalidad en unos segundos', body: 'Aviso previo: ve preparando las gafas.' },
-    exact: { title: '⚠️ FIN DE TOTALIDAD', body: 'GAFAS PUESTAS YA. El sol vuelve a ser peligroso.' },
-  },
-  C4: {
-    early: { title: 'Fin del eclipse en unos segundos', body: 'Aviso previo del último contacto.' },
-    exact: { title: 'Fin del eclipse', body: 'Último contacto. Gracias por mirar al cielo con Eclipsum.' },
-  },
-};
+function copyFor(key: keyof AlertToggles) {
+  return {
+    early: {
+      title: t(`notif.${key}.early.title` as I18nKey),
+      body: t(`notif.${key}.early.body` as I18nKey),
+    },
+    exact: {
+      title: t(`notif.${key}.title` as I18nKey),
+      body: t(`notif.${key}.body` as I18nKey),
+    },
+  };
+}
 
 function buildAlerts(
   eclipse: LocalEclipse,
@@ -84,15 +79,15 @@ function buildAlerts(
   if (c1) {
     if (c1Plan.before24h) {
       alerts.push({
-        title: 'Eclipse mañana',
-        body: 'El eclipse solar empieza mañana a esta hora. Prepara las gafas.',
+        title: t('notif.plan24h.title'),
+        body: t('notif.plan24h.body'),
         time: minusMinutes(c1.time, 24 * 60),
       });
     }
     if (c1Plan.before1h) {
       alerts.push({
-        title: 'Eclipse en 1 hora',
-        body: 'Primer contacto (parcial) en 1 hora. Busca horizonte oeste despejado.',
+        title: t('notif.plan1h.title'),
+        body: t('notif.plan1h.body'),
         time: minusMinutes(c1.time, 60),
       });
     }
@@ -100,7 +95,7 @@ function buildAlerts(
   // Por hito activo: alerta en el contacto exacto y, con el chip, aviso previo adicional
   for (const ev of eclipse.events) {
     if (!enabled[ev.key]) continue;
-    const copy = ALERT_COPY[ev.key];
+    const copy = copyFor(ev.key);
     if (early[ev.key]) {
       alerts.push({ ...copy.early, time: minusSeconds(ev.time, ALERT_EARLY_SECONDS) });
     }
@@ -128,12 +123,12 @@ async function deleteLegacyChannels(): Promise<void> {
 
 async function ensurePermissionAndChannel(sound: AlertSound): Promise<string> {
   const { status } = await Notifications.requestPermissionsAsync();
-  if (status !== 'granted') throw new Error('Permiso de notificaciones denegado');
+  if (status !== 'granted') throw new Error(t('notif.permissionDenied'));
   await deleteLegacyChannels();
   const id = channelIdFor(sound);
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync(id, {
-      name: sound === 'eclipse' ? 'Alertas de eclipse (Eclipsum)' : 'Alertas de eclipse (sistema)',
+      name: sound === 'eclipse' ? t('notif.channel.eclipse') : t('notif.channel.default'),
       importance: Notifications.AndroidImportance.MAX,
       sound: soundFile(sound),
       vibrationPattern: [0, 250, 150, 250, 150, 500],
@@ -147,8 +142,8 @@ export async function sendTestNotification(sound: AlertSound = 'eclipse'): Promi
   const channelId = await ensurePermissionAndChannel(sound);
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: '🔔 Prueba Eclipsum',
-      body: 'Las alertas funcionan. Listo para el eclipse.',
+      title: t('notif.test.title'),
+      body: t('notif.test.body'),
       sound: soundFile(sound),
     },
     // En Android 8+ el sonido lo marca el canal: trigger con channelId (no content.channelId).
@@ -202,7 +197,7 @@ async function doScheduleFake(
   for (const a of alerts) {
     ids.push(
       await Notifications.scheduleNotificationAsync({
-        content: { title: `[PRUEBA] ${a.title}`, body: a.body, sound: soundFile(sound) },
+        content: { title: `${t('notif.drillPrefix')} ${a.title}`, body: a.body, sound: soundFile(sound) },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,
           date: a.time,

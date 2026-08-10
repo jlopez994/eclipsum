@@ -217,6 +217,17 @@ async function main() {
   assert.equal(auto.id, '2030-06-01-annular', 'Auto: id derivado de fecha y tipo');
   assert.equal(parseRemoteCatalog(JSON.stringify([auto])).length, 1, 'Auto: la entrada pasa el validador de RC');
 
+  // i18n: mismos keys en ambos idiomas y el cambio de idioma surte efecto real
+  const { dictKeys, getLang, setLang, t: tr } = await import('../lib/i18n');
+  assert.deepEqual(dictKeys('es'), dictKeys('en'), 'i18n: paridad de claves es/en');
+  assert.equal(getLang(), 'es', 'i18n: idioma por defecto es');
+  const esWest = tr('bearing.W');
+  setLang('en');
+  assert.equal(tr('bearing.W'), 'W', 'i18n: rumbo O localizado a W en inglés');
+  assert.notEqual(tr('notif.C3.title'), '', 'i18n: copy crítico de fin de totalidad presente en inglés');
+  setLang('es');
+  assert.equal(tr('bearing.W'), esWest, 'i18n: vuelta a español restaura los textos');
+
   console.log('selfcheck OK — Zaragoza total', zgz.totalityDurationSec + 's, máximo', max.time.toISOString());
   console.log(
     'Sevilla → totalidad a', dir!.distanceKm, 'km al', bearingLabel(dir!.bearingDeg),

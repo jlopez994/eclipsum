@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
+import { t, type I18nKey } from '../lib/i18n';
 import { C, F } from './theme';
 
 export type TabKey = 'mapa' | 'alertas' | 'ajustes';
@@ -36,11 +37,14 @@ function Icon({ tab, color }: { tab: TabKey; color: string }) {
   );
 }
 
-const TABS: { key: TabKey; label: string }[] = [
-  { key: 'mapa', label: 'MAPA' },
-  { key: 'alertas', label: 'ALERTAS' },
-  { key: 'ajustes', label: 'AJUSTES' },
+const TABS: { key: TabKey; labelKey: I18nKey }[] = [
+  { key: 'mapa', labelKey: 'tab.map' },
+  { key: 'alertas', labelKey: 'tab.alerts' },
+  { key: 'ajustes', labelKey: 'tab.settings' },
 ];
+
+// El map de TABS usa `t` como variable de iteración: alias local para el diccionario
+const i18nLabel = t;
 
 export function TabBar({ active, onChange }: TabBarProps) {
   const insets = useSafeAreaInsets();
@@ -51,7 +55,7 @@ export function TabBar({ active, onChange }: TabBarProps) {
         return (
           <Pressable key={t.key} style={s.tab} onPress={() => onChange(t.key)}>
             <Icon tab={t.key} color={color} />
-            <Text style={[s.label, { color }]}>{t.label}</Text>
+            <Text style={[s.label, { color }]}>{i18nLabel(t.labelKey)}</Text>
           </Pressable>
         );
       })}

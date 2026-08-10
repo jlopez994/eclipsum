@@ -11,14 +11,15 @@ import {
 import type { AlertEarly, AlertSound, AlertToggles, C1PlanAlerts } from '../../lib/prefs';
 import { ALERT_EARLY_SECONDS } from '../../lib/prefs';
 import { track } from '../../lib/firebase';
+import { localeTag, t, type I18nKey } from '../../lib/i18n';
 import { C, F } from '../theme';
 
-const ALERT_META: Record<string, { accent: string; desc: string }> = {
-  C1: { accent: C.corona, desc: 'Gafas puestas para mirar al sol.' },
-  C2: { accent: C.totality, desc: 'En la banda: prepárate para mirar sin gafas.' },
-  MAX: { accent: C.totality, desc: 'Punto culminante del eclipse.' },
-  C3: { accent: C.danger, desc: 'GAFAS PUESTAS YA. El sol vuelve a ser peligroso.' },
-  C4: { accent: C.corona, desc: 'Último contacto.' },
+const ALERT_ACCENT: Record<string, string> = {
+  C1: C.corona,
+  C2: C.totality,
+  MAX: C.totality,
+  C3: C.danger,
+  C4: C.corona,
 };
 
 interface AlertsScreenProps {
@@ -33,7 +34,7 @@ interface AlertsScreenProps {
 }
 
 const fmtHM = (d: Date) =>
-  d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 export function AlertsScreen({
   eclipse,
@@ -65,7 +66,7 @@ export function AlertsScreen({
 
   useEffect(() => {
     const sub = Notifications.addNotificationReceivedListener((n) => {
-      if (n.request.content.title?.includes('Prueba')) clearTestFlash();
+      if (n.request.content.title?.toLowerCase().includes(t('notif.test.match').toLowerCase())) clearTestFlash();
     });
     return () => {
       sub.remove();
@@ -83,7 +84,7 @@ export function AlertsScreen({
       track('alerts_scheduled', { count: n });
       setFlash(null);
     } catch (e) {
-      setFlash(e instanceof Error ? e.message : 'Error al programar alertas');
+      setFlash(e instanceof Error ? e.message : t('alerts.scheduleError'));
     }
   };
 
@@ -109,7 +110,7 @@ export function AlertsScreen({
   const onTest = async () => {
     if (testing) return;
     setTesting(true);
-    setFlash('Enviando notificación de prueba…');
+    setFlash(t('alerts.testSending'));
     try {
       await sendTestNotification(alertSound);
       // Por si el listener no llega (app en background / OEM raro)
@@ -117,24 +118,19 @@ export function AlertsScreen({
       testClearRef.current = setTimeout(clearTestFlash, 1500);
     } catch (e) {
       setTesting(false);
-      setFlash(e instanceof Error ? e.message : 'Error en notificación de prueba');
+      setFlash(e instanceof Error ? e.message : t('alerts.testError'));
     }
   };
 
   return (
     <View style={s.root}>
       <View style={[s.header, { paddingTop: insets.top + 14 }]}>
-        <Text style={s.title}>Alertas</Text>
+        <Text style={s.title}>{t('alerts.title')}</Text>
         <View style={s.countRow}>
           <View style={s.countDot} />
-          <Text style={s.countText}>
-            {activeCount} hitos activos · {scheduledCount} avisos
-          </Text>
+          <Text style={s.countText}>{t('alerts.count', { active: activeCount, scheduled: scheduledCount })}</Text>
         </View>
-        <Text style={s.hint}>
-          Cada hito activo avisa en el contacto exacto. Con los chips sumas un aviso previo de{' '}
-          {ALERT_EARLY_SECONDS} s; en C1 también 1 h y 24 h antes.
-        </Text>
+        <Text style={s.hint}>{t('alerts.hint', { sec: ALERT_EARLY_SECONDS })}</Text>
       </View>
       <ScrollView
         style={s.list}
@@ -142,7 +138,7 @@ export function AlertsScreen({
         showsVerticalScrollIndicator={false}
       >
         {eclipse.events.map((e, i) => {
-          const meta = ALERT_META[e.key];
+          const accent = ALERT_ACCENT[e.key] ?? C.dim;
           const on = toggles[e.key];
           const isEarly = early[e.key];
           // Contacto bajo el horizonte: el sol ya se habrá puesto — se marca, pero el
@@ -157,9 +153,9 @@ export function AlertsScreen({
                   style={[
                     s.rowDot,
                     {
-                      backgroundColor: on ? meta.accent : C.bg,
-                      borderColor: on ? meta.accent : C.knobTrack,
-                      shadowColor: on ? meta.accent : 'transparent',
+                      backgroundColor: on ? accent : C.bg,
+                      borderColor: on ? accent : C.knobTrack,
+                      shadowColor: on ? accent : 'transparent',
                     },
                   ]}
                 />
@@ -167,14 +163,12 @@ export function AlertsScreen({
               <View style={s.rowBody}>
                 <View style={s.rowTitleLine}>
                   <Text style={s.rowTitle}>
-                    {e.key === 'MAX' ? 'MÁX' : e.key} · {e.label}
+                    {e.key === 'MAX' ? t('event.maxShort') : e.key} · {t(`event.${e.key}` as I18nKey)}
                   </Text>
-                  <Text style={[s.rowTime, { color: belowHorizon ? C.dim : meta.accent }]}>{fmtHM(e.time)}</Text>
+                  <Text style={[s.rowTime, { color: belowHorizon ? C.dim : accent }]}>{fmtHM(e.time)}</Text>
                 </View>
-                <Text style={s.rowDesc}>{meta.desc}</Text>
-                {belowHorizon && (
-                  <Text style={s.rowBelowHorizon}>Tras el ocaso — el sol ya no se verá desde aquí</Text>
-                )}
+                <Text style={s.rowDesc}>{t(`alerts.desc.${e.key}` as I18nKey)}</Text>
+                {belowHorizon && <Text style={s.rowBelowHorizon}>{t('alerts.belowHorizon')}</Text>}
                 <View style={s.planRow}>
                   <Pressable
                     onPress={() => handleEarly(e.key)}
@@ -183,28 +177,30 @@ export function AlertsScreen({
                     style={[
                       s.planChip,
                       {
-                        borderColor: isEarly && on ? meta.accent + '88' : C.border,
-                        backgroundColor: isEarly && on ? meta.accent + '22' : 'transparent',
+                        borderColor: isEarly && on ? accent + '88' : C.border,
+                        backgroundColor: isEarly && on ? accent + '22' : 'transparent',
                       },
                     ]}
                     accessibilityRole="switch"
                     accessibilityState={{ checked: isEarly, disabled: !on }}
-                    accessibilityLabel={`Aviso previo ${ALERT_EARLY_SECONDS} segundos antes. ${
-                      isEarly ? 'Activado' : 'Desactivado'
-                    }.`}
+                    accessibilityLabel={t('alerts.early.a11y', {
+                      sec: ALERT_EARLY_SECONDS,
+                      state: isEarly ? t('alerts.on') : t('alerts.off'),
+                    })}
                   >
-                    <Text style={[s.planChipText, { color: isEarly && on ? meta.accent : C.dim }]}>
-                      +{ALERT_EARLY_SECONDS} s antes
+                    <Text style={[s.planChipText, { color: isEarly && on ? accent : C.dim }]}>
+                      {t('alerts.early', { sec: ALERT_EARLY_SECONDS })}
                     </Text>
                   </Pressable>
                   {e.key === 'C1' &&
                     (
                       [
-                        { key: 'before1h', label: '+1 h antes' },
-                        { key: 'before24h', label: '+24 h antes' },
+                        { key: 'before1h', labelKey: 'alerts.plan.1h' },
+                        { key: 'before24h', labelKey: 'alerts.plan.24h' },
                       ] as const
                     ).map((opt) => {
                       const planOn = c1Plan[opt.key];
+                      const label = t(opt.labelKey);
                       return (
                         <Pressable
                           key={opt.key}
@@ -214,17 +210,18 @@ export function AlertsScreen({
                           style={[
                             s.planChip,
                             {
-                              borderColor: planOn && on ? meta.accent + '88' : C.border,
-                              backgroundColor: planOn && on ? meta.accent + '22' : 'transparent',
+                              borderColor: planOn && on ? accent + '88' : C.border,
+                              backgroundColor: planOn && on ? accent + '22' : 'transparent',
                             },
                           ]}
                           accessibilityRole="switch"
                           accessibilityState={{ checked: planOn, disabled: !on }}
-                          accessibilityLabel={`${opt.label}. ${planOn ? 'Activado' : 'Desactivado'}.`}
+                          accessibilityLabel={t('alerts.plan.a11y', {
+                            label,
+                            state: planOn ? t('alerts.on') : t('alerts.off'),
+                          })}
                         >
-                          <Text style={[s.planChipText, { color: planOn && on ? meta.accent : C.dim }]}>
-                            {opt.label}
-                          </Text>
+                          <Text style={[s.planChipText, { color: planOn && on ? accent : C.dim }]}>{label}</Text>
                         </Pressable>
                       );
                     })}
@@ -234,7 +231,7 @@ export function AlertsScreen({
                 onPress={() => handleToggle(e.key)}
                 style={[
                   s.track,
-                  { backgroundColor: on ? meta.accent : C.surface, borderColor: on ? meta.accent : C.border },
+                  { backgroundColor: on ? accent : C.surface, borderColor: on ? accent : C.border },
                 ]}
               >
                 <View style={[s.knob, { left: on ? 25 : 3 }]} />
@@ -251,10 +248,10 @@ export function AlertsScreen({
           accessibilityState={{ disabled: testing, busy: testing }}
         >
           <Text style={[s.testButtonText, testing && s.testButtonTextDisabled]}>
-            {testing ? 'ENVIANDO…' : 'PROBAR NOTIFICACIÓN'}
+            {testing ? t('alerts.testing') : t('alerts.test')}
           </Text>
         </Pressable>
-        <Text style={s.status}>{flash ?? `${scheduledCount} avisos programados`}</Text>
+        <Text style={s.status}>{flash ?? t('alerts.scheduled', { n: scheduledCount })}</Text>
       </View>
     </View>
   );

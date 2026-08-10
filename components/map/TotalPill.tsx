@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
+import { t } from '../../lib/i18n';
 import { bearingLabel } from '../../lib/totality';
 import { C, F } from '../theme';
 
@@ -13,8 +14,8 @@ export function TotalPill({ distanceKm, bearingDeg }: { distanceKm: number; bear
         </Svg>
       </View>
       <Text style={s.totalPillText}>
-        <Text style={{ color: C.violet, fontFamily: F.bold }}>TOTAL</Text> a{' '}
-        <Text style={{ color: C.corona }}>{distanceKm} km</Text> al {bearingLabel(bearingDeg)}
+        <Text style={{ color: C.violet, fontFamily: F.bold }}>{t('real.total')}</Text>{' '}
+        {t('map.totalPill', { km: `${distanceKm} km`, dir: bearingLabel(bearingDeg) })}
       </Text>
     </View>
   );

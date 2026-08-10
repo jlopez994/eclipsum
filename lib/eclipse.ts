@@ -1,5 +1,7 @@
 import { Body, Equator, Horizon, Observer, SearchLocalSolarEclipse, SearchRiseSet } from 'astronomy-engine';
 import { activeSearchStart } from './eclipseCatalog';
+// alias: este módulo ya usa `t` como variable de tiempo en currentPhase
+import { t as i18n } from './i18n';
 
 export interface EclipseEvent {
   key: 'C1' | 'C2' | 'MAX' | 'C3' | 'C4';
@@ -100,7 +102,7 @@ export function currentPhase(eclipse: LocalEclipse, now: Date): PhaseStatus | nu
   const c4 = at('C4');
   if (c1 === undefined || c4 === undefined || t < c1 || t >= c4) return null;
   if (c2 !== undefined && c3 !== undefined && t >= c2 && t < c3) {
-    return { label: 'TOTALIDAD — puedes mirar sin gafas', safeToLook: true };
+    return { label: i18n('phase.totality'), safeToLook: true };
   }
-  return { label: 'Eclipse parcial en curso — gafas puestas', safeToLook: false };
+  return { label: i18n('phase.partial'), safeToLook: false };
 }

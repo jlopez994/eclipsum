@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
+import { getLocales } from 'expo-localization';
 import { getActiveEclipse, setUserSelectedEclipseDay } from '../lib/eclipseCatalog';
+import { setLang, type Lang } from '../lib/i18n';
 import { loadPrefs, savePrefs, type Prefs } from '../lib/prefs';
+
+/** '' = automático: es si el sistema está en español, en para el resto. */
+function resolveLang(pref: Lang | ''): Lang {
+  if (pref) return pref;
+  return getLocales()[0]?.languageCode === 'es' ? 'es' : 'en';
+}
 
 /**
  * Prefs persistidas: null mientras cargan del disco; update guarda en background.
- * La selección de eclipse se aplica al catálogo ANTES de exponer prefs: cualquier
- * render posterior ya ve el eclipse elegido en getActiveEclipse.
+ * Selección de eclipse E idioma se aplican ANTES de exponer prefs: cualquier
+ * render posterior ya ve el eclipse elegido y los textos en el idioma correcto.
  */
 export function usePrefs() {
   const [prefs, setPrefs] = useState<Prefs | null>(null);
@@ -13,12 +21,14 @@ export function usePrefs() {
   useEffect(() => {
     void loadPrefs(getActiveEclipse().civilDate).then((p) => {
       setUserSelectedEclipseDay(p.selectedEclipseDay);
+      setLang(resolveLang(p.language));
       setPrefs(p);
     });
   }, []);
 
   const update = useCallback((next: Prefs) => {
     setUserSelectedEclipseDay(next.selectedEclipseDay);
+    setLang(resolveLang(next.language));
     setPrefs(next);
     void savePrefs(next);
   }, []);

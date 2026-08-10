@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import * as Location from 'expo-location';
+import { t } from '../../lib/i18n';
 import { bearingLabel } from '../../lib/totality';
 import { C, F } from '../theme';
 
@@ -41,9 +42,7 @@ export function CompassChip({ targetAzimuthDeg }: { targetAzimuthDeg: number }) 
     <View
       style={s.compass}
       accessibilityLabel={
-        heading === null
-          ? `Sol en el máximo hacia el ${label}`
-          : `Gira hasta que la aguja apunte arriba. Sol hacia el ${label}`
+        heading === null ? t('map.compass.fixed', { dir: label }) : t('map.compass.live', { dir: label })
       }
     >
       <View style={[s.needleWrap, { transform: [{ rotate: `${rotateDeg}deg` }] }]}>

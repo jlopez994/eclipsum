@@ -21,6 +21,7 @@ import { cancelAlertsByIds, scheduleEclipseAlerts, scheduleFakeEclipseAlerts } f
 import { buildDrillEclipse } from './lib/drill';
 import { fetchRemoteExtras, track, trackError, type Sponsor } from './lib/firebase';
 import { contextFor, DEFAULT_PREFS, pushRecent, withContext } from './lib/prefs';
+import { localeTag, t } from './lib/i18n';
 import { animateNextLayout } from './lib/anim';
 import { useGeo } from './hooks/useGeo';
 import { usePrefs } from './hooks/usePrefs';
@@ -54,7 +55,7 @@ function cleanPlaceLabel(name: string): string {
 }
 
 function gpsSpot(geo: { place: string; lat: number; lon: number }): Spot {
-  return { name: cleanPlaceLabel(geo.place) || 'Mi posición', lat: geo.lat, lon: geo.lon, origin: 'gps' };
+  return { name: cleanPlaceLabel(geo.place) || t('app.myPosition'), lat: geo.lat, lon: geo.lon, origin: 'gps' };
 }
 
 /** Eclipse sintético para la demo: desplaza los eventos para que el siguiente hito caiga en ~2 min. */
@@ -214,8 +215,9 @@ function AppInner() {
       // El usuario siempre puede reprogramar desde Alertas.
       trackError('schedule_alerts', e);
     });
+    // prefs?.language: el copy de las notificaciones se hornea al programar — reprogramar al cambiar idioma
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eclipse, permissions.notifications, ctx, prefs?.alertSound, drill]);
+  }, [eclipse, permissions.notifications, ctx, prefs?.alertSound, prefs?.language, drill]);
 
   const selectSpot = useCallback(
     (spot: Spot) => {
@@ -230,14 +232,16 @@ function AppInner() {
   // Simulacro: eclipse sintético con los tramos configurados, C1 en 2 min.
   // La app entra en modo eclipse (ventana de 30 min) y los avisos [PRUEBA] son aditivos.
   const startDrill = useCallback(async () => {
-    if (!eclipse || !prefs) return 'Elige primero un puesto en el mapa';
-    if (!Object.values(ctx.alertsOn).some(Boolean)) return 'Activa alguna alerta en ALERTAS primero';
+    if (!eclipse || !prefs) return t('app.drill.needSpot');
+    if (!Object.values(ctx.alertsOn).some(Boolean)) return t('app.drill.needAlert');
     const c1At = new Date(Date.now() + DRILL_LEAD_MS);
     const fake = buildDrillEclipse(eclipse, c1At, prefs.drill);
     const ids = await scheduleFakeEclipseAlerts(fake, c1At, ctx.alertsOn, prefs.alertSound, ctx.alertEarly);
     setDrill({ eclipse: fake, ids });
     track('drill_started');
-    return `Simulacro en marcha · C1 a las ${c1At.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`;
+    return t('app.drill.running', {
+      time: c1At.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' }),
+    });
   }, [eclipse, prefs, ctx]);
 
   const exitDrill = useCallback(() => {
@@ -316,7 +320,7 @@ function AppInner() {
     if (!geo || !active) return null;
     const km = haversineKm(geo.lat, geo.lon, active.lat, active.lon);
     if (km < REAL_PLACE_KM) return null;
-    return cleanPlaceLabel(geo.place) || 'TÚ';
+    return cleanPlaceLabel(geo.place) || t('map.you');
   })();
 
   if (activeEclipse && active && (demo || inEclipseWindow)) {
@@ -345,9 +349,9 @@ function AppInner() {
       )}
       {updateUrl !== '' && (
         <View style={[s.remoteBanner, { marginTop: remoteMsg !== '' ? 8 : insets.top + 8 }]}>
-          <Text style={s.remoteBannerText}>Hay una versión nueva de Eclipsum</Text>
+          <Text style={s.remoteBannerText}>{t('app.updateBanner')}</Text>
           <Text style={s.updateLink} onPress={() => Linking.openURL(updateUrl).catch(() => {})}>
-            DESCARGAR →
+            {t('app.updateCta')}
           </Text>
         </View>
       )}
@@ -385,13 +389,13 @@ function AppInner() {
               {locating ? (
                 <>
                   <ActivityIndicator color={C.corona} size="large" />
-                  <Text style={s.loadingText}>Obteniendo ubicación…</Text>
+                  <Text style={s.loadingText}>{t('app.locating')}</Text>
                 </>
               ) : (
                 <>
-                  <Text style={s.loadingText}>Sin GPS. Elige un puesto de observación.</Text>
+                  <Text style={s.loadingText}>{t('app.noGps')}</Text>
                   <Text style={s.chooseLink} onPress={() => setSelectorOpen(true)}>
-                    ELEGIR LUGAR →
+                    {t('app.choosePlace')}
                   </Text>
                 </>
               )}
@@ -421,7 +425,7 @@ function AppInner() {
             />
           ) : (
             <View style={s.loading}>
-              <Text style={s.loadingText}>Elige primero un puesto de observación en el mapa.</Text>
+              <Text style={s.loadingText}>{t('app.chooseSpotFirst')}</Text>
             </View>
           ))}
         {tab === 'ajustes' && (
@@ -433,6 +437,8 @@ function AppInner() {
             // El efecto de alertas reprograma solo al cambiar alertSound
             onSoundChange={(sound) => onPrefsChange({ ...prefs, alertSound: sound })}
             onDemoEclipse={() => setDemo(true)}
+            language={prefs.language}
+            onLanguageChange={(lang) => onPrefsChange({ ...prefs, language: lang })}
             onSelectEclipse={(day) => {
               track('eclipse_selected', { day: day || 'auto' });
               onPrefsChange({ ...prefs, selectedEclipseDay: day });
@@ -448,7 +454,7 @@ function AppInner() {
         visible={selectorOpen}
         onClose={() => setSelectorOpen(false)}
         userGeo={geo ? { lat: geo.lat, lon: geo.lon } : null}
-        gpsPlace={geo?.place ?? 'Tu posición'}
+        gpsPlace={geo?.place ?? t('spot.yourPosition')}
         activeSpot={activeSpot}
         recentSpots={prefs.recentSpots}
         onSelect={selectSpot}

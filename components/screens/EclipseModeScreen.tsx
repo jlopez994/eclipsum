@@ -4,23 +4,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { useKeepAwake } from 'expo-keep-awake';
 import { currentPhase, nextEvent, type EclipseEvent, type LocalEclipse } from '../../lib/eclipse';
+import { localeTag, t, type I18nKey } from '../../lib/i18n';
 import { Countdown } from '../Countdown';
 import { C, F } from '../theme';
 
-const NEXT_LABEL: Record<string, string> = {
-  C1: 'INICIO PARCIAL (C1) EN',
-  C2: 'TOTALIDAD (C2) EN',
-  MAX: 'MÁXIMO (MÁX) EN',
-  C3: 'FIN DE TOTALIDAD (C3) EN',
-  C4: 'FIN DEL ECLIPSE (C4) EN',
-};
-
-const AFTER_LABEL: Record<string, { label: string; color: string }> = {
-  C1: { label: 'GAFAS PUESTAS', color: C.danger },
-  C2: { label: 'TOTALIDAD — sin gafas', color: C.totality },
-  MAX: { label: 'Máximo del eclipse', color: C.totality },
-  C3: { label: 'GAFAS PUESTAS', color: C.danger },
-  C4: { label: 'Fin del eclipse', color: C.corona },
+const AFTER_COLOR: Record<string, string> = {
+  C1: C.danger,
+  C2: C.totality,
+  MAX: C.totality,
+  C3: C.danger,
+  C4: C.corona,
 };
 
 const EVENT_ACCENT: Record<string, string> = {
@@ -46,7 +39,7 @@ function EventRail({
 }) {
   const nextKey = nextEvent(eclipse, now)?.key;
   const fmt = (d: Date) =>
-    d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   return (
     <View>
       <View style={s.rail}>
@@ -62,7 +55,11 @@ function EventRail({
               disabled={!onJump}
               onPress={onJump ? () => onJump(e.key) : undefined}
               hitSlop={8}
-              accessibilityLabel={onJump ? `Saltar a ${e.label}` : e.label}
+              accessibilityLabel={
+                onJump
+                  ? t('mode.railJumpA11y', { label: t(`event.${e.key}` as I18nKey) })
+                  : t(`event.${e.key}` as I18nKey)
+              }
             >
               <View
                 style={[
@@ -72,14 +69,14 @@ function EventRail({
                 ]}
               />
               <Text style={[s.railKey, (passed || isNext) && { color: accent }]}>
-                {e.key === 'MAX' ? 'MÁX' : e.key}
+                {e.key === 'MAX' ? t('event.maxShort') : e.key}
               </Text>
               <Text style={[s.railTime, isNext && { color: C.text }]}>{fmt(e.time)}</Text>
             </Pressable>
           );
         })}
       </View>
-      {onJump && <Text style={s.railHint}>TOCA UN HITO PARA SALTAR A ESA FASE</Text>}
+      {onJump && <Text style={s.railHint}>{t('mode.railHint')}</Text>}
     </View>
   );
 }
@@ -103,7 +100,7 @@ function Clock() {
   }, []);
   return (
     <Text style={s.clock}>
-      {now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+      {now.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
     </Text>
   );
 }
@@ -150,31 +147,38 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo, 
   const inTotality = phase?.safeToLook === true;
 
   const banner = inTotality
-    ? { bg: C.totality, fase: 'TOTALIDAD', sub: 'MIRA SIN GAFAS' }
+    ? { bg: C.totality, fase: t('mode.banner.totality'), sub: t('mode.banner.totalitySub') }
     : phase
-      ? { bg: C.danger, fase: 'GAFAS PUESTAS', sub: 'ECLIPSE PARCIAL EN CURSO' }
+      ? { bg: C.danger, fase: t('mode.banner.partial'), sub: t('mode.banner.partialSub') }
       : upcoming
-        ? { bg: C.surface, fase: 'PREPÁRATE', sub: 'GAFAS LISTAS · EMPIEZA EN BREVE' }
-        : { bg: C.surface, fase: 'FINALIZADO', sub: 'HASTA EL PRÓXIMO ECLIPSE' };
+        ? { bg: C.surface, fase: t('mode.banner.ready'), sub: t('mode.banner.readySub') }
+        : { bg: C.surface, fase: t('mode.banner.done'), sub: t('mode.banner.doneSub') };
 
   const ring = inTotality
     ? { glow: 'rgba(255,184,77,0.5)', border: 'rgba(255,216,160,0.85)', inner: 'rgba(255,184,77,0.28)' }
     : { glow: 'rgba(255,107,94,0.32)', border: 'rgba(255,107,94,0.6)', inner: 'rgba(255,107,94,0.22)' };
 
-  const after = upcoming ? AFTER_LABEL[upcoming.key] : null;
+  const after = upcoming
+    ? { label: t(`mode.after.${upcoming.key}` as I18nKey), color: AFTER_COLOR[upcoming.key] ?? C.corona }
+    : null;
   const fmtHMS = (d: Date) =>
-    d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   return (
     <View style={s.root}>
       <View style={[s.topRow, { paddingTop: insets.top + 14 }]}>
         <Clock />
         {exitLabel ? (
-          <Pressable onPress={onExitDemo} hitSlop={10} style={s.exitPill} accessibilityLabel={`Salir del ${exitLabel.toLowerCase()}`}>
-            <Text style={s.exitPillTxt}>{exitLabel} · SALIR ✕</Text>
+          <Pressable
+            onPress={onExitDemo}
+            hitSlop={10}
+            style={s.exitPill}
+            accessibilityLabel={t('mode.exitA11y', { label: exitLabel.toLowerCase() })}
+          >
+            <Text style={s.exitPillTxt}>{t('mode.exit', { label: exitLabel })}</Text>
           </Pressable>
         ) : (
-          <Text style={s.modeTag}>MODO ECLIPSE · {place.toUpperCase()}</Text>
+          <Text style={s.modeTag}>{t('mode.tag', { place: place.toUpperCase() })}</Text>
         )}
       </View>
 
@@ -187,7 +191,7 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo, 
         <CoronaRing {...ring} />
         {upcoming && (
           <>
-            <Text style={s.cdLabel}>{NEXT_LABEL[upcoming.key]}</Text>
+            <Text style={s.cdLabel}>{t(`mode.next.${upcoming.key}` as I18nKey)}</Text>
             <Countdown
               target={upcoming.time}
               format={upcoming.time.getTime() - now.getTime() < 3_600_000 ? 'mmss' : 'auto'}
@@ -195,7 +199,7 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo, 
             />
           </>
         )}
-        {!upcoming && <Text style={s.cdLabel}>ECLIPSE FINALIZADO</Text>}
+        {!upcoming && <Text style={s.cdLabel}>{t('mode.finished')}</Text>}
       </View>
 
       <View style={s.footer}>
@@ -203,13 +207,13 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo, 
         {upcoming && after && (
           <View style={s.nextCard}>
             <View>
-              <Text style={s.nextKicker}>DESPUÉS</Text>
+              <Text style={s.nextKicker}>{t('mode.after')}</Text>
               <Text style={[s.nextLabel, { color: after.color }]}>{after.label}</Text>
             </View>
             <Text style={s.nextTime}>{fmtHMS(upcoming.time)}</Text>
           </View>
         )}
-        <Text style={s.awakeNote}>LA PANTALLA PERMANECE ENCENDIDA</Text>
+        <Text style={s.awakeNote}>{t('mode.keepAwake')}</Text>
       </View>
     </View>
   );

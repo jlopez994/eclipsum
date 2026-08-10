@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path, Rect, Text as SvgText } from 'react-native-svg';
+import { t } from '../../lib/i18n';
 import { bearingLabel } from '../../lib/totality';
 import { C, F } from '../theme';
 
@@ -18,14 +19,14 @@ export function HorizonDiagram({ altitudeDeg, azimuthDeg }: { altitudeDeg: numbe
   // Referencia a ojo: un puño con el brazo estirado cubre ~10°
   const fistTxt =
     altitudeDeg < 7.5
-      ? 'menos de un puño'
+      ? t('horizon.fist.less')
       : altitudeDeg < 12.5
-        ? 'aproximadamente un puño'
-        : `unos ${(altitudeDeg / 10).toFixed(1).replace('.', ',')} puños`;
+        ? t('horizon.fist.about')
+        : t('horizon.fist.n', { n: (altitudeDeg / 10).toFixed(1).replace('.', ',') });
   // Recorta el cielo vacío por encima del sol: menos margen con el título
   const minY = Math.max(0, Math.floor(sy) - 24);
   return (
-    <View accessibilityLabel={`Sol a ${altTxt}° sobre el horizonte ${bearingLabel(azimuthDeg)}`}>
+    <View accessibilityLabel={t('horizon.a11y', { alt: altTxt, dir: bearingLabel(azimuthDeg) })}>
       <Svg width="100%" height={110 - minY} viewBox={`0 ${minY} 300 ${110 - minY}`}>
         <Rect x={0} y={oy} width={300} height={110 - oy} fill="#101019" />
         {/* Skyline: edificios y árbol para dar escala al horizonte */}
@@ -59,12 +60,12 @@ export function HorizonDiagram({ altitudeDeg, azimuthDeg }: { altitudeDeg: numbe
         <Circle cx={sx} cy={sy} r={9} fill={C.corona} />
         <Circle cx={ox} cy={oy} r={4} fill={C.text} />
         <SvgText x={296} y={oy + 16} fill={C.dim} fontSize={9} textAnchor="end" letterSpacing={1}>
-          HORIZONTE {bearingLabel(azimuthDeg)}
+          {t('horizon.label', { dir: bearingLabel(azimuthDeg) })}
         </SvgText>
       </Svg>
       <Text style={s.horizonNote}>
-        A ojo: {fistTxt} con el brazo estirado sobre el horizonte (un puño ≈ 10°).
-        {altitudeDeg < 12 ? ` Busca horizonte ${bearingLabel(azimuthDeg)} totalmente despejado.` : ''}
+        {t('horizon.note', { fist: fistTxt })}
+        {altitudeDeg < 12 ? t('horizon.noteLow', { dir: bearingLabel(azimuthDeg) }) : ''}
       </Text>
     </View>
   );

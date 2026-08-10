@@ -1,5 +1,6 @@
 import { computeLocalEclipse } from './eclipse';
 import { activeSearchStart } from './eclipseCatalog';
+import { t } from './i18n';
 
 export interface TotalityDirection {
   distanceKm: number;
@@ -114,7 +115,11 @@ async function searchNearestTotality(lat: number, lon: number, searchStart: Date
   return best;
 }
 
+const BEARING_KEYS = [
+  'bearing.N', 'bearing.NE', 'bearing.E', 'bearing.SE',
+  'bearing.S', 'bearing.SW', 'bearing.W', 'bearing.NW',
+] as const;
+
 export function bearingLabel(deg: number): string {
-  const labels = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
-  return labels[Math.round(deg / 45) % 8];
+  return t(BEARING_KEYS[Math.round(deg / 45) % 8]);
 }

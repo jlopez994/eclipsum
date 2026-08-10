@@ -4,6 +4,7 @@ import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { type BandSlice } from '../lib/bandGeo';
 import { computeLocalEclipse } from '../lib/eclipse';
 import { bandOf, getActiveEclipse } from '../lib/eclipseCatalog';
+import { localeTag, t } from '../lib/i18n';
 import { LEAFLET_CSS, LEAFLET_JS } from '../lib/leafletVendor';
 import { C } from './theme';
 
@@ -29,9 +30,11 @@ interface TapInfo {
   lines: string[];
   warn: string | null;
   canSelect: boolean;
+  /** Texto del botón «observar aquí» (el HTML se congela al montar; el copy viaja con el popup) */
+  cta: string;
 }
 
-const fmtHM = (d: Date) => d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+const fmtHM = (d: Date) => d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' });
 
 /** JSON seguro para incrustar en <script>/injectJavaScript: un nombre de lugar con «</script>» no rompe el HTML. */
 const toJs = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c');
@@ -39,7 +42,7 @@ const fmtDur = (sec: number) => `${Math.floor(sec / 60)}m ${sec % 60}s`;
 
 function tapInfo(lat: number, lon: number): TapInfo {
   const active = getActiveEclipse();
-  const base = { lat, lon, warn: null, canSelect: true };
+  const base = { lat, lon, warn: null, canSelect: true, cta: t('real.observeHere') };
   try {
     const ec = computeLocalEclipse(lat, lon);
     const max = ec.events.find((e) => e.key === 'MAX');
@@ -48,28 +51,29 @@ function tapInfo(lat: number, lon: number): TapInfo {
     if (!max || max.time.toISOString().slice(0, 10) !== active.civilDate) {
       return {
         ...base,
-        title: 'SIN ECLIPSE AQUÍ',
+        title: t('real.noEclipse'),
         color: C.dim,
-        lines: [`Nada visible el ${active.shortDateLabel}`],
+        lines: [t('real.nothingVisible', { date: active.shortDateLabel })],
         canSelect: false,
       };
     }
-    const lines = [`Máximo a las ${fmtHM(max.time)}`];
-    const warn = max.altitude < 0 ? 'Bajo el horizonte: no visible' : null;
+    const lines = [t('real.maxAt', { time: fmtHM(max.time) })];
+    const warn = max.altitude < 0 ? t('real.belowHorizon') : null;
     if (ec.kind === 'total') {
-      const title = ec.totalityDurationSec != null ? `TOTAL · ${fmtDur(ec.totalityDurationSec)}` : 'TOTAL';
+      const title =
+        ec.totalityDurationSec != null ? `${t('real.total')} · ${fmtDur(ec.totalityDurationSec)}` : t('real.total');
       return { ...base, title, color: C.totality, lines, warn };
     }
     const pct = (ec.obscuration * 100).toFixed(1).replace('.', ',');
     return {
       ...base,
-      title: `${ec.kind === 'annular' ? 'ANULAR' : 'PARCIAL'} · ${pct}% oculto`,
+      title: `${ec.kind === 'annular' ? t('real.annular') : t('real.partial')} · ${t('real.pctHidden', { pct })}`,
       color: C.corona,
       lines,
       warn,
     };
   } catch {
-    return { ...base, title: 'SIN DATOS', color: C.dim, lines: [], canSelect: false };
+    return { ...base, title: t('real.noData'), color: C.dim, lines: [], canSelect: false };
   }
 }
 
@@ -218,7 +222,7 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
     var h = '<div class="pop-title" style="color:' + i.color + '">' + i.title + '</div>';
     for (var k = 0; k < i.lines.length; k++) h += '<div class="pop-line">' + i.lines[k] + '</div>';
     if (i.warn) h += '<div class="pop-warn">' + i.warn + '</div>';
-    if (i.canSelect) h += '<div class="pop-btn" onclick="window.eclipsumPick(' + i.lat + ',' + i.lon + ')">OBSERVAR AQUÍ →</div>';
+    if (i.canSelect) h += '<div class="pop-btn" onclick="window.eclipsumPick(' + i.lat + ',' + i.lon + ')">' + esc(i.cta) + '</div>';
     L.popup({ closeButton: false }).setLatLng([i.lat, i.lon]).setContent(h).openOn(map);
     clearTimeout(popupTimer);
     popupTimer = setTimeout(function () { map.closePopup(); }, POPUP_HIDE_MS);
