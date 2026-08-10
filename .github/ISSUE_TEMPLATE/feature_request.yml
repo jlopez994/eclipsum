@@ -1,0 +1,23 @@
+name: 💡 Propuesta
+description: Una mejora o función nueva
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qué problema resuelve
+      description: El caso real, no la solución. «Como usuario en X situación, me falta Y.»
+    validations:
+      required: true
+  - type: textarea
+    id: propuesta
+    attributes:
+      label: Propuesta
+      description: Cómo lo verías resuelto dentro de la app.
+    validations:
+      required: true
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas consideradas
+      description: Opcional. Otras formas de resolverlo y por qué no encajan.

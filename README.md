@@ -62,7 +62,7 @@ npm run typecheck    # tsc --noEmit
 npm run selfcheck    # asserts de motor/catálogo/prefs en Node
 ```
 
-Requisitos para compilar: `google-services.json` del proyecto Firebase en la raíz (no versionado) y Android Studio (se usa su JDK embebido; no hace falta JDK del sistema).
+Requisitos para compilar: `google-services.json` del proyecto Firebase en la raíz (el del repo apunta al proyecto original; para un fork, usa el de tu propio proyecto Firebase) y Android Studio (se usa su JDK embebido; no hace falta JDK del sistema).
 
 ## Release
 
