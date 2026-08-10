@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { nextEvent, type LocalEclipse } from '../../lib/eclipse';
-import { getActiveEclipse } from '../../lib/eclipseCatalog';
+import { bandOf, getActiveEclipse } from '../../lib/eclipseCatalog';
 import { type TotalityDirection } from '../../lib/totality';
 import { track, type Sponsor } from '../../lib/firebase';
 import { windyEclipseCloudsUrl } from '../../lib/weather';
@@ -237,8 +237,10 @@ export function MapScreen({
       <Animated.View style={[s.fadeFill, { opacity: fade }]}>
       {mapView === 'real' && (
         <RealMap
-          // Remount al cambiar de eclipse: el HTML (banda) se congela al montar
-          key={activeEclipseMeta.id}
+          // Remount al cambiar de eclipse Y al llegar la banda por RC (el HTML se
+          // congela al montar: sin esto, un catálogo activado con el mapa abierto
+          // no pinta la banda hasta cambiar de eclipse o de vista)
+          key={`${activeEclipseMeta.id}${bandOf(activeEclipseMeta) ? ':band' : ''}`}
           spot={{ ...spotCoords, label: place }}
           here={hereCoords ? { ...hereCoords, label: hereLabel ?? 'TÚ' } : null}
           onSelectPoint={onSelectMapPoint}

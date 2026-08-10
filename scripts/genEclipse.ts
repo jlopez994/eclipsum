@@ -58,8 +58,13 @@ if (WRITE) {
   const path = new URL('../remoteconfig.template.json', import.meta.url);
   const tpl = JSON.parse(readFileSync(path, 'utf8'));
   const current: EclipseEntry[] = parseRemoteCatalog(tpl.parameters.eclipse_catalog.defaultValue.value || '[]');
-  // Dedupe por día civil: la identidad real del eclipse (los ids pueden variar entre fuentes)
-  const nuevos = entries.filter((e) => !current.some((c) => c.civilDate === e.civilDate));
+  // Dedupe por día civil contra template Y empaquetadas: la identidad real es el día
+  // (los ids varían entre fuentes; una entrada RC del mismo día que una empaquetada sobra)
+  const nuevos = entries.filter(
+    (e) =>
+      !current.some((c) => c.civilDate === e.civilDate) &&
+      !ECLIPSES.some((p) => p.civilDate === e.civilDate),
+  );
   const merged = [...current, ...nuevos].sort((a, b) => a.civilDate.localeCompare(b.civilDate));
   tpl.parameters.eclipse_catalog.defaultValue.value = JSON.stringify(merged);
   writeFileSync(path, `${JSON.stringify(tpl, null, 2)}\n`);
