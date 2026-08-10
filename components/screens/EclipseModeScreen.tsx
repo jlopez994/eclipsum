@@ -27,7 +27,8 @@ interface EclipseModeScreenProps {
   eclipse: LocalEclipse;
   place: string;
   now: Date;
-  isDemo: boolean;
+  /** Texto del modo de prueba (DEMO/SIMULACRO); null = eclipse real, sin salida */
+  exitLabel: string | null;
   onExitDemo: () => void;
 }
 
@@ -78,7 +79,7 @@ function CoronaRing({ glow, border, inner }: { glow: string; border: string; inn
   );
 }
 
-export function EclipseModeScreen({ eclipse, place, now, isDemo, onExitDemo }: EclipseModeScreenProps) {
+export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo }: EclipseModeScreenProps) {
   useKeepAwake();
   const insets = useSafeAreaInsets();
   const phase = currentPhase(eclipse, now);
@@ -105,9 +106,9 @@ export function EclipseModeScreen({ eclipse, place, now, isDemo, onExitDemo }: E
     <View style={s.root}>
       <View style={[s.topRow, { paddingTop: insets.top + 14 }]}>
         <Clock />
-        <Pressable onPress={isDemo ? onExitDemo : undefined}>
+        <Pressable onPress={exitLabel ? onExitDemo : undefined}>
           <Text style={s.modeTag}>
-            MODO ECLIPSE · {isDemo ? 'DEMO — TOCA PARA SALIR' : place.toUpperCase()}
+            MODO ECLIPSE · {exitLabel ? `${exitLabel} — TOCA PARA SALIR` : place.toUpperCase()}
           </Text>
         </Pressable>
       </View>

@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ALERT_SOUND_OPTIONS, sendTestNotification } from '../../lib/notifications';
 import { previewAlertSound } from '../../lib/soundPreview';
 import type { AlertSound } from '../../lib/prefs';
+import { DRILL_PARTIAL, DRILL_TOTALITY, type DrillConfig } from '../../lib/drill';
 import { C, F } from '../theme';
 
 const IGN_URL = 'https://eclipses.ign.es/como-observar-eclipses.html';
@@ -17,8 +18,32 @@ interface SettingsScreenProps {
   glassesUrl?: string;
   onSoundChange: (sound: AlertSound) => void;
   onDemoEclipse: () => void;
-  /** Programa la serie de alertas [PRUEBA] desplazada a hoy; devuelve mensaje de resultado */
-  onDrillAlerts: () => Promise<string>;
+  /** Tramos del simulacro (persisten en prefs) */
+  drill: DrillConfig;
+  onDrillChange: (drill: DrillConfig) => void;
+  /** Arranca el simulacro (modo eclipse + avisos [PRUEBA]); devuelve mensaje de resultado */
+  onStartDrill: () => Promise<string>;
+}
+
+/** 90 → «1m 30s»; 120 → «2 min» */
+function fmtTotality(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m === 0) return `${s} s`;
+  return s === 0 ? `${m} min` : `${m}m ${s}s`;
+}
+
+function Stepper({ onLess, onMore, a11y }: { onLess: () => void; onMore: () => void; a11y: string }) {
+  return (
+    <View style={s.stepper}>
+      <Pressable style={s.stepBtn} onPress={onLess} hitSlop={6} accessibilityLabel={`Reducir ${a11y}`}>
+        <Text style={s.stepTxt}>−</Text>
+      </Pressable>
+      <Pressable style={s.stepBtn} onPress={onMore} hitSlop={6} accessibilityLabel={`Aumentar ${a11y}`}>
+        <Text style={s.stepTxt}>+</Text>
+      </Pressable>
+    </View>
+  );
 }
 
 export function SettingsScreen({
@@ -28,13 +53,21 @@ export function SettingsScreen({
   glassesUrl,
   onSoundChange,
   onDemoEclipse,
-  onDrillAlerts,
+  drill,
+  onDrillChange,
+  onStartDrill,
 }: SettingsScreenProps) {
   const insets = useSafeAreaInsets();
   const [drillMsg, setDrillMsg] = useState<string | null>(null);
 
+  const step = (key: keyof DrillConfig, dir: 1 | -1) => {
+    const range = key === 'partialMin' ? DRILL_PARTIAL : DRILL_TOTALITY;
+    const next = Math.min(range.max, Math.max(range.min, drill[key] + dir * range.step));
+    onDrillChange({ ...drill, [key]: next });
+  };
+
   const runDrill = () => {
-    onDrillAlerts()
+    onStartDrill()
       .then(setDrillMsg)
       .catch(() => setDrillMsg('Sin permiso de notificaciones'));
   };
@@ -112,11 +145,34 @@ export function SettingsScreen({
         <View>
           <Text style={s.section}>SIMULACRO</Text>
           <View style={s.card}>
-            <Pressable style={s.rowItem} onPress={runDrill} accessibilityLabel="Programar simulacro de alertas">
+            <View style={[s.rowItem, s.rowDivider]}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={s.rowTitle}>Probar alertas del eclipse</Text>
+                <Text style={s.rowTitle}>Parcial (C1→C2)</Text>
+                <Text style={s.soundHint}>{drill.partialMin} min por tramo</Text>
+              </View>
+              <Stepper
+                onLess={() => step('partialMin', -1)}
+                onMore={() => step('partialMin', 1)}
+                a11y="parcial del simulacro"
+              />
+            </View>
+            <View style={[s.rowItem, s.rowDivider]}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={s.rowTitle}>Totalidad (C2→C3)</Text>
+                <Text style={s.soundHint}>{fmtTotality(drill.totalitySec)}</Text>
+              </View>
+              <Stepper
+                onLess={() => step('totalitySec', -1)}
+                onMore={() => step('totalitySec', 1)}
+                a11y="totalidad del simulacro"
+              />
+            </View>
+            <Pressable style={s.rowItem} onPress={runDrill} accessibilityLabel="Iniciar simulacro">
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[s.rowTitle, { color: C.corona }]}>Iniciar simulacro</Text>
                 <Text style={s.soundHint}>
-                  {drillMsg ?? 'Serie [PRUEBA] con tus alertas activas, desplazada a hoy. Las reales no se tocan.'}
+                  {drillMsg ??
+                    'Modo eclipse con C1 en 2 min y avisos [PRUEBA] según tus alertas. Las reales no se tocan.'}
                 </Text>
               </View>
               <Text style={s.playIcon}>▶</Text>
@@ -214,6 +270,17 @@ const s = StyleSheet.create({
     minWidth: 0,
   },
   soundHint: { fontFamily: F.regular, fontSize: 12, color: C.dim, marginTop: 2 },
+  stepper: { flexDirection: 'row', gap: 8 },
+  stepBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepTxt: { fontFamily: F.bold, fontSize: 17, color: C.text, lineHeight: 20 },
   playBtn: {
     width: 36,
     height: 36,

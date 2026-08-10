@@ -12,6 +12,7 @@ import { cloudCoverAt } from '../lib/weather';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
 import type { Spot } from '../lib/spots';
 import { pushRecent, RECENT_CAP, type RecentSpot } from '../lib/prefs';
+import { buildDrillEclipse, clampDrill, DEFAULT_DRILL } from '../lib/drill';
 
 async function main() {
   const active = getActiveEclipse(new Date('2026-01-01T00:00:00Z'));
@@ -117,6 +118,17 @@ async function main() {
   );
   setRemoteCatalog('[]');
   assert.equal(getEclipseById('2027-08-02-egipto'), undefined, 'Reset del catálogo remoto');
+
+  // Simulacro: tramos configurados y geometría copiada del eclipse real
+  const drillE = buildDrillEclipse(zgz, new Date('2026-08-10T15:00:00Z'), { partialMin: 15, totalitySec: 120 });
+  const dt = (a: number, b: number) => (drillE.events[b].time.getTime() - drillE.events[a].time.getTime()) / 1000;
+  assert.equal(drillE.kind, 'total', 'Drill: siempre total');
+  assert.equal(dt(0, 1), 900, 'Drill: C1→C2 = 15 min');
+  assert.equal(dt(1, 3), 120, 'Drill: totalidad = 120 s');
+  assert.equal(dt(3, 4), 900, 'Drill: C3→C4 = 15 min');
+  assert.equal(drillE.events[2].azimuth, zgz.events.find((e) => e.key === 'MAX')!.azimuth, 'Drill: azimut del MAX real');
+  assert.deepEqual(clampDrill({ partialMin: 999, totalitySec: 1 }), { partialMin: 60, totalitySec: 30 }, 'Drill: clamp a rangos');
+  assert.deepEqual(clampDrill(undefined), DEFAULT_DRILL, 'Drill: defaults si no hay config');
 
   // Catálogo agotado → la app genera sola el siguiente eclipse global con el motor
   const auto = getActiveEclipse(new Date('2030-01-01T00:00:00Z'));

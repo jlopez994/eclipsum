@@ -172,10 +172,10 @@ export async function scheduleFakeEclipseAlerts(
   enabled: AlertToggles,
   sound: AlertSound = 'eclipse',
   early: AlertEarly = DEFAULT_ALERT_EARLY,
-): Promise<number> {
+): Promise<string[]> {
   const channelId = await ensurePermissionAndChannel(sound);
   const c1 = eclipse.events.find((e) => e.key === 'C1');
-  if (!c1) return 0;
+  if (!c1) return [];
   const shift = c1At.getTime() - c1.time.getTime();
   const shifted: LocalEclipse = {
     ...eclipse,
@@ -183,17 +183,25 @@ export async function scheduleFakeEclipseAlerts(
   };
   // Sin avisos de planificación (24h/1h): el simulacro es la serie del día
   const alerts = buildAlerts(shifted, enabled, early, { before24h: false, before1h: false });
+  const ids: string[] = [];
   for (const a of alerts) {
-    await Notifications.scheduleNotificationAsync({
-      content: { title: `[PRUEBA] ${a.title}`, body: a.body, sound: soundFile(sound) },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: a.time,
-        channelId,
-      },
-    });
+    ids.push(
+      await Notifications.scheduleNotificationAsync({
+        content: { title: `[PRUEBA] ${a.title}`, body: a.body, sound: soundFile(sound) },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: a.time,
+          channelId,
+        },
+      }),
+    );
   }
-  return alerts.length;
+  return ids;
+}
+
+/** Cancela solo los avisos indicados (p. ej. al salir del simulacro). */
+export async function cancelAlertsByIds(ids: string[]): Promise<void> {
+  await Promise.all(ids.map((id) => Notifications.cancelScheduledNotificationAsync(id).catch(() => {})));
 }
 
 /** Programa alertas locales según toggles. Devuelve cuántas quedaron programadas. */

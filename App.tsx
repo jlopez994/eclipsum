@@ -17,7 +17,8 @@ import { getActiveEclipse } from './lib/eclipseCatalog';
 import { haversineKm } from './lib/totality';
 import { openInMaps } from './lib/maps';
 import type { Spot } from './lib/spots';
-import { scheduleEclipseAlerts, scheduleFakeEclipseAlerts } from './lib/notifications';
+import { cancelAlertsByIds, scheduleEclipseAlerts, scheduleFakeEclipseAlerts } from './lib/notifications';
+import { buildDrillEclipse } from './lib/drill';
 import { fetchRemoteExtras, type Sponsor } from './lib/firebase';
 import { pushRecent } from './lib/prefs';
 import { animateNextLayout } from './lib/anim';
@@ -33,6 +34,8 @@ import { EclipseModeScreen } from './components/screens/EclipseModeScreen';
 import { C, F } from './components/theme';
 
 const ECLIPSE_MODE_LEAD_MS = 30 * 60_000;
+/** Espera hasta el C1 del simulacro: da tiempo a bloquear el móvil y esperar el aviso */
+const DRILL_LEAD_MS = 2 * 60_000;
 const ECLIPSE_MODE_TAIL_MS = 5 * 60_000;
 const COARSE_TICK_MS = 30_000;
 const FINE_TICK_MS = 1_000;
@@ -78,6 +81,8 @@ function AppInner() {
   const [catalogEpoch, setCatalogEpoch] = useState(0);
   const [tab, setTab] = useState<TabKey>('mapa');
   const [demo, setDemo] = useState(false);
+  /** Simulacro activo: eclipse sintético + ids de sus avisos [PRUEBA] (para cancelarlos al salir) */
+  const [drill, setDrill] = useState<{ eclipse: LocalEclipse; ids: string[] } | null>(null);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const [fineClock, setFineClock] = useState(false);
@@ -216,17 +221,29 @@ function AppInner() {
     [prefs, onPrefsChange],
   );
 
-  // Simulacro de alertas: serie [PRUEBA] con C1 hoy a las 17:00 (o en 2 min si ya pasaron)
-  const onDrillAlerts = useCallback(async () => {
+  // Simulacro: eclipse sintético con los tramos configurados, C1 en 2 min.
+  // La app entra en modo eclipse (ventana de 30 min) y los avisos [PRUEBA] son aditivos.
+  const startDrill = useCallback(async () => {
     if (!eclipse || !prefs) return 'Elige primero un puesto en el mapa';
     if (!Object.values(prefs.alertsOn).some(Boolean)) return 'Activa alguna alerta en ALERTAS primero';
-    const c1At = new Date();
-    c1At.setHours(17, 0, 0, 0);
-    if (c1At.getTime() < Date.now() + 60_000) c1At.setTime(Date.now() + 2 * 60_000);
-    const n = await scheduleFakeEclipseAlerts(eclipse, c1At, prefs.alertsOn, prefs.alertSound, prefs.alertEarly);
-    const hm = c1At.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-    return `${n} avisos [PRUEBA] programados · C1 a las ${hm}`;
+    const c1At = new Date(Date.now() + DRILL_LEAD_MS);
+    const fake = buildDrillEclipse(eclipse, c1At, prefs.drill);
+    const ids = await scheduleFakeEclipseAlerts(fake, c1At, prefs.alertsOn, prefs.alertSound, prefs.alertEarly);
+    setDrill({ eclipse: fake, ids });
+    return `Simulacro en marcha · C1 a las ${c1At.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`;
   }, [eclipse, prefs]);
+
+  const exitDrill = useCallback(() => {
+    if (drill) void cancelAlertsByIds(drill.ids);
+    setDrill(null);
+  }, [drill]);
+
+  // Fin natural del simulacro: pasado C4 + margen, la app vuelve sola al modo normal
+  useEffect(() => {
+    if (!drill) return;
+    const last = drill.eclipse.events[drill.eclipse.events.length - 1];
+    if (now.getTime() > last.time.getTime() + 60_000) setDrill(null);
+  }, [now, drill]);
 
   // Punto tocado en el mapa real: nombre vía geocoder inverso (fallback coordenadas)
   const selectMapPoint = useCallback(
@@ -260,7 +277,7 @@ function AppInner() {
   }
 
   const demoEclipse = demo && eclipse ? buildDemoEclipse(eclipse, now) : null;
-  const activeEclipse = demoEclipse ?? eclipse;
+  const activeEclipse = drill?.eclipse ?? demoEclipse ?? eclipse;
 
   // Modo eclipse: automático en ventana del evento, o demo forzada
   const inEclipseWindow = activeEclipse ? inFineClockWindow(activeEclipse, now.getTime()) : false;
@@ -289,8 +306,8 @@ function AppInner() {
           eclipse={activeEclipse}
           place={cleanPlaceLabel(active.place)}
           now={now}
-          isDemo={demo}
-          onExitDemo={() => setDemo(false)}
+          exitLabel={drill ? 'SIMULACRO' : demo ? 'DEMO' : null}
+          onExitDemo={drill ? exitDrill : () => setDemo(false)}
         />
       </View>
     );
@@ -388,7 +405,9 @@ function AppInner() {
               }
             }}
             onDemoEclipse={() => setDemo(true)}
-            onDrillAlerts={onDrillAlerts}
+            drill={prefs.drill}
+            onDrillChange={(drillCfg) => onPrefsChange({ ...prefs, drill: drillCfg })}
+            onStartDrill={startDrill}
           />
         )}
       </View>

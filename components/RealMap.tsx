@@ -206,7 +206,7 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
     );
   });
   // Autocierre del popup si no se pulsa nada; cada tap nuevo reinicia el temporizador
-  var POPUP_HIDE_MS = 6000;
+  var POPUP_HIDE_MS = 4000;
   var popupTimer = null;
   window.eclipsumShowInfo = function (i) {
     var h = '<div class="pop-title" style="color:' + i.color + '">' + i.title + '</div>';

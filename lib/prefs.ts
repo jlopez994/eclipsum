@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { clampDrill, DEFAULT_DRILL, type DrillConfig } from './drill';
 import type { EclipseEvent } from './eclipse';
 import type { Spot } from './spots';
 
@@ -41,6 +42,8 @@ export interface Prefs {
   mapView: 'diagram' | 'real';
   /** Audio de las notificaciones locales */
   alertSound: AlertSound;
+  /** Tramos del modo simulacro */
+  drill: DrillConfig;
 }
 
 const KEY = 'eclipsum:prefs';
@@ -67,6 +70,7 @@ export const DEFAULT_PREFS: Prefs = {
   recentSpots: [],
   mapView: 'diagram',
   alertSound: 'eclipse',
+  drill: { ...DEFAULT_DRILL },
 };
 
 function parseAlertEarly(raw: unknown, legacyLeads: unknown): AlertEarly {
@@ -150,6 +154,7 @@ export async function loadPrefs(): Promise<Prefs> {
       recentSpots,
       mapView: parsed.mapView === 'real' ? 'real' : 'diagram',
       alertSound: parsed.alertSound === 'default' ? 'default' : 'eclipse',
+      drill: clampDrill(parsed.drill),
     };
   } catch {
     return DEFAULT_PREFS;
