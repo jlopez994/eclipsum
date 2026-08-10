@@ -12,7 +12,7 @@ import {
   SpaceGrotesk_600SemiBold,
   SpaceGrotesk_700Bold,
 } from '@expo-google-fonts/space-grotesk';
-import { computeLocalEclipse, type LocalEclipse } from './lib/eclipse';
+import { computeLocalEclipse, type EclipseEvent, type LocalEclipse } from './lib/eclipse';
 import { getActiveEclipse } from './lib/eclipseCatalog';
 import { haversineKm } from './lib/totality';
 import { openInMaps } from './lib/maps';
@@ -36,6 +36,8 @@ import { C, F } from './components/theme';
 const ECLIPSE_MODE_LEAD_MS = 30 * 60_000;
 /** Espera hasta el C1 del simulacro: da tiempo a bloquear el móvil y esperar el aviso */
 const DRILL_LEAD_MS = 2 * 60_000;
+/** Al saltar de fase, el hito cae en 20 s: los avisos con antelación (15 s) aún suenan */
+const DRILL_JUMP_LEAD_MS = 20_000;
 const ECLIPSE_MODE_TAIL_MS = 5 * 60_000;
 const COARSE_TICK_MS = 30_000;
 const FINE_TICK_MS = 1_000;
@@ -239,6 +241,28 @@ function AppInner() {
     setDrill(null);
   }, [drill]);
 
+  // Salto de fase: desplaza la serie para que el hito tocado caiga en 20 s
+  // (los avisos con antelación de 15 s siguen entrando) y reprograma los [PRUEBA] restantes.
+  const jumpDrill = useCallback(
+    (key: EclipseEvent['key']) => {
+      if (!drill || !prefs) return;
+      const target = drill.eclipse.events.find((e) => e.key === key);
+      if (!target) return;
+      const shift = Date.now() + DRILL_JUMP_LEAD_MS - target.time.getTime();
+      const shifted: LocalEclipse = {
+        ...drill.eclipse,
+        events: drill.eclipse.events.map((e) => ({ ...e, time: new Date(e.time.getTime() + shift) })),
+      };
+      void cancelAlertsByIds(drill.ids);
+      const c1 = shifted.events[0];
+      scheduleFakeEclipseAlerts(shifted, c1.time, prefs.alertsOn, prefs.alertSound, prefs.alertEarly)
+        .then((ids) => setDrill({ eclipse: shifted, ids }))
+        .catch(() => setDrill({ eclipse: shifted, ids: [] }));
+      setNow(new Date()); // repintar fase al instante, sin esperar al tick
+    },
+    [drill, prefs],
+  );
+
   // Fin natural del simulacro: pasado C4 + margen, la app vuelve sola al modo normal
   useEffect(() => {
     if (!drill) return;
@@ -309,6 +333,7 @@ function AppInner() {
           now={now}
           exitLabel={drill ? 'SIMULACRO' : demo ? 'DEMO' : null}
           onExitDemo={drill ? exitDrill : () => setDemo(false)}
+          onJumpToEvent={drill ? jumpDrill : null}
         />
       </View>
     );

@@ -3,7 +3,7 @@ import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { useKeepAwake } from 'expo-keep-awake';
-import { currentPhase, nextEvent, type LocalEclipse } from '../../lib/eclipse';
+import { currentPhase, nextEvent, type EclipseEvent, type LocalEclipse } from '../../lib/eclipse';
 import { Countdown } from '../Countdown';
 import { C, F } from '../theme';
 
@@ -31,34 +31,55 @@ const EVENT_ACCENT: Record<string, string> = {
   C4: C.corona,
 };
 
-/** Raíl de la serie completa: pasado (lleno), siguiente (anillo grande), futuro (tenue). */
-function EventRail({ eclipse, now }: { eclipse: LocalEclipse; now: Date }) {
+/**
+ * Raíl de la serie completa: pasado (lleno), siguiente (anillo grande), futuro (tenue).
+ * Con onJump (solo simulacro) cada hito es tocable y salta la serie a esa fase.
+ */
+function EventRail({
+  eclipse,
+  now,
+  onJump,
+}: {
+  eclipse: LocalEclipse;
+  now: Date;
+  onJump: ((key: EclipseEvent['key']) => void) | null;
+}) {
   const nextKey = nextEvent(eclipse, now)?.key;
   const fmt = (d: Date) =>
     d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   return (
-    <View style={s.rail}>
-      <View style={s.railLine} />
-      {eclipse.events.map((e) => {
-        const accent = EVENT_ACCENT[e.key] ?? C.dim;
-        const passed = e.time.getTime() <= now.getTime();
-        const isNext = e.key === nextKey;
-        return (
-          <View key={e.key} style={s.railItem}>
-            <View
-              style={[
-                s.railDot,
-                passed && { backgroundColor: accent, borderColor: accent },
-                isNext && { borderColor: accent, width: 14, height: 14, borderRadius: 7, marginTop: -2 },
-              ]}
-            />
-            <Text style={[s.railKey, (passed || isNext) && { color: accent }]}>
-              {e.key === 'MAX' ? 'MÁX' : e.key}
-            </Text>
-            <Text style={[s.railTime, isNext && { color: C.text }]}>{fmt(e.time)}</Text>
-          </View>
-        );
-      })}
+    <View>
+      <View style={s.rail}>
+        <View style={s.railLine} />
+        {eclipse.events.map((e) => {
+          const accent = EVENT_ACCENT[e.key] ?? C.dim;
+          const passed = e.time.getTime() <= now.getTime();
+          const isNext = e.key === nextKey;
+          return (
+            <Pressable
+              key={e.key}
+              style={s.railItem}
+              disabled={!onJump}
+              onPress={onJump ? () => onJump(e.key) : undefined}
+              hitSlop={8}
+              accessibilityLabel={onJump ? `Saltar a ${e.label}` : e.label}
+            >
+              <View
+                style={[
+                  s.railDot,
+                  passed && { backgroundColor: accent, borderColor: accent },
+                  isNext && { borderColor: accent, width: 14, height: 14, borderRadius: 7, marginTop: -2 },
+                ]}
+              />
+              <Text style={[s.railKey, (passed || isNext) && { color: accent }]}>
+                {e.key === 'MAX' ? 'MÁX' : e.key}
+              </Text>
+              <Text style={[s.railTime, isNext && { color: C.text }]}>{fmt(e.time)}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {onJump && <Text style={s.railHint}>TOCA UN HITO PARA SALTAR A ESA FASE</Text>}
     </View>
   );
 }
@@ -70,6 +91,8 @@ interface EclipseModeScreenProps {
   /** Texto del modo de prueba (DEMO/SIMULACRO); null = eclipse real, sin salida */
   exitLabel: string | null;
   onExitDemo: () => void;
+  /** Salto de fase tocando el raíl; null = deshabilitado (eclipse real/demo) */
+  onJumpToEvent: ((key: EclipseEvent['key']) => void) | null;
 }
 
 function Clock() {
@@ -119,7 +142,7 @@ function CoronaRing({ glow, border, inner }: { glow: string; border: string; inn
   );
 }
 
-export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo }: EclipseModeScreenProps) {
+export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo, onJumpToEvent }: EclipseModeScreenProps) {
   useKeepAwake();
   const insets = useSafeAreaInsets();
   const phase = currentPhase(eclipse, now);
@@ -176,7 +199,7 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo }
       </View>
 
       <View style={s.footer}>
-        <EventRail eclipse={eclipse} now={now} />
+        <EventRail eclipse={eclipse} now={now} onJump={onJumpToEvent} />
         {upcoming && after && (
           <View style={s.nextCard}>
             <View>
@@ -235,6 +258,14 @@ const s = StyleSheet.create({
     backgroundColor: '#0B0B10',
   },
   railKey: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 1, color: C.dim },
+  railHint: {
+    textAlign: 'center',
+    fontFamily: F.medium,
+    fontSize: 9,
+    letterSpacing: 1.5,
+    color: '#55525F',
+    marginBottom: 12,
+  },
   railTime: { fontFamily: F.medium, fontSize: 9.5, color: C.dim, fontVariant: ['tabular-nums'] },
   banner: {
     marginHorizontal: 16,
