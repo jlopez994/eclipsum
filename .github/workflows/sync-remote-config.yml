@@ -1,0 +1,67 @@
+# Genera catálogo + bandas y publica Remote Config, sin releases ni intervención.
+# Mensual (los eclipses se conocen con años de antelación) y lanzable a mano.
+#
+# Secreto requerido (Settings → Secrets → Actions):
+#   FIREBASE_SERVICE_ACCOUNT — JSON de una service account del proyecto
+#   eclipsum-app-jl con rol "Firebase Remote Config Admin".
+name: sync-remote-config
+
+on:
+  schedule:
+    - cron: '0 6 1 * *' # día 1 de cada mes, 06:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: sync-remote-config
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write # para commitear el template actualizado
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Próximos 5 eclipses fusionados en el template (idempotente: ids existentes no se duplican)
+      - name: Generar entradas de catálogo
+        run: npx tsx scripts/genEclipse.ts --write
+
+      # Bandas que falten (camina el path con el motor; ~1-5 min por eclipse nuevo)
+      - name: Generar bandas que falten
+        run: npx tsx scripts/syncBands.ts
+
+      # Puerta de calidad: si el motor o el catálogo se rompen, no se publica nada
+      - name: Selfcheck
+        run: npm run selfcheck
+
+      - name: Detectar cambios
+        id: diff
+        run: |
+          git diff --quiet remoteconfig.template.json || echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Publicar Remote Config
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          echo "$FIREBASE_SERVICE_ACCOUNT" > /tmp/sa.json
+          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json
+          npx firebase-tools@latest deploy --only remoteconfig --project eclipsum-app-jl --non-interactive
+
+      - name: Commitear template actualizado
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add remoteconfig.template.json
+          git commit -m 'chore(rc): catálogo y bandas autogenerados [skip ci]'
+          git push

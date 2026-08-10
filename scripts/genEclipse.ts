@@ -51,14 +51,15 @@ console.log(JSON.stringify(entries, null, 2));
 
 const packaged = entries.filter((e) => ECLIPSES.some((p) => p.civilDate === e.civilDate));
 if (packaged.length > 0) {
-  console.log(`\nAVISO: ${packaged.map((e) => e.id).join(', ')} ya empaquetado en ECLIPSES (fusión por id lo ignorará si coincide el id).`);
+  console.log(`\nAVISO: ${packaged.map((e) => e.id).join(', ')} ya empaquetado en ECLIPSES (la fusión lo ignora por día civil).`);
 }
 
 if (WRITE) {
   const path = new URL('../remoteconfig.template.json', import.meta.url);
   const tpl = JSON.parse(readFileSync(path, 'utf8'));
   const current: EclipseEntry[] = parseRemoteCatalog(tpl.parameters.eclipse_catalog.defaultValue.value || '[]');
-  const nuevos = entries.filter((e) => !current.some((c) => c.id === e.id));
+  // Dedupe por día civil: la identidad real del eclipse (los ids pueden variar entre fuentes)
+  const nuevos = entries.filter((e) => !current.some((c) => c.civilDate === e.civilDate));
   const merged = [...current, ...nuevos].sort((a, b) => a.civilDate.localeCompare(b.civilDate));
   tpl.parameters.eclipse_catalog.defaultValue.value = JSON.stringify(merged);
   writeFileSync(path, `${JSON.stringify(tpl, null, 2)}\n`);
