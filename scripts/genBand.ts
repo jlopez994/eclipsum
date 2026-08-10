@@ -1,15 +1,19 @@
 /**
  * Genera lib/bandGeo.ts: límites norte/sur de la banda de totalidad por longitud.
+ * Conserva las bandas ya registradas de otros eclipses (solo recalcula la del --id).
  *
  * Uso:
  *   npx tsx scripts/genBand.ts
- *   npx tsx scripts/genBand.ts --id 2026-08-12-iberia --export BAND_2026
+ *   npx tsx scripts/genBand.ts --id 2026-08-12-iberia
+ *   npx tsx scripts/genBand.ts --id <id> --lon-from -80 --lon-to -60 --lat-min 10 --lat-max 40
  *
- * Sin args usa el eclipse activo del catálogo (o el primero) y export BAND_2026.
- * Nota: LAT_MAX=60 recorta la umbra al norte de Iberia; subir el tope para bandas polares.
+ * Sin args usa el primer eclipse del catálogo empaquetado. Los rangos por defecto
+ * son Iberia; para otros continentes centrar con el pico lat/lon que imprime
+ * scripts/genEclipse.ts. LAT_MAX=60 recorta bandas polares: subir el tope si aplica.
  */
 import { writeFileSync } from 'node:fs';
 import { computeLocalEclipse } from '../lib/eclipse';
+import { bandForEclipse, type BandSlice } from '../lib/bandGeo';
 import { ECLIPSES, getEclipseById, type EclipseEntry } from '../lib/eclipseCatalog';
 
 function arg(name: string): string | undefined {
@@ -19,7 +23,6 @@ function arg(name: string): string | undefined {
 
 const entry: EclipseEntry =
   (arg('--id') ? getEclipseById(arg('--id')!) : undefined) ?? ECLIPSES[0];
-const exportName = arg('--export') ?? 'BAND_2026';
 const searchStart = new Date(entry.searchStart);
 
 const LON_FROM = Number(arg('--lon-from') ?? -25);
@@ -48,7 +51,7 @@ function refine(lon: number, inside: number, outside: number): number {
   return (a + b) / 2;
 }
 
-const rows: { lon: number; latS: number; latN: number }[] = [];
+const rows: BandSlice[] = [];
 for (let lon = LON_FROM; lon <= LON_TO; lon += LON_STEP) {
   // Barrido grueso para encontrar algún punto dentro de la banda
   let seed: number | null = null;
@@ -70,14 +73,43 @@ for (let lon = LON_FROM; lon <= LON_TO; lon += LON_STEP) {
   process.stdout.write(`lon ${lon}: ${latS.toFixed(2)}..${latN.toFixed(2)}\n`);
 }
 
-const out = `/** Generado por scripts/genBand.ts — banda de totalidad ${entry.civilDate} (id ${entry.id}; no editar a mano). */
+if (rows.length === 0) {
+  throw new Error('0 cortes: la banda no cruza el rango dado — ajustar --lon-from/--lon-to/--lat-min/--lat-max');
+}
+
+// Registro nuevo = bandas existentes de los demás eclipses empaquetados + la recalculada.
+const registry: Record<string, BandSlice[]> = {};
+for (const e of ECLIPSES) {
+  if (e.id === entry.id) continue;
+  const band = bandForEclipse(e.id);
+  if (band) registry[e.id] = band;
+}
+registry[entry.id] = rows;
+
+const body = Object.entries(registry)
+  .map(([id, band]) => `  '${id}': ${JSON.stringify(band)},`)
+  .join('\n');
+
+const out = `/** Generado por scripts/genBand.ts — bandas de totalidad por id de eclipse (no editar a mano). */
 export interface BandSlice {
   lon: number;
   latS: number;
   latN: number;
 }
 
-export const ${exportName}: BandSlice[] = ${JSON.stringify(rows)};
+/**
+ * Bandas empaquetadas. Añadir/regenerar: \`npx tsx scripts/genBand.ts --id <id>\`
+ * (conserva las demás bandas). Eclipses solo-RC sin banda: el mapa real pinta marcadores sin polígono.
+ */
+const BANDS_BY_ECLIPSE: Record<string, BandSlice[]> = {
+${body}
+};
+
+export function bandForEclipse(id: string): BandSlice[] | null {
+  return BANDS_BY_ECLIPSE[id] ?? null;
+}
 `;
 writeFileSync(new URL('../lib/bandGeo.ts', import.meta.url), out);
-console.log(`OK — ${rows.length} cortes escritos en lib/bandGeo.ts (${exportName}, ${entry.id})`);
+console.log(
+  `OK — ${entry.id}: ${rows.length} cortes; bandas en lib/bandGeo.ts: ${Object.keys(registry).join(', ')}`
+);
