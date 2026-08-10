@@ -18,7 +18,8 @@ export const DEFAULT_DRILL: DrillConfig = { partialMin: 3, totalitySec: 60 };
 const LEGACY_DEFAULT = { partialMin: 15, totalitySec: 120 };
 
 export const DRILL_PARTIAL = { min: 1, max: 30, step: 1 };
-export const DRILL_TOTALITY = { min: 15, max: 300, step: 15 };
+// Mínimo 45 s: con antelación de 15 s, menos totalidad haría sonar el aviso de fin antes que el Máximo
+export const DRILL_TOTALITY = { min: 45, max: 300, step: 15 };
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 
