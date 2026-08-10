@@ -38,10 +38,6 @@ interface Alert {
   time: Date;
 }
 
-function leadSeconds(early: boolean): number {
-  return early ? ALERT_EARLY_SECONDS : 0;
-}
-
 function minusSeconds(d: Date, sec: number): Date {
   return new Date(d.getTime() - sec * 1000);
 }
@@ -50,20 +46,41 @@ function minusMinutes(d: Date, min: number): Date {
   return new Date(d.getTime() - min * 60_000);
 }
 
+/**
+ * Copys por hito: `exact` en el contacto (instrucción), `early` unos segundos antes
+ * (aviso previo — nunca ordena ponerse las gafas todavía).
+ */
+const ALERT_COPY: Record<keyof AlertToggles, { early: { title: string; body: string }; exact: { title: string; body: string } }> = {
+  C1: {
+    early: { title: '☀️ El eclipse empieza en unos segundos', body: 'Aviso previo: ten las gafas a mano.' },
+    exact: { title: '☀️ Empieza el eclipse', body: 'GAFAS DE ECLIPSE PUESTAS para mirar al sol.' },
+  },
+  C2: {
+    early: { title: '🌑 Totalidad en unos segundos', body: 'Aviso previo: en nada podrás mirar sin gafas.' },
+    exact: { title: '🌑 Totalidad', body: 'Ya puedes mirar sin gafas. Disfruta.' },
+  },
+  MAX: {
+    early: { title: '🌗 Máximo en unos segundos', body: 'Aviso previo del punto culminante.' },
+    exact: { title: '🌗 Máximo', body: 'Punto culminante del eclipse.' },
+  },
+  C3: {
+    early: { title: '⚠️ Fin de totalidad en unos segundos', body: 'Aviso previo: ve preparando las gafas.' },
+    exact: { title: '⚠️ FIN DE TOTALIDAD', body: 'GAFAS PUESTAS YA. El sol vuelve a ser peligroso.' },
+  },
+  C4: {
+    early: { title: 'Fin del eclipse en unos segundos', body: 'Aviso previo del último contacto.' },
+    exact: { title: 'Fin del eclipse', body: 'Último contacto. Gracias por mirar al cielo con Eclipsum.' },
+  },
+};
+
 function buildAlerts(
   eclipse: LocalEclipse,
   enabled: AlertToggles,
   early: AlertEarly,
   c1Plan: C1PlanAlerts,
 ): Alert[] {
-  const byKey = (k: keyof AlertToggles) => (enabled[k] ? eclipse.events.find((e) => e.key === k) : undefined);
-  const c1 = byKey('C1');
-  const c2 = byKey('C2');
-  const max = byKey('MAX');
-  const c3 = byKey('C3');
-  const c4 = byKey('C4');
-
   const alerts: Alert[] = [];
+  const c1 = enabled.C1 ? eclipse.events.find((e) => e.key === 'C1') : undefined;
   if (c1) {
     if (c1Plan.before24h) {
       alerts.push({
@@ -79,39 +96,15 @@ function buildAlerts(
         time: minusMinutes(c1.time, 60),
       });
     }
-    alerts.push({
-      title: early.C1 ? '☀️ Empieza en unos segundos' : '☀️ Empieza el eclipse',
-      body: 'GAFAS DE ECLIPSE PUESTAS para mirar al sol.',
-      time: minusSeconds(c1.time, leadSeconds(early.C1)),
-    });
   }
-  if (c2) {
-    alerts.push({
-      title: early.C2 ? '🌑 Totalidad en unos segundos' : '🌑 Totalidad',
-      body: 'Prepárate: durante la totalidad puedes mirar sin gafas.',
-      time: minusSeconds(c2.time, leadSeconds(early.C2)),
-    });
-  }
-  if (max) {
-    alerts.push({
-      title: early.MAX ? '🌗 Máximo en unos segundos' : '🌗 Máximo',
-      body: 'Punto culminante del eclipse.',
-      time: minusSeconds(max.time, leadSeconds(early.MAX)),
-    });
-  }
-  if (c3) {
-    alerts.push({
-      title: early.C3 ? '⚠️ Fin de totalidad en unos segundos' : '⚠️ FIN DE TOTALIDAD',
-      body: 'GAFAS PUESTAS YA. El sol vuelve a ser peligroso.',
-      time: minusSeconds(c3.time, leadSeconds(early.C3)),
-    });
-  }
-  if (c4) {
-    alerts.push({
-      title: early.C4 ? 'Fin del eclipse en unos segundos' : 'Fin del eclipse',
-      body: 'Último contacto. Gracias por mirar al cielo con Eclipsum.',
-      time: minusSeconds(c4.time, leadSeconds(early.C4)),
-    });
+  // Por hito activo: alerta en el contacto exacto y, con el chip, aviso previo adicional
+  for (const ev of eclipse.events) {
+    if (!enabled[ev.key]) continue;
+    const copy = ALERT_COPY[ev.key];
+    if (early[ev.key]) {
+      alerts.push({ ...copy.early, time: minusSeconds(ev.time, ALERT_EARLY_SECONDS) });
+    }
+    alerts.push({ ...copy.exact, time: ev.time });
   }
   return alerts.filter((a) => a.time.getTime() > Date.now());
 }

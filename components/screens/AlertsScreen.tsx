@@ -132,8 +132,8 @@ export function AlertsScreen({
           </Text>
         </View>
         <Text style={s.hint}>
-          Un aviso por hito. Activa el margen de {ALERT_EARLY_SECONDS} s si quieres prepararte. En C1
-          puedes sumar avisos 24 h y 1 h antes.
+          Cada hito activo avisa en el contacto exacto. Con los chips sumas un aviso previo de{' '}
+          {ALERT_EARLY_SECONDS} s; en C1 también 1 h y 24 h antes.
         </Text>
       </View>
       <ScrollView
@@ -145,7 +145,6 @@ export function AlertsScreen({
           const meta = ALERT_META[e.key];
           const on = toggles[e.key];
           const isEarly = early[e.key];
-          const fireAt = new Date(e.time.getTime() - (isEarly ? ALERT_EARLY_SECONDS : 0) * 1000);
           return (
             <View key={e.key} style={[s.row, !on && { opacity: 0.45 }]}>
               <View style={s.leftCol}>
@@ -170,37 +169,33 @@ export function AlertsScreen({
                   <Text style={[s.rowTime, { color: meta.accent }]}>{fmtHM(e.time)}</Text>
                 </View>
                 <Text style={s.rowDesc}>{meta.desc}</Text>
-                <Pressable
-                  onPress={() => handleEarly(e.key)}
-                  disabled={!on}
-                  hitSlop={6}
-                  style={[
-                    s.leadChip,
-                    {
-                      borderColor: on ? meta.accent + '66' : C.border,
-                      backgroundColor: isEarly && on ? meta.accent + '22' : 'rgba(11,11,16,0.55)',
-                    },
-                  ]}
-                  accessibilityRole="switch"
-                  accessibilityState={{ checked: isEarly, disabled: !on }}
-                  accessibilityLabel={
-                    isEarly
-                      ? `Avisa ${ALERT_EARLY_SECONDS} segundos antes, a las ${fmtHM(fireAt)}. Tocar para avisar en el contacto.`
-                      : `Avisa en el contacto a las ${fmtHM(e.time)}. Tocar para avisar unos segundos antes.`
-                  }
-                >
-                  <Text style={[s.leadChipText, { color: on ? meta.accent : C.dim }]}>
-                    {isEarly
-                      ? `Avisa −${ALERT_EARLY_SECONDS} s · ${fmtHM(fireAt)}`
-                      : `Avisa en el contacto · ${fmtHM(e.time)}`}
-                  </Text>
-                </Pressable>
-                {e.key === 'C1' && (
-                  <View style={s.planRow}>
-                    {(
+                <View style={s.planRow}>
+                  <Pressable
+                    onPress={() => handleEarly(e.key)}
+                    disabled={!on}
+                    hitSlop={4}
+                    style={[
+                      s.planChip,
+                      {
+                        borderColor: isEarly && on ? meta.accent + '88' : C.border,
+                        backgroundColor: isEarly && on ? meta.accent + '22' : 'transparent',
+                      },
+                    ]}
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: isEarly, disabled: !on }}
+                    accessibilityLabel={`Aviso previo ${ALERT_EARLY_SECONDS} segundos antes. ${
+                      isEarly ? 'Activado' : 'Desactivado'
+                    }.`}
+                  >
+                    <Text style={[s.planChipText, { color: isEarly && on ? meta.accent : C.dim }]}>
+                      +{ALERT_EARLY_SECONDS} s antes
+                    </Text>
+                  </Pressable>
+                  {e.key === 'C1' &&
+                    (
                       [
-                        { key: 'before24h', label: '+24 h antes' },
                         { key: 'before1h', label: '+1 h antes' },
+                        { key: 'before24h', label: '+24 h antes' },
                       ] as const
                     ).map((opt) => {
                       const planOn = c1Plan[opt.key];
@@ -227,8 +222,7 @@ export function AlertsScreen({
                         </Pressable>
                       );
                     })}
-                  </View>
-                )}
+                </View>
               </View>
               <Pressable
                 onPress={() => handleToggle(e.key)}
@@ -302,16 +296,6 @@ const s = StyleSheet.create({
   rowTitle: { fontFamily: F.bold, fontSize: 16, color: C.text },
   rowTime: { fontFamily: F.semibold, fontSize: 14, fontVariant: ['tabular-nums'] },
   rowDesc: { fontFamily: F.regular, fontSize: 12.5, lineHeight: 17, color: C.dim, marginTop: 2 },
-  leadChip: {
-    alignSelf: 'flex-start',
-    marginTop: 8,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    backgroundColor: 'rgba(11,11,16,0.55)',
-  },
-  leadChipText: { fontFamily: F.semibold, fontSize: 12, fontVariant: ['tabular-nums'] },
   planRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   planChip: {
     borderWidth: 1,
