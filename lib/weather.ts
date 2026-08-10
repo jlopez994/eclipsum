@@ -12,7 +12,14 @@ export interface CachedCloudForecast {
   ageMs: number;
 }
 
-const CACHE_VER = 'v2';
+// v3 = modelo ECMWF (invalida cachés best_match del v2)
+const CACHE_VER = 'v3';
+/**
+ * Mismo modelo que pinta Windy por defecto (el enlace del chip de nubes):
+ * con best_match (ICON) el % de la app y el del enlace contaban historias
+ * distintas (20% vs 4% a la hora del eclipse). Coherencia > modelo «mejor».
+ */
+const MODEL = 'ecmwf_ifs025';
 /** Tope de espera de red: colgarse más tiempo bloquea la degradación a caché. */
 const FETCH_TIMEOUT_MS = 10_000;
 
@@ -40,7 +47,7 @@ export async function fetchCloudCover(lat: number, lon: number): Promise<CloudFo
   const day = civilDate();
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-    `&hourly=cloud_cover&start_date=${day}&end_date=${day}&timezone=UTC`;
+    `&hourly=cloud_cover&start_date=${day}&end_date=${day}&timezone=UTC&models=${MODEL}`;
   const json = (await fetchJson(url)) as { hourly?: { time?: unknown; cloud_cover?: unknown } } | null;
   const times: unknown = json?.hourly?.time;
   const covers: unknown = json?.hourly?.cloud_cover;
@@ -67,7 +74,7 @@ export async function fetchCloudCoverBatch(
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${points.map((p) => p.lat).join(',')}` +
     `&longitude=${points.map((p) => p.lon).join(',')}` +
-    `&hourly=cloud_cover&start_date=${day}&end_date=${day}&timezone=UTC`;
+    `&hourly=cloud_cover&start_date=${day}&end_date=${day}&timezone=UTC&models=${MODEL}`;
   const list: unknown = await fetchJson(url);
   if (!Array.isArray(list) || list.length !== points.length) {
     throw new Error('Respuesta Open-Meteo por lote inesperada');
