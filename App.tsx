@@ -19,7 +19,7 @@ import { openInMaps } from './lib/maps';
 import type { Spot } from './lib/spots';
 import { cancelAlertsByIds, scheduleEclipseAlerts, scheduleFakeEclipseAlerts } from './lib/notifications';
 import { buildDrillEclipse } from './lib/drill';
-import { fetchRemoteExtras, type Sponsor } from './lib/firebase';
+import { fetchRemoteExtras, track, trackError, type Sponsor } from './lib/firebase';
 import { contextFor, DEFAULT_PREFS, pushRecent, withContext } from './lib/prefs';
 import { animateNextLayout } from './lib/anim';
 import { useGeo } from './hooks/useGeo';
@@ -209,8 +209,10 @@ function AppInner() {
     // [PRUEBA] (p. ej. al volver a primer plano, catalogEpoch cambia la identidad de
     // eclipse). Al salir del simulacro el efecto vuelve a entrar y reprograma.
     if (drill) return;
-    scheduleEclipseAlerts(eclipse, ctx.alertsOn, prefs.alertSound, ctx.alertEarly, ctx.c1PlanAlerts).catch(() => {
-      // sin permiso o error puntual: el usuario puede reprogramar desde Alertas
+    scheduleEclipseAlerts(eclipse, ctx.alertsOn, prefs.alertSound, ctx.alertEarly, ctx.c1PlanAlerts).catch((e) => {
+      // El efecto solo entra con permiso concedido: fallar aquí es raro y reportable.
+      // El usuario siempre puede reprogramar desde Alertas.
+      trackError('schedule_alerts', e);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eclipse, permissions.notifications, ctx, prefs?.alertSound, drill]);
@@ -234,6 +236,7 @@ function AppInner() {
     const fake = buildDrillEclipse(eclipse, c1At, prefs.drill);
     const ids = await scheduleFakeEclipseAlerts(fake, c1At, ctx.alertsOn, prefs.alertSound, ctx.alertEarly);
     setDrill({ eclipse: fake, ids });
+    track('drill_started');
     return `Simulacro en marcha · C1 a las ${c1At.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`;
   }, [eclipse, prefs, ctx]);
 
@@ -365,9 +368,11 @@ function AppInner() {
               spotCoords={{ lat: active.lat, lon: active.lon }}
               hereCoords={hereOnMap && geo ? { lat: geo.lat, lon: geo.lon } : null}
               mapView={prefs.mapView}
-              onToggleMapView={() =>
-                onPrefsChange({ ...prefs, mapView: prefs.mapView === 'real' ? 'diagram' : 'real' })
-              }
+              onToggleMapView={() => {
+                const next = prefs.mapView === 'real' ? 'diagram' : 'real';
+                track('map_view', { view: next });
+                onPrefsChange({ ...prefs, mapView: next });
+              }}
               onOpenSelector={() => setSelectorOpen(true)}
               onOpenMaps={() => openInMaps(active.lat, active.lon, active.place)}
               onSelectMapPoint={selectMapPoint}
@@ -428,7 +433,10 @@ function AppInner() {
             // El efecto de alertas reprograma solo al cambiar alertSound
             onSoundChange={(sound) => onPrefsChange({ ...prefs, alertSound: sound })}
             onDemoEclipse={() => setDemo(true)}
-            onSelectEclipse={(day) => onPrefsChange({ ...prefs, selectedEclipseDay: day })}
+            onSelectEclipse={(day) => {
+              track('eclipse_selected', { day: day || 'auto' });
+              onPrefsChange({ ...prefs, selectedEclipseDay: day });
+            }}
             drill={prefs.drill}
             onDrillChange={(drillCfg) => onPrefsChange({ ...prefs, drill: drillCfg })}
             onStartDrill={startDrill}

@@ -1,4 +1,5 @@
 import { getAnalytics, logEvent } from '@react-native-firebase/analytics';
+import { getCrashlytics, recordError } from '@react-native-firebase/crashlytics';
 import { fetchAndActivate, getRemoteConfig, getString } from '@react-native-firebase/remote-config';
 import { setRemoteActiveEclipseId, setRemoteCatalog } from './eclipseCatalog';
 
@@ -80,7 +81,9 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
     setRemoteCatalog(getString(rc, 'eclipse_catalog'));
     setRemoteActiveEclipseId(activeEclipseId);
     return { message, activeEclipseId, glassesUrl, sponsor, latestVersionCode, latestApkUrl };
-  } catch {
+  } catch (e) {
+    // Aquí solo se llega por fallo del SDK (la falta de red se traga arriba): reportable
+    trackError('remote_config', e);
     return {
       message: '',
       activeEclipseId: '',
@@ -96,6 +99,18 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
 export function track(event: string, params?: Record<string, string | number>): void {
   try {
     logEvent(getAnalytics(), event, params);
+  } catch {
+    // telemetría no crítica
+  }
+}
+
+/**
+ * Error no fatal a Crashlytics, best-effort. Solo para fallos INESPERADOS:
+ * los errores normales de red (sin conexión) no se reportan — serían puro ruido.
+ */
+export function trackError(scope: string, e: unknown): void {
+  try {
+    recordError(getCrashlytics(), e instanceof Error ? e : new Error(String(e)), scope);
   } catch {
     // telemetría no crítica
   }
