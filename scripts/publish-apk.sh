@@ -5,8 +5,10 @@ set -e
 APK="android/app/build/outputs/apk/release/app-release.apk"
 DEST="/Volumes/DAS/s3/eclipsum"
 VERSION="$(node -p "require('./app.json').expo.version" 2>/dev/null || echo "0.0.0")"
+VC="$(node -p "require('./app.json').expo.android?.versionCode ?? 1" 2>/dev/null || echo "0")"
 STAMP="$(date +%Y%m%d-%H%M)"
-NAMED="eclipsum-${VERSION}-${STAMP}.apk"
+# Sin contador de beta en la versión: el versionCode (bN) identifica la build en el histórico
+NAMED="eclipsum-${VERSION}-b${VC}-${STAMP}.apk"
 # Canal beta aparte: no pisar el «latest» estable que usa la gente el día del eclipse
 case "$VERSION" in
   *beta*|*rc*) LATEST="eclipsum-beta.apk" ;;
@@ -25,7 +27,6 @@ if [ -d "/Volumes/DAS/s3" ]; then
   cp "$APK" "$DEST/$LATEST"
   echo "Subida (histórico): $DEST/$NAMED"
   echo "Subida (latest):    $DEST/$LATEST"
-  VC="$(node -p "require('./app.json').expo.android?.versionCode ?? 1" 2>/dev/null || echo "?")"
   echo ""
   echo "Para avisar de la actualización en la app, publica en Remote Config:"
   echo "  latest_version_code = $VC"
