@@ -1,4 +1,5 @@
 import { computeLocalEclipse } from './eclipse';
+import { activeSearchStart } from './eclipseCatalog';
 
 export interface TotalityDirection {
   distanceKm: number;
@@ -37,9 +38,9 @@ function destination(lat: number, lon: number, bearingDeg: number, distKm: numbe
   return { lat: (φ2 * 180) / Math.PI, lon: ((((λ2 * 180) / Math.PI + 540) % 360) - 180) };
 }
 
-function isTotalAt(lat: number, lon: number): boolean {
+function isTotalAt(lat: number, lon: number, searchStart: Date): boolean {
   try {
-    return computeLocalEclipse(lat, lon).kind === 'total';
+    return computeLocalEclipse(lat, lon, 0, searchStart).kind === 'total';
   } catch {
     return false;
   }
@@ -58,16 +59,19 @@ const NEAREST_CACHE = new Map<string, Promise<TotalityDirection | null>>();
  * Memoizada por coordenada; cede el hilo en cada llamada al motor (~10-30 ms cada una).
  */
 export function findNearestTotality(lat: number, lon: number): Promise<TotalityDirection | null> {
-  const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
+  // El ancla del eclipse activo va en la clave Y se fija para toda la búsqueda:
+  // sin ella, cambiar de eclipse devolvía la totalidad memoizada del anterior.
+  const searchStart = activeSearchStart();
+  const key = `${searchStart.getTime()}:${lat.toFixed(3)},${lon.toFixed(3)}`;
   let p = NEAREST_CACHE.get(key);
   if (!p) {
-    p = searchNearestTotality(lat, lon);
+    p = searchNearestTotality(lat, lon, searchStart);
     NEAREST_CACHE.set(key, p);
   }
   return p;
 }
 
-async function searchNearestTotality(lat: number, lon: number): Promise<TotalityDirection | null> {
+async function searchNearestTotality(lat: number, lon: number, searchStart: Date): Promise<TotalityDirection | null> {
   let best: TotalityDirection | null = null;
 
   for (const bearing of BEARINGS) {
@@ -77,7 +81,7 @@ async function searchNearestTotality(lat: number, lon: number): Promise<Totality
       if (best && d >= best.distanceKm) break; // no puede mejorar
       await tick();
       const p = destination(lat, lon, bearing, d);
-      if (isTotalAt(p.lat, p.lon)) {
+      if (isTotalAt(p.lat, p.lon, searchStart)) {
         hi = d;
         break;
       }
@@ -90,7 +94,7 @@ async function searchNearestTotality(lat: number, lon: number): Promise<Totality
       const mid = (lo + hiKm) / 2;
       await tick();
       const p = destination(lat, lon, bearing, mid);
-      if (isTotalAt(p.lat, p.lon)) hiKm = mid;
+      if (isTotalAt(p.lat, p.lon, searchStart)) hiKm = mid;
       else lo = mid;
     }
 
@@ -100,7 +104,7 @@ async function searchNearestTotality(lat: number, lon: number): Promise<Totality
       const inner = destination(lat, lon, bearing, hiKm + 5);
       let durationSec: number | null = null;
       try {
-        durationSec = computeLocalEclipse(inner.lat, inner.lon).totalityDurationSec;
+        durationSec = computeLocalEclipse(inner.lat, inner.lon, 0, searchStart).totalityDurationSec;
       } catch {
         durationSec = null;
       }

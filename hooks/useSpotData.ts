@@ -123,7 +123,9 @@ export function useSpotData(
     return () => {
       cancelled = true;
     };
-  }, [geo?.lat, geo?.lon, active?.lat, active?.lon]);
+    // eclipse en deps: al cambiar de eclipse el punto GPS también debe recalcularse
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [geo?.lat, geo?.lon, active?.lat, active?.lon, eclipse]);
 
   return { cloud, totality, hereOnMap };
 }
