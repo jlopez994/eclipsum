@@ -145,6 +145,9 @@ export function AlertsScreen({
           const meta = ALERT_META[e.key];
           const on = toggles[e.key];
           const isEarly = early[e.key];
+          // Contacto bajo el horizonte: el sol ya se habrá puesto — se marca, pero el
+          // toggle sigue en manos del usuario (nada se descarta en silencio)
+          const belowHorizon = e.altitude < 0;
           return (
             <View key={e.key} style={[s.row, !on && { opacity: 0.45 }]}>
               <View style={s.leftCol}>
@@ -166,9 +169,12 @@ export function AlertsScreen({
                   <Text style={s.rowTitle}>
                     {e.key === 'MAX' ? 'MÁX' : e.key} · {e.label}
                   </Text>
-                  <Text style={[s.rowTime, { color: meta.accent }]}>{fmtHM(e.time)}</Text>
+                  <Text style={[s.rowTime, { color: belowHorizon ? C.dim : meta.accent }]}>{fmtHM(e.time)}</Text>
                 </View>
                 <Text style={s.rowDesc}>{meta.desc}</Text>
+                {belowHorizon && (
+                  <Text style={s.rowBelowHorizon}>Tras el ocaso — el sol ya no se verá desde aquí</Text>
+                )}
                 <View style={s.planRow}>
                   <Pressable
                     onPress={() => handleEarly(e.key)}
@@ -296,6 +302,7 @@ const s = StyleSheet.create({
   rowTitle: { fontFamily: F.bold, fontSize: 16, color: C.text },
   rowTime: { fontFamily: F.semibold, fontSize: 14, fontVariant: ['tabular-nums'] },
   rowDesc: { fontFamily: F.regular, fontSize: 12.5, lineHeight: 17, color: C.dim, marginTop: 2 },
+  rowBelowHorizon: { fontFamily: F.semibold, fontSize: 12, lineHeight: 16, color: C.corona, marginTop: 3 },
   planRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   planChip: {
     borderWidth: 1,
