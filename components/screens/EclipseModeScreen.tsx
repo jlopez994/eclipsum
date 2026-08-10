@@ -23,6 +23,46 @@ const AFTER_LABEL: Record<string, { label: string; color: string }> = {
   C4: { label: 'Fin del eclipse', color: C.corona },
 };
 
+const EVENT_ACCENT: Record<string, string> = {
+  C1: C.corona,
+  C2: C.totality,
+  MAX: C.totality,
+  C3: C.danger,
+  C4: C.corona,
+};
+
+/** Raíl de la serie completa: pasado (lleno), siguiente (anillo grande), futuro (tenue). */
+function EventRail({ eclipse, now }: { eclipse: LocalEclipse; now: Date }) {
+  const nextKey = nextEvent(eclipse, now)?.key;
+  const fmt = (d: Date) =>
+    d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return (
+    <View style={s.rail}>
+      <View style={s.railLine} />
+      {eclipse.events.map((e) => {
+        const accent = EVENT_ACCENT[e.key] ?? C.dim;
+        const passed = e.time.getTime() <= now.getTime();
+        const isNext = e.key === nextKey;
+        return (
+          <View key={e.key} style={s.railItem}>
+            <View
+              style={[
+                s.railDot,
+                passed && { backgroundColor: accent, borderColor: accent },
+                isNext && { borderColor: accent, width: 14, height: 14, borderRadius: 7, marginTop: -2 },
+              ]}
+            />
+            <Text style={[s.railKey, (passed || isNext) && { color: accent }]}>
+              {e.key === 'MAX' ? 'MÁX' : e.key}
+            </Text>
+            <Text style={[s.railTime, isNext && { color: C.text }]}>{fmt(e.time)}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 interface EclipseModeScreenProps {
   eclipse: LocalEclipse;
   place: string;
@@ -106,11 +146,13 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo }
     <View style={s.root}>
       <View style={[s.topRow, { paddingTop: insets.top + 14 }]}>
         <Clock />
-        <Pressable onPress={exitLabel ? onExitDemo : undefined}>
-          <Text style={s.modeTag}>
-            MODO ECLIPSE · {exitLabel ? `${exitLabel} — TOCA PARA SALIR` : place.toUpperCase()}
-          </Text>
-        </Pressable>
+        {exitLabel ? (
+          <Pressable onPress={onExitDemo} hitSlop={10} style={s.exitPill} accessibilityLabel={`Salir del ${exitLabel.toLowerCase()}`}>
+            <Text style={s.exitPillTxt}>{exitLabel} · SALIR ✕</Text>
+          </Pressable>
+        ) : (
+          <Text style={s.modeTag}>MODO ECLIPSE · {place.toUpperCase()}</Text>
+        )}
       </View>
 
       <View style={[s.banner, { backgroundColor: banner.bg, shadowColor: banner.bg }]}>
@@ -134,6 +176,7 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo }
       </View>
 
       <View style={s.footer}>
+        <EventRail eclipse={eclipse} now={now} />
         {upcoming && after && (
           <View style={s.nextCard}>
             <View>
@@ -160,6 +203,39 @@ const s = StyleSheet.create({
   },
   clock: { fontFamily: F.medium, fontSize: 13, color: C.text, fontVariant: ['tabular-nums'] },
   modeTag: { fontFamily: F.semibold, fontSize: 11, letterSpacing: 2, color: C.dim },
+  exitPill: {
+    borderWidth: 1,
+    borderColor: 'rgba(124,108,255,0.55)',
+    backgroundColor: 'rgba(124,108,255,0.12)',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  exitPillTxt: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1.5, color: C.violet },
+  rail: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  railLine: {
+    position: 'absolute',
+    left: '10%',
+    right: '10%',
+    top: 5,
+    height: 2,
+    backgroundColor: '#26263A',
+  },
+  railItem: { flex: 1, alignItems: 'center', gap: 4 },
+  railDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: '#3A3A4C',
+    backgroundColor: '#0B0B10',
+  },
+  railKey: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 1, color: C.dim },
+  railTime: { fontFamily: F.medium, fontSize: 9.5, color: C.dim, fontVariant: ['tabular-nums'] },
   banner: {
     marginHorizontal: 16,
     marginTop: 6,
