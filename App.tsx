@@ -17,7 +17,7 @@ import { getActiveEclipse } from './lib/eclipseCatalog';
 import { haversineKm } from './lib/totality';
 import { openInMaps } from './lib/maps';
 import type { Spot } from './lib/spots';
-import { scheduleEclipseAlerts } from './lib/notifications';
+import { scheduleEclipseAlerts, scheduleFakeEclipseAlerts } from './lib/notifications';
 import { fetchRemoteExtras, type Sponsor } from './lib/firebase';
 import { pushRecent } from './lib/prefs';
 import { animateNextLayout } from './lib/anim';
@@ -216,6 +216,18 @@ function AppInner() {
     [prefs, onPrefsChange],
   );
 
+  // Simulacro de alertas: serie [PRUEBA] con C1 hoy a las 17:00 (o en 2 min si ya pasaron)
+  const onDrillAlerts = useCallback(async () => {
+    if (!eclipse || !prefs) return 'Elige primero un puesto en el mapa';
+    if (!Object.values(prefs.alertsOn).some(Boolean)) return 'Activa alguna alerta en ALERTAS primero';
+    const c1At = new Date();
+    c1At.setHours(17, 0, 0, 0);
+    if (c1At.getTime() < Date.now() + 60_000) c1At.setTime(Date.now() + 2 * 60_000);
+    const n = await scheduleFakeEclipseAlerts(eclipse, c1At, prefs.alertsOn, prefs.alertSound, prefs.alertEarly);
+    const hm = c1At.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    return `${n} avisos [PRUEBA] programados · C1 a las ${hm}`;
+  }, [eclipse, prefs]);
+
   // Punto tocado en el mapa real: nombre vía geocoder inverso (fallback coordenadas)
   const selectMapPoint = useCallback(
     ({ lat, lon }: { lat: number; lon: number }) => {
@@ -376,6 +388,7 @@ function AppInner() {
               }
             }}
             onDemoEclipse={() => setDemo(true)}
+            onDrillAlerts={onDrillAlerts}
           />
         )}
       </View>

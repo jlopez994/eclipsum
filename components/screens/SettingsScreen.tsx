@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,6 +17,8 @@ interface SettingsScreenProps {
   glassesUrl?: string;
   onSoundChange: (sound: AlertSound) => void;
   onDemoEclipse: () => void;
+  /** Programa la serie de alertas [PRUEBA] desplazada a hoy; devuelve mensaje de resultado */
+  onDrillAlerts: () => Promise<string>;
 }
 
 export function SettingsScreen({
@@ -25,8 +28,16 @@ export function SettingsScreen({
   glassesUrl,
   onSoundChange,
   onDemoEclipse,
+  onDrillAlerts,
 }: SettingsScreenProps) {
   const insets = useSafeAreaInsets();
+  const [drillMsg, setDrillMsg] = useState<string | null>(null);
+
+  const runDrill = () => {
+    onDrillAlerts()
+      .then(setDrillMsg)
+      .catch(() => setDrillMsg('Sin permiso de notificaciones'));
+  };
 
   // El tono de sistema no es reproducible en la app (content:// no carga en expo-audio):
   // se escucha con una notificación real, que además valida canal y permisos.
@@ -95,6 +106,21 @@ export function SettingsScreen({
                 </View>
               );
             })}
+          </View>
+        </View>
+
+        <View>
+          <Text style={s.section}>SIMULACRO</Text>
+          <View style={s.card}>
+            <Pressable style={s.rowItem} onPress={runDrill} accessibilityLabel="Programar simulacro de alertas">
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={s.rowTitle}>Probar alertas del eclipse</Text>
+                <Text style={s.soundHint}>
+                  {drillMsg ?? 'Serie [PRUEBA] con tus alertas activas, desplazada a hoy. Las reales no se tocan.'}
+                </Text>
+              </View>
+              <Text style={s.playIcon}>▶</Text>
+            </Pressable>
           </View>
         </View>
 

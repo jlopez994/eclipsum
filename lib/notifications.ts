@@ -162,6 +162,40 @@ export function countEclipseAlerts(
   return buildAlerts(eclipse, enabled, early, c1Plan).length;
 }
 
+/**
+ * Simulacro: la serie real desplazada para que C1 caiga en `c1At`, con títulos [PRUEBA].
+ * Aditiva — no cancela nada, las alertas reales del eclipse quedan intactas.
+ */
+export async function scheduleFakeEclipseAlerts(
+  eclipse: LocalEclipse,
+  c1At: Date,
+  enabled: AlertToggles,
+  sound: AlertSound = 'eclipse',
+  early: AlertEarly = DEFAULT_ALERT_EARLY,
+): Promise<number> {
+  const channelId = await ensurePermissionAndChannel(sound);
+  const c1 = eclipse.events.find((e) => e.key === 'C1');
+  if (!c1) return 0;
+  const shift = c1At.getTime() - c1.time.getTime();
+  const shifted: LocalEclipse = {
+    ...eclipse,
+    events: eclipse.events.map((e) => ({ ...e, time: new Date(e.time.getTime() + shift) })),
+  };
+  // Sin avisos de planificación (24h/1h): el simulacro es la serie del día
+  const alerts = buildAlerts(shifted, enabled, early, { before24h: false, before1h: false });
+  for (const a of alerts) {
+    await Notifications.scheduleNotificationAsync({
+      content: { title: `[PRUEBA] ${a.title}`, body: a.body, sound: soundFile(sound) },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: a.time,
+        channelId,
+      },
+    });
+  }
+  return alerts.length;
+}
+
 /** Programa alertas locales según toggles. Devuelve cuántas quedaron programadas. */
 export async function scheduleEclipseAlerts(
   eclipse: LocalEclipse,
