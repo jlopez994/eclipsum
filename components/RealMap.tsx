@@ -32,6 +32,9 @@ interface TapInfo {
 }
 
 const fmtHM = (d: Date) => d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+
+/** JSON seguro para incrustar en <script>/injectJavaScript: un nombre de lugar con «</script>» no rompe el HTML. */
+const toJs = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c');
 const fmtDur = (sec: number) => `${Math.floor(sec / 60)}m ${sec % 60}s`;
 
 function tapInfo(lat: number, lon: number): TapInfo {
@@ -86,7 +89,7 @@ export function RealMap({ spot, here, onSelectPoint }: RealMapProps) {
 
   useEffect(() => {
     if (!ready) return;
-    const data = JSON.stringify({ spot, here });
+    const data = toJs({ spot, here });
     webRef.current?.injectJavaScript(`window.eclipsumUpdate && window.eclipsumUpdate(${data}); true;`);
   }, [ready, spot.lat, spot.lon, spot.label, here?.lat, here?.lon, here?.label]);
 
@@ -96,7 +99,7 @@ export function RealMap({ spot, here, onSelectPoint }: RealMapProps) {
       if (msg.type === 'tap') {
         const info = tapInfo(msg.lat, msg.lon);
         webRef.current?.injectJavaScript(
-          `window.eclipsumShowInfo && window.eclipsumShowInfo(${JSON.stringify(info)}); true;`,
+          `window.eclipsumShowInfo && window.eclipsumShowInfo(${toJs(info)}); true;`,
         );
       } else if (msg.type === 'select') {
         onSelectPoint({ lat: msg.lat, lon: msg.lon });
@@ -126,7 +129,7 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
   const south = band ? [...band].reverse().map((b) => [b.latS, b.lon]) : [];
   const center = band?.map((b) => [(b.latN + b.latS) / 2, b.lon]) ?? null;
   const polygon = band ? [...north, ...south] : null;
-  const data = JSON.stringify({ polygon, north, south, center, spot, here });
+  const data = toJs({ polygon, north, south, center, spot, here });
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -175,6 +178,8 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
   }
 
   var ptLayer = L.layerGroup().addTo(map);
+  // bindTooltip interpreta HTML: los nombres de lugar (geocoder o texto del usuario) van escapados
+  function esc(t) { var d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
   function draw(d, fly) {
     ptLayer.clearLayers();
     var pts = [];
@@ -183,7 +188,7 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
         interactive: false, radius: 8, color: '${C.corona}', weight: 2.5,
         fillColor: fill ? '${C.text}' : 'transparent', fillOpacity: fill ? 1 : 0,
       }).addTo(ptLayer);
-      m.bindTooltip(p.label, { permanent: true, direction: 'top', offset: [0, -10], className: 'lbl' });
+      m.bindTooltip(esc(p.label), { permanent: true, direction: 'top', offset: [0, -10], className: 'lbl' });
       pts.push([p.lat, p.lon]);
     }
     dot(d.spot, true);

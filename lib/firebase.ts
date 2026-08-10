@@ -64,7 +64,12 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       latest_version_code: '0',
       latest_apk_url: 'https://cdn.jlh.app/eclipsum/eclipsum.apk',
     };
-    await fetchAndActivate(rc);
+    try {
+      await fetchAndActivate(rc);
+    } catch {
+      // Sin red el fetch lanza, pero los últimos valores activados persisten en disco:
+      // seguimos y los leemos igual (arranque en frío offline conserva catálogo y banner)
+    }
     const message = getString(rc, 'eclipse_message');
     const activeEclipseId = getString(rc, 'active_eclipse_id');
     const glassesUrl = getString(rc, 'glasses_url');

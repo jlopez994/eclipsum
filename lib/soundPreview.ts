@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import {
   createAudioPlayer,
   setAudioModeAsync,
@@ -8,8 +9,8 @@ import {
 } from 'expo-audio';
 import type { AlertSound } from './prefs';
 
-/** Mismo package que app.json → android.resource://…/raw/eclipse */
-const ANDROID_PKG = 'com.jlopez.eclipsum';
+/** Package real de la app (app.json) → android.resource://…/raw/eclipse; fallback si Constants no carga */
+const ANDROID_PKG = Constants.expoConfig?.android?.package ?? 'com.jlopez.eclipsum';
 const ECLIPSE_ASSET = require('../assets/sounds/eclipse.wav');
 
 let player: AudioPlayer | null = null;

@@ -205,11 +205,15 @@ function AppInner() {
   // Sin toggles activos también entra: cancela avisos huérfanos del contexto anterior.
   useEffect(() => {
     if (!eclipse || !prefs || !permissions.notifications) return;
+    // Durante el simulacro no se reprograma: el cancelAll interno mataría los avisos
+    // [PRUEBA] (p. ej. al volver a primer plano, catalogEpoch cambia la identidad de
+    // eclipse). Al salir del simulacro el efecto vuelve a entrar y reprograma.
+    if (drill) return;
     scheduleEclipseAlerts(eclipse, ctx.alertsOn, prefs.alertSound, ctx.alertEarly, ctx.c1PlanAlerts).catch(() => {
       // sin permiso o error puntual: el usuario puede reprogramar desde Alertas
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eclipse, permissions.notifications, ctx, prefs?.alertSound]);
+  }, [eclipse, permissions.notifications, ctx, prefs?.alertSound, drill]);
 
   const selectSpot = useCallback(
     (spot: Spot) => {

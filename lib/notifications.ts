@@ -109,6 +109,18 @@ function buildAlerts(
   return alerts.filter((a) => a.time.getTime() > Date.now());
 }
 
+/**
+ * Serializa las operaciones sobre el conjunto de notificaciones programadas.
+ * Dos reprogramaciones solapadas (pantalla Alertas + efecto de App) podían
+ * intercalar cancelAll/schedule y dejar avisos duplicados el día del eclipse.
+ */
+let opQueue: Promise<unknown> = Promise.resolve();
+function enqueue<T>(job: () => Promise<T>): Promise<T> {
+  const run = opQueue.then(job);
+  opQueue = run.catch(() => {});
+  return run;
+}
+
 async function deleteLegacyChannels(): Promise<void> {
   if (Platform.OS !== 'android') return;
   await Promise.all(LEGACY_CHANNELS.map((id) => Notifications.deleteNotificationChannelAsync(id).catch(() => {})));
@@ -159,12 +171,22 @@ export function countEclipseAlerts(
  * Simulacro: la serie real desplazada para que C1 caiga en `c1At`, con títulos [PRUEBA].
  * Aditiva — no cancela nada, las alertas reales del eclipse quedan intactas.
  */
-export async function scheduleFakeEclipseAlerts(
+export function scheduleFakeEclipseAlerts(
   eclipse: LocalEclipse,
   c1At: Date,
   enabled: AlertToggles,
   sound: AlertSound = 'eclipse',
   early: AlertEarly = DEFAULT_ALERT_EARLY,
+): Promise<string[]> {
+  return enqueue(() => doScheduleFake(eclipse, c1At, enabled, sound, early));
+}
+
+async function doScheduleFake(
+  eclipse: LocalEclipse,
+  c1At: Date,
+  enabled: AlertToggles,
+  sound: AlertSound,
+  early: AlertEarly,
 ): Promise<string[]> {
   const channelId = await ensurePermissionAndChannel(sound);
   const c1 = eclipse.events.find((e) => e.key === 'C1');
@@ -193,17 +215,29 @@ export async function scheduleFakeEclipseAlerts(
 }
 
 /** Cancela solo los avisos indicados (p. ej. al salir del simulacro). */
-export async function cancelAlertsByIds(ids: string[]): Promise<void> {
-  await Promise.all(ids.map((id) => Notifications.cancelScheduledNotificationAsync(id).catch(() => {})));
+export function cancelAlertsByIds(ids: string[]): Promise<void> {
+  return enqueue(async () => {
+    await Promise.all(ids.map((id) => Notifications.cancelScheduledNotificationAsync(id).catch(() => {})));
+  });
 }
 
 /** Programa alertas locales según toggles. Devuelve cuántas quedaron programadas. */
-export async function scheduleEclipseAlerts(
+export function scheduleEclipseAlerts(
   eclipse: LocalEclipse,
   enabled: AlertToggles,
   sound: AlertSound = 'eclipse',
   early: AlertEarly = DEFAULT_ALERT_EARLY,
   c1Plan: C1PlanAlerts = DEFAULT_C1_PLAN_ALERTS,
+): Promise<number> {
+  return enqueue(() => doScheduleEclipse(eclipse, enabled, sound, early, c1Plan));
+}
+
+async function doScheduleEclipse(
+  eclipse: LocalEclipse,
+  enabled: AlertToggles,
+  sound: AlertSound,
+  early: AlertEarly,
+  c1Plan: C1PlanAlerts,
 ): Promise<number> {
   const channelId = await ensurePermissionAndChannel(sound);
 

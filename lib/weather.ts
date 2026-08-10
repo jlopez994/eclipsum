@@ -13,9 +13,23 @@ export interface CachedCloudForecast {
 }
 
 const CACHE_VER = 'v2';
+/** Tope de espera de red: colgarse más tiempo bloquea la degradación a caché. */
+const FETCH_TIMEOUT_MS = 10_000;
 
 function civilDate(): string {
   return getActiveEclipse().civilDate;
+}
+
+async function fetchJson(url: string): Promise<unknown> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) throw new Error(`Open-Meteo HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -27,9 +41,7 @@ export async function fetchCloudCover(lat: number, lon: number): Promise<CloudFo
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
     `&hourly=cloud_cover&start_date=${day}&end_date=${day}&timezone=UTC`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Open-Meteo HTTP ${res.status}`);
-  const json = await res.json();
+  const json = (await fetchJson(url)) as { hourly?: { time?: unknown; cloud_cover?: unknown } } | null;
   const times: unknown = json?.hourly?.time;
   const covers: unknown = json?.hourly?.cloud_cover;
   if (!Array.isArray(times) || !Array.isArray(covers) || times.length !== covers.length) {
@@ -56,10 +68,7 @@ export async function fetchCloudCoverBatch(
     `https://api.open-meteo.com/v1/forecast?latitude=${points.map((p) => p.lat).join(',')}` +
     `&longitude=${points.map((p) => p.lon).join(',')}` +
     `&hourly=cloud_cover&start_date=${day}&end_date=${day}&timezone=UTC`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Open-Meteo HTTP ${res.status}`);
-  const json = await res.json();
-  const list: unknown = json;
+  const list: unknown = await fetchJson(url);
   if (!Array.isArray(list) || list.length !== points.length) {
     throw new Error('Respuesta Open-Meteo por lote inesperada');
   }
@@ -74,10 +83,13 @@ export async function fetchCloudCoverBatch(
 
 function parseHours(times: unknown[], covers: unknown[]): CloudForecast {
   return {
-    hours: times.map((t, i) => ({
-      time: new Date(String(t) + (String(t).endsWith('Z') ? '' : ':00Z')),
-      cloudCover: Number(covers[i]),
-    })),
+    hours: times
+      .map((t, i) => ({
+        time: new Date(String(t) + (String(t).endsWith('Z') ? '' : ':00Z')),
+        cloudCover: Number(covers[i]),
+      }))
+      // Horas con null/valores raros del API se descartan: NaN rompería la interpolación
+      .filter((h) => !Number.isNaN(h.time.getTime()) && Number.isFinite(h.cloudCover)),
   };
 }
 
@@ -87,8 +99,21 @@ function isEclipseDayForecast(forecast: CloudForecast, day: string): boolean {
   return forecast.hours.every((h) => h.time.toISOString().startsWith(day));
 }
 
+const CACHE_PREFIX = 'eclipsum:clouds:';
+
 const cacheKey = (lat: number, lon: number, day: string) =>
-  `eclipsum:clouds:${CACHE_VER}:${day}:${lat.toFixed(2)},${lon.toFixed(2)}`;
+  `${CACHE_PREFIX}${CACHE_VER}:${day}:${lat.toFixed(2)},${lon.toFixed(2)}`;
+
+/** Poda best-effort de cachés de otros días/versiones: sin ella crecen sin límite eclipse tras eclipse. */
+function pruneOldCloudCache(day: string): void {
+  void AsyncStorage.getAllKeys()
+    .then((keys) => {
+      const keep = `${CACHE_PREFIX}${CACHE_VER}:${day}:`;
+      const stale = keys.filter((k) => k.startsWith(CACHE_PREFIX) && !k.startsWith(keep));
+      return stale.length > 0 ? AsyncStorage.multiRemove(stale) : undefined;
+    })
+    .catch(() => {});
+}
 
 interface StoredForecast {
   at: number;
@@ -110,6 +135,7 @@ export async function fetchCloudCoverCached(lat: number, lon: number): Promise<C
       hours: forecast.hours.map((h) => ({ t: h.time.getTime(), c: h.cloudCover })),
     };
     AsyncStorage.setItem(cacheKey(lat, lon, day), JSON.stringify(stored)).catch(() => {});
+    pruneOldCloudCache(day);
     return { forecast, ageMs: 0 };
   } catch {
     try {

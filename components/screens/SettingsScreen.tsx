@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -79,7 +79,9 @@ export function SettingsScreen({
 }: SettingsScreenProps) {
   const insets = useSafeAreaInsets();
   const [drillMsg, setDrillMsg] = useState<string | null>(null);
-  const upcoming = useMemo(() => upcomingEclipses(UPCOMING_COUNT), []);
+  // Sin memo: upcomingEclipses ya cachea por día+catálogo, y así un catálogo RC
+  // recién activado refresca la lista sin esperar a remontar la pantalla
+  const upcoming = upcomingEclipses(UPCOMING_COUNT);
   // Elegir el más próximo (fila 0) equivale al modo automático; misma regla que getActiveEclipse
   const isManualSelection = activeEclipse.civilDate !== upcoming[0]?.civilDate;
 

@@ -4,7 +4,6 @@ import {
   Easing,
   Linking,
   type LayoutChangeEvent,
-  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,16 +12,21 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Defs, Path, RadialGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, Defs, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as Location from 'expo-location';
 import { nextEvent, type LocalEclipse } from '../../lib/eclipse';
 import { getActiveEclipse } from '../../lib/eclipseCatalog';
-import { bearingLabel, type TotalityDirection } from '../../lib/totality';
+import { type TotalityDirection } from '../../lib/totality';
 import { track, type Sponsor } from '../../lib/firebase';
 import { windyEclipseCloudsUrl } from '../../lib/weather';
+import { useSheet } from '../../hooks/useSheet';
 import { Countdown } from '../Countdown';
 import { RealMap } from '../RealMap';
+import { CompassChip } from '../map/CompassChip';
+import { HereDot, UserDot } from '../map/Dots';
+import { HorizonDiagram } from '../map/HorizonDiagram';
+import { TotalPill } from '../map/TotalPill';
+import { UmbraSweep } from '../map/UmbraSweep';
 import { C, F } from '../theme';
 
 /** Fallback bajo: mejor recortar un instante que asomar la cronología. */
@@ -89,7 +93,6 @@ interface MapScreenProps {
   /** km entre GPS real y spot activo el día del eclipse; null = sin aviso */
   divergenceKm: number | null;
   onRecalcHere: () => void;
-  /** Patrocinador del eclipse (Remote Config); null = sin línea de patrocinio */
   /** Patrocinador del eclipse (Remote Config); null = sin tarjeta de patrocinio */
   sponsor?: Sponsor | null;
 }
@@ -110,256 +113,6 @@ function dotTopFraction(isTotal: boolean, totality: TotalityDirection | 'none' |
   if (isTotal) return DOT_TOTAL;
   if (totality === null || totality === 'none') return DOT_FAR;
   return kmFraction(totality.distanceKm);
-}
-
-function useSheet(maxH: number, minH: number) {
-  const height = useRef(new Animated.Value(minH)).current;
-  const current = useRef(minH);
-  const maxRef = useRef(maxH);
-  const minRef = useRef(minH);
-  const prevMinRef = useRef(minH);
-  maxRef.current = maxH;
-  minRef.current = minH;
-
-  useEffect(() => {
-    const id = height.addListener(({ value }) => {
-      current.current = value;
-    });
-    return () => height.removeListener(id);
-  }, [height]);
-
-  // Al medir el peek (p. ej. al volver al tab), reancorar si estaba colapsada.
-  // Ojo: el fallback inicial suele ser MAYOR que el peek real — no basta con
-  // `current <= minH + 8` porque entonces no encoje y asoma la cronología.
-  useEffect(() => {
-    const prevMin = prevMinRef.current;
-    prevMinRef.current = minH;
-    if (minH === prevMin) return;
-    const collapsed = Math.abs(current.current - prevMin) <= 10 || current.current <= minH + 10;
-    if (collapsed) {
-      height.stopAnimation();
-      height.setValue(minH);
-      current.current = minH;
-    }
-  }, [minH, height]);
-
-  const snapTo = (v: number) =>
-    Animated.spring(height, { toValue: v, useNativeDriver: false, bounciness: 6 }).start();
-
-  const startH = useRef(minH);
-  const pan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 4,
-      onPanResponderGrant: () => {
-        height.stopAnimation();
-        startH.current = current.current;
-      },
-      onPanResponderMove: (_e, g) => {
-        height.setValue(Math.min(maxRef.current, Math.max(minRef.current, startH.current - g.dy)));
-      },
-      onPanResponderRelease: (_e, g) => {
-        const mid = (minRef.current + maxRef.current) / 2;
-        if (Math.abs(g.dy) < 6) {
-          snapTo(startH.current > mid ? minRef.current : maxRef.current);
-        } else {
-          snapTo(startH.current - g.dy > mid ? maxRef.current : minRef.current);
-        }
-      },
-    }),
-  ).current;
-
-  return { height, pan };
-}
-
-function UserDot() {
-  const pulse = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.loop(
-      Animated.timing(pulse, { toValue: 1, duration: 2400, useNativeDriver: true }),
-    ).start();
-  }, [pulse]);
-  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 2.6] });
-  const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 0] });
-  return (
-    <View style={s.dotWrap}>
-      <Animated.View style={[s.dotRing, { transform: [{ scale }], opacity }]} />
-      <View style={s.dot} />
-    </View>
-  );
-}
-
-/** Punto GPS sutil (anillo) cuando el puesto deseado está aparte. */
-function HereDot() {
-  return (
-    <View style={s.hereDotWrap}>
-      <View style={s.hereDot} />
-    </View>
-  );
-}
-
-/**
- * Brújula de observación: la aguja apunta al azimut del sol en el máximo.
- * Con sensor, gira respecto al rumbo del móvil — cuando miras bien, la aguja queda arriba.
- * Sin sensor (emulador): muestra el rumbo cardenal fijo (arriba = N del diagrama).
- */
-function CompassChip({ targetAzimuthDeg }: { targetAzimuthDeg: number }) {
-  const [heading, setHeading] = useState<number | null>(null);
-  const target = ((targetAzimuthDeg % 360) + 360) % 360;
-  const label = bearingLabel(target);
-
-  useEffect(() => {
-    let sub: Location.LocationSubscription | null = null;
-    let cancelled = false;
-    void (async () => {
-      try {
-        sub = await Location.watchHeadingAsync((h) => {
-          const deg = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
-          if (!cancelled && Number.isFinite(deg)) setHeading(((deg % 360) + 360) % 360);
-        });
-      } catch {
-        // sin brújula disponible
-      }
-    })();
-    return () => {
-      cancelled = true;
-      sub?.remove();
-    };
-  }, []);
-
-  // Con sensor: ángulo relativo (0° = ya miras al sol). Sin sensor: rumbo sobre el diagrama (N arriba).
-  const rotateDeg = heading !== null ? target - heading : target;
-
-  return (
-    <View
-      style={s.compass}
-      accessibilityLabel={
-        heading === null
-          ? `Sol en el máximo hacia el ${label}`
-          : `Gira hasta que la aguja apunte arriba. Sol hacia el ${label}`
-      }
-    >
-      <View style={[s.needleWrap, { transform: [{ rotate: `${rotateDeg}deg` }] }]}>
-        <Svg width={13} height={15} viewBox="0 0 12 14" fill={C.corona}>
-          <Path d="M6 0 L11 13 L6 10.4 L1 13 Z" />
-        </Svg>
-        <Text style={s.needleN}>{label}</Text>
-      </View>
-    </View>
-  );
-}
-
-/** Píldora «TOTAL a X km al N» con flecha orientada al rumbo real. */
-function TotalPill({ distanceKm, bearingDeg }: { distanceKm: number; bearingDeg: number }) {
-  return (
-    <View style={s.totalPill}>
-      <View style={{ transform: [{ rotate: `${bearingDeg}deg` }] }}>
-        <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={C.violet} strokeWidth={2.5}>
-          <Path d="M12 19V5M6 11l6-6 6 6" />
-        </Svg>
-      </View>
-      <Text style={s.totalPillText}>
-        <Text style={{ color: C.violet, fontFamily: F.bold }}>TOTAL</Text> a{' '}
-        <Text style={{ color: C.corona }}>{distanceKm} km</Text> al {bearingLabel(bearingDeg)}
-      </Text>
-    </View>
-  );
-}
-
-/** Altura del sol a escala: observador, horizonte y ángulo real. */
-function HorizonDiagram({ altitudeDeg, azimuthDeg }: { altitudeDeg: number; azimuthDeg: number }) {
-  const rad = (altitudeDeg * Math.PI) / 180;
-  const sin = Math.sin(rad);
-  const cos = Math.cos(rad);
-  const ox = 46;
-  const oy = 84;
-  // Radio limitado para que el sol no se salga del lienzo con alturas grandes
-  const r = Math.min(205, sin > 0.05 ? (oy - 16) / sin : 205, cos > 0.05 ? (300 - 24 - ox) / cos : 205);
-  const sx = ox + r * cos;
-  const sy = oy - r * sin;
-  const altTxt = altitudeDeg.toFixed(1).replace('.', ',');
-  // Referencia a ojo: un puño con el brazo estirado cubre ~10°
-  const fistTxt =
-    altitudeDeg < 7.5
-      ? 'menos de un puño'
-      : altitudeDeg < 12.5
-        ? 'aproximadamente un puño'
-        : `unos ${(altitudeDeg / 10).toFixed(1).replace('.', ',')} puños`;
-  // Recorta el cielo vacío por encima del sol: menos margen con el título
-  const minY = Math.max(0, Math.floor(sy) - 24);
-  return (
-    <View accessibilityLabel={`Sol a ${altTxt}° sobre el horizonte ${bearingLabel(azimuthDeg)}`}>
-      <Svg width="100%" height={110 - minY} viewBox={`0 ${minY} 300 ${110 - minY}`}>
-        <Rect x={0} y={oy} width={300} height={110 - oy} fill="#101019" />
-        {/* Skyline: edificios y árbol para dar escala al horizonte */}
-        <Path
-          d={`M150 ${oy} v-10 h9 v10 Z M166 ${oy} v-7 h7 v7 Z M204 ${oy} v-13 h10 v13 Z M218 ${oy} v-9 h8 v9 Z`}
-          fill="#1D1D2C"
-        />
-        <Circle cx={190} cy={oy - 8} r={5} fill="#1D1D2C" />
-        <Rect x={189} y={oy - 5} width={2} height={5} fill="#1D1D2C" />
-        <Path d={`M0 ${oy} H300`} stroke="#2A2A3C" strokeWidth={1.5} />
-        {/* Cuña sombreada: hace tangible el ángulo real */}
-        <Path
-          d={`M${ox} ${oy} L${sx} ${sy} A${r} ${r} 0 0 1 ${ox + r} ${oy} Z`}
-          fill="rgba(255,184,77,0.08)"
-        />
-        <Path
-          d={`M${ox} ${oy} L${sx} ${sy}`}
-          stroke="rgba(255,184,77,0.5)"
-          strokeWidth={1.5}
-          strokeDasharray="4 4"
-        />
-        <Path
-          d={`M${ox + 40} ${oy} A40 40 0 0 0 ${(ox + 40 * cos).toFixed(1)} ${(oy - 40 * sin).toFixed(1)}`}
-          stroke={C.corona}
-          strokeWidth={1.5}
-          fill="none"
-        />
-        <SvgText x={ox + 50} y={oy - 8} fill={C.corona} fontSize={11} fontWeight="600">
-          {altTxt}°
-        </SvgText>
-        <Circle cx={sx} cy={sy} r={9} fill={C.corona} />
-        <Circle cx={ox} cy={oy} r={4} fill={C.text} />
-        <SvgText x={296} y={oy + 16} fill={C.dim} fontSize={9} textAnchor="end" letterSpacing={1}>
-          HORIZONTE {bearingLabel(azimuthDeg)}
-        </SvgText>
-      </Svg>
-      <Text style={s.horizonNote}>
-        A ojo: {fistTxt} con el brazo estirado sobre el horizonte (un puño ≈ 10°).
-        {altitudeDeg < 12 ? ` Busca horizonte ${bearingLabel(azimuthDeg)} totalmente despejado.` : ''}
-      </Text>
-    </View>
-  );
-}
-
-/** Barrido ambiental de la umbra a lo largo de la banda (O→E, como el 12-ago). */
-function UmbraSweep() {
-  const x = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(x, { toValue: 1, duration: 9000, easing: Easing.linear, useNativeDriver: true }),
-        Animated.timing(x, { toValue: 0, duration: 0, useNativeDriver: true }),
-        Animated.delay(2200),
-      ]),
-    ).start();
-  }, [x]);
-  const translateX = x.interpolate({ inputRange: [0, 1], outputRange: [-160, 760] });
-  return (
-    <Animated.View pointerEvents="none" style={[s.umbra, { transform: [{ translateX }] }]}>
-      <Svg width={140} height={140}>
-        <Defs>
-          <RadialGradient id="umbraGlow" cx="50%" cy="50%" r="50%">
-            <Stop offset="0%" stopColor="#000" stopOpacity={0.55} />
-            <Stop offset="55%" stopColor="#000" stopOpacity={0.28} />
-            <Stop offset="100%" stopColor="#000" stopOpacity={0} />
-          </RadialGradient>
-        </Defs>
-        <Rect x={0} y={0} width={140} height={140} fill="url(#umbraGlow)" />
-      </Svg>
-    </Animated.View>
-  );
 }
 
 export function MapScreen({
@@ -785,18 +538,6 @@ const s = StyleSheet.create({
     bottom: 28,
     alignItems: 'center',
   },
-  totalPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(21,21,30,0.92)',
-    borderWidth: 1,
-    borderColor: 'rgba(124,108,255,0.55)',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  totalPillText: { fontFamily: F.semibold, fontSize: 11, color: C.text },
   guideKmText: {
     fontFamily: F.semibold,
     fontSize: 11,
@@ -815,15 +556,6 @@ const s = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 2,
     color: 'rgba(124,108,255,0.6)',
-  },
-  umbra: { position: 'absolute', top: '50%', marginTop: -70, left: 0, width: 140, height: 140 },
-  horizonNote: {
-    fontFamily: F.regular,
-    fontSize: 11,
-    lineHeight: 16,
-    color: C.dim,
-    marginTop: 2,
-    marginBottom: 14,
   },
   viewToggle: {
     width: 36,
@@ -850,34 +582,6 @@ const s = StyleSheet.create({
   /** Lado a lado cuando las Y casi coinciden */
   hereArea: { transform: [{ translateX: -52 }] },
   spotArea: { transform: [{ translateX: 52 }] },
-  dotWrap: { width: 14, height: 14, alignItems: 'center', justifyContent: 'center' },
-  dotRing: {
-    position: 'absolute',
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    borderWidth: 2,
-    borderColor: C.text,
-  },
-  dot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: C.text,
-    shadowColor: C.text,
-    shadowOpacity: 0.8,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  hereDotWrap: { width: 14, height: 14, alignItems: 'center', justifyContent: 'center' },
-  hereDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: C.corona,
-    backgroundColor: 'rgba(21,21,30,0.65)',
-  },
   userLabel: {
     fontFamily: F.medium,
     fontSize: 11,
@@ -943,20 +647,6 @@ const s = StyleSheet.create({
     color: C.corona,
     paddingBottom: 4,
   },
-  compass: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(21,21,30,0.85)',
-    borderWidth: 1,
-    borderColor: C.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  /** Aguja + rumbo: la punta señala hacia dónde mirar el sol en el máximo */
-  needleWrap: { alignItems: 'center', justifyContent: 'center' },
-  needleN: { fontFamily: F.bold, fontSize: 11, lineHeight: 12, color: C.text, marginTop: 1 },
   sheet: {
     position: 'absolute',
     left: 0,
