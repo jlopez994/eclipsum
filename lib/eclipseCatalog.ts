@@ -135,9 +135,15 @@ export function setRemoteCatalog(json: string): void {
   if (userSelectedDay) userSelected = resolveByDay(userSelectedDay);
 }
 
-/** Catálogo completo: empaquetado + RC (sin duplicar ids), ordenado por fecha para el rollover. */
+/**
+ * Catálogo completo: empaquetado + RC, ordenado por fecha para el rollover.
+ * Dedupe por id Y por día civil: genEclipse puede publicar el mismo eclipse con
+ * id autogenerado («2026-08-12-total» vs «2026-08-12-iberia») — gana la empaquetada.
+ */
 function allEclipses(): EclipseEntry[] {
-  const extras = remoteEntries.filter((r) => !ECLIPSES.some((e) => e.id === r.id));
+  const extras = remoteEntries.filter(
+    (r) => !ECLIPSES.some((e) => e.id === r.id || e.civilDate === r.civilDate),
+  );
   return [...ECLIPSES, ...extras].sort((a, b) => a.civilDate.localeCompare(b.civilDate));
 }
 
