@@ -37,14 +37,14 @@
     },
     "latest_version_code": {
       "defaultValue": {
-        "value": "19"
+        "value": "20"
       },
       "description": "android.versionCode de la última APK publicada. La app avisa si el suyo es menor. 0 = sin aviso.",
       "valueType": "STRING"
     },
     "latest_apk_url": {
       "defaultValue": {
-        "value": "https://cdn.jlh.app/eclipsum/eclipsum-beta.apk"
+        "value": "https://cdn.jlh.app/eclipsum/eclipsum.apk"
       },
       "description": "URL pública de la APK latest (CDN sobre el DAS). Vacío = sin aviso aunque haya versionCode nuevo.",
       "valueType": "STRING"
