@@ -120,17 +120,18 @@ async function main() {
   assert.equal(getEclipseById('2027-08-02-egipto'), undefined, 'Reset del catálogo remoto');
 
   // Simulacro: tramos configurados y geometría copiada del eclipse real
-  const drillE = buildDrillEclipse(zgz, new Date('2026-08-10T15:00:00Z'), { partialMin: 15, totalitySec: 120 });
+  const drillE = buildDrillEclipse(zgz, new Date('2026-08-10T15:00:00Z'), { partialSec: 90, totalitySec: 120 });
   const dt = (a: number, b: number) => (drillE.events[b].time.getTime() - drillE.events[a].time.getTime()) / 1000;
   assert.equal(drillE.kind, 'total', 'Drill: siempre total');
-  assert.equal(dt(0, 1), 900, 'Drill: C1→C2 = 15 min');
+  assert.equal(dt(0, 1), 90, 'Drill: C1→C2 = 90 s');
   assert.equal(dt(1, 3), 120, 'Drill: totalidad = 120 s');
-  assert.equal(dt(3, 4), 900, 'Drill: C3→C4 = 15 min');
+  assert.equal(dt(3, 4), 90, 'Drill: C3→C4 = 90 s');
   assert.equal(drillE.events[2].azimuth, zgz.events.find((e) => e.key === 'MAX')!.azimuth, 'Drill: azimut del MAX real');
-  assert.deepEqual(clampDrill({ partialMin: 999, totalitySec: 1 }), { partialMin: 5, totalitySec: 45 }, 'Drill: clamp a rangos');
+  assert.deepEqual(clampDrill({ partialSec: 99_999, totalitySec: 1 }), { partialSec: 300, totalitySec: 45 }, 'Drill: clamp a rangos');
   assert.deepEqual(clampDrill(undefined), DEFAULT_DRILL, 'Drill: defaults si no hay config');
   assert.deepEqual(clampDrill({ partialMin: 15, totalitySec: 120 }), DEFAULT_DRILL, 'Drill: migra defaults de beta.7');
-  assert.deepEqual(clampDrill({ partialMin: 4, totalitySec: 90 }), { partialMin: 4, totalitySec: 90 }, 'Drill: config elegida se respeta');
+  assert.deepEqual(clampDrill({ partialMin: 2, totalitySec: 90 }), { partialSec: 120, totalitySec: 90 }, 'Drill: migra minutos de betas previas');
+  assert.deepEqual(clampDrill({ partialSec: 90, totalitySec: 90 }), { partialSec: 90, totalitySec: 90 }, 'Drill: config elegida se respeta');
 
   // Catálogo agotado → la app genera sola el siguiente eclipse global con el motor
   const auto = getActiveEclipse(new Date('2030-01-01T00:00:00Z'));

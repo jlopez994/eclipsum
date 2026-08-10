@@ -61,7 +61,7 @@ export function SettingsScreen({
   const [drillMsg, setDrillMsg] = useState<string | null>(null);
 
   const step = (key: keyof DrillConfig, dir: 1 | -1) => {
-    const range = key === 'partialMin' ? DRILL_PARTIAL : DRILL_TOTALITY;
+    const range = key === 'partialSec' ? DRILL_PARTIAL : DRILL_TOTALITY;
     const next = Math.min(range.max, Math.max(range.min, drill[key] + dir * range.step));
     onDrillChange({ ...drill, [key]: next });
   };
@@ -174,11 +174,11 @@ export function SettingsScreen({
             <View style={[s.rowItem, s.rowDivider]}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={s.rowTitle}>Parcial (C1→C2)</Text>
-                <Text style={s.soundHint}>{drill.partialMin} min por tramo</Text>
+                <Text style={s.soundHint}>{fmtTotality(drill.partialSec)} por tramo</Text>
               </View>
               <Stepper
-                onLess={() => step('partialMin', -1)}
-                onMore={() => step('partialMin', 1)}
+                onLess={() => step('partialSec', -1)}
+                onMore={() => step('partialSec', 1)}
                 a11y="parcial del simulacro"
               />
             </View>

@@ -6,35 +6,38 @@
 import type { EclipseEvent, LocalEclipse } from './eclipse';
 
 export interface DrillConfig {
-  /** Duración de cada parcial (C1→C2 y C3→C4), en minutos */
-  partialMin: number;
+  /** Duración de cada parcial (C1→C2 y C3→C4), en segundos */
+  partialSec: number;
   /** Duración de la totalidad (C2→C3), en segundos */
   totalitySec: number;
 }
 
-/** Simulacro ágil: serie completa en ~5 min. */
-export const DEFAULT_DRILL: DrillConfig = { partialMin: 2, totalitySec: 60 };
-/** Defaults de la beta.7: si siguen guardados tal cual, se migran a los nuevos. */
+/** Simulacro ágil: serie completa en ~3 min. */
+export const DEFAULT_DRILL: DrillConfig = { partialSec: 60, totalitySec: 60 };
+/** Defaults de la beta.7 (en minutos): si siguen guardados tal cual, se migran a los nuevos. */
 const LEGACY_DEFAULT = { partialMin: 15, totalitySec: 120 };
 
-// Rangos cortos a propósito: el simulacro es un ensayo, no una recreación
-export const DRILL_PARTIAL = { min: 1, max: 5, step: 1 };
-// Mínimo 45 s: con antelación de 15 s, menos totalidad haría sonar el aviso de fin antes que el Máximo
+// Límites de los cálculos: parcial > 15 s (el aviso de C2 con antelación debe caer tras C1)
+// y totalidad > 30 s (el Máximo debe sonar antes que el aviso de fin). 30/45 s dan margen.
+export const DRILL_PARTIAL = { min: 30, max: 300, step: 30 };
 export const DRILL_TOTALITY = { min: 45, max: 120, step: 15 };
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 
-/** Valida config cargada de prefs (o parcial/ausente) contra los rangos. */
+/** Valida config cargada de prefs contra los rangos; migra el campo en minutos de betas ≤12. */
 export function clampDrill(raw: unknown): DrillConfig {
-  const src = (raw ?? {}) as Partial<DrillConfig>;
+  const src = (raw ?? {}) as Partial<DrillConfig> & { partialMin?: number };
   if (src.partialMin === LEGACY_DEFAULT.partialMin && src.totalitySec === LEGACY_DEFAULT.totalitySec) {
     return { ...DEFAULT_DRILL };
   }
+  const partialSec =
+    typeof src.partialSec === 'number'
+      ? src.partialSec
+      : typeof src.partialMin === 'number'
+        ? src.partialMin * 60
+        : DEFAULT_DRILL.partialSec;
   return {
-    partialMin:
-      typeof src.partialMin === 'number'
-        ? clamp(Math.round(src.partialMin), DRILL_PARTIAL.min, DRILL_PARTIAL.max)
-        : DEFAULT_DRILL.partialMin,
+    partialSec: clamp(Math.round(partialSec), DRILL_PARTIAL.min, DRILL_PARTIAL.max),
     totalitySec:
       typeof src.totalitySec === 'number'
         ? clamp(Math.round(src.totalitySec), DRILL_TOTALITY.min, DRILL_TOTALITY.max)
@@ -52,7 +55,7 @@ export function buildDrillEclipse(template: LocalEclipse, c1At: Date, cfg: Drill
     return e ? { altitude: e.altitude, azimuth: e.azimuth } : { altitude: 30, azimuth: 270 };
   };
   const t0 = c1At.getTime();
-  const partial = cfg.partialMin * 60_000;
+  const partial = cfg.partialSec * 1000;
   const totality = cfg.totalitySec * 1000;
   const mk = (key: EclipseEvent['key'], label: string, time: number): EclipseEvent => ({
     key,
