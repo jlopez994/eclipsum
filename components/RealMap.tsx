@@ -80,8 +80,7 @@ export function RealMap({ spot, here, onSelectPoint }: RealMapProps) {
   const [ready, setReady] = useState(false);
   // HTML congelado al montar: los cambios de puesto se inyectan (flyTo) sin recargar el mapa
   const [html] = useState(() => {
-    const active = getActiveEclipse();
-    return buildHtml(spot, here, active.bandTooltip, bandForEclipse(active.id));
+    return buildHtml(spot, here, bandForEclipse(getActiveEclipse().id));
   });
 
   useEffect(() => {
@@ -120,25 +119,21 @@ export function RealMap({ spot, here, onSelectPoint }: RealMapProps) {
   );
 }
 
-function buildHtml(
-  spot: MapPoint,
-  here: MapPoint | null,
-  bandTooltip: string,
-  band: BandSlice[] | null,
-): string {
+function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | null): string {
   // Eclipse sin banda empaquetada (p. ej. añadido por Remote Config): solo marcadores
   const north = band?.map((b) => [b.latN, b.lon]) ?? [];
   const south = band ? [...band].reverse().map((b) => [b.latS, b.lon]) : [];
   const center = band?.map((b) => [(b.latN + b.latS) / 2, b.lon]) ?? null;
   const polygon = band ? [...north, ...south] : null;
-  const data = JSON.stringify({ polygon, north, south, center, spot, here, bandTooltip });
+  const data = JSON.stringify({ polygon, north, south, center, spot, here });
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <style>${LEAFLET_CSS}</style>
 <script>${LEAFLET_JS}</script>
 <style>
-  html, body, #map { margin: 0; height: 100%; background: ${C.bg}; }
+  html, body, #map { margin: 0; height: 100%; background: ${C.bg}; -webkit-tap-highlight-color: transparent; }
+  .leaflet-container path, .leaflet-interactive { outline: none; }
   .lbl { background: rgba(11,11,18,0.85); color: ${C.text}; border: 1px solid ${C.border};
          border-radius: 6px; padding: 2px 7px; font: 600 11px system-ui; white-space: nowrap; }
   .leaflet-tooltip-top:before { display: none; }
@@ -164,17 +159,18 @@ function buildHtml(
   }).addTo(map);
 
   if (D.polygon) {
-    // Relleno tenue sin borde: los cierres verticales del polígono son artefactos del dataset
+    // Marca fija y tenue, sin interacción: el tap pasa limpio al mapa (popup)
+    // y el WebView no pinta el focus ring sobre el SVG de la banda.
     L.polygon(D.polygon, {
-      stroke: false, fillColor: '${C.totality}', fillOpacity: 0.1,
-    }).addTo(map).bindTooltip(D.bandTooltip, { sticky: true, className: 'lbl' });
+      interactive: false, stroke: false, fillColor: '${C.totality}', fillOpacity: 0.06,
+    }).addTo(map);
 
-    // Límites reales de la banda: líneas finas y suaves
-    L.polyline(D.north, { color: '${C.totality}', weight: 1, opacity: 0.5 }).addTo(map);
-    L.polyline(D.south, { color: '${C.totality}', weight: 1, opacity: 0.5 }).addTo(map);
+    // Límites reales de la banda (los cierres verticales del polígono son artefactos del dataset)
+    L.polyline(D.north, { interactive: false, color: '${C.totality}', weight: 1, opacity: 0.3 }).addTo(map);
+    L.polyline(D.south, { interactive: false, color: '${C.totality}', weight: 1, opacity: 0.3 }).addTo(map);
 
-    L.polyline(D.center, { color: '${C.corona}', weight: 2, dashArray: '6 6', opacity: 0.9 })
-      .addTo(map).bindTooltip('Centro: máxima duración', { sticky: true, className: 'lbl' });
+    L.polyline(D.center, { interactive: false, color: '${C.corona}', weight: 1.5, dashArray: '6 6', opacity: 0.45 })
+      .addTo(map);
   }
 
   var ptLayer = L.layerGroup().addTo(map);
@@ -183,7 +179,7 @@ function buildHtml(
     var pts = [];
     function dot(p, fill) {
       var m = L.circleMarker([p.lat, p.lon], {
-        radius: 8, color: '${C.corona}', weight: 2.5,
+        interactive: false, radius: 8, color: '${C.corona}', weight: 2.5,
         fillColor: fill ? '${C.text}' : 'transparent', fillOpacity: fill ? 1 : 0,
       }).addTo(ptLayer);
       m.bindTooltip(p.label, { permanent: true, direction: 'top', offset: [0, -10], className: 'lbl' });
