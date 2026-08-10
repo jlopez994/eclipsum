@@ -205,12 +205,17 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
       JSON.stringify({ type: 'tap', lat: e.latlng.lat, lon: e.latlng.lng })
     );
   });
+  // Autocierre del popup si no se pulsa nada; cada tap nuevo reinicia el temporizador
+  var POPUP_HIDE_MS = 6000;
+  var popupTimer = null;
   window.eclipsumShowInfo = function (i) {
     var h = '<div class="pop-title" style="color:' + i.color + '">' + i.title + '</div>';
     for (var k = 0; k < i.lines.length; k++) h += '<div class="pop-line">' + i.lines[k] + '</div>';
     if (i.warn) h += '<div class="pop-warn">' + i.warn + '</div>';
     if (i.canSelect) h += '<div class="pop-btn" onclick="window.eclipsumPick(' + i.lat + ',' + i.lon + ')">OBSERVAR AQUÍ →</div>';
     L.popup({ closeButton: false }).setLatLng([i.lat, i.lon]).setContent(h).openOn(map);
+    clearTimeout(popupTimer);
+    popupTimer = setTimeout(function () { map.closePopup(); }, POPUP_HIDE_MS);
   };
   window.eclipsumPick = function (lat, lon) {
     map.closePopup();
