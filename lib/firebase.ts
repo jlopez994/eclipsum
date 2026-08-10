@@ -2,8 +2,9 @@ import { getAnalytics, logEvent } from '@react-native-firebase/analytics';
 import { fetchAndActivate, getRemoteConfig, getString } from '@react-native-firebase/remote-config';
 import { setRemoteActiveEclipseId, setRemoteCatalog } from './eclipseCatalog';
 
-// Dev sin caché para probar banners al momento; release respeta 12 h
-const FETCH_INTERVAL_MS = __DEV__ ? 0 : 12 * 3_600_000;
+// Dev sin caché para probar banners al momento; release 1 h: los avisos de
+// actualización se ven el mismo día y sigue lejos del throttling de RC
+const FETCH_INTERVAL_MS = __DEV__ ? 0 : 3_600_000;
 
 export interface RemoteExtras {
   /** Banner superior; vacío = oculto */

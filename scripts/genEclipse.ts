@@ -11,13 +11,8 @@
  * El pico (lat/lon) que imprime sirve para centrar --lon-from/--lon-to de genBand.ts.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import {
-  EclipseKind,
-  NextGlobalSolarEclipse,
-  SearchGlobalSolarEclipse,
-  type GlobalSolarEclipseInfo,
-} from 'astronomy-engine';
-import { ECLIPSES, parseRemoteCatalog, type EclipseEntry } from '../lib/eclipseCatalog';
+import { EclipseKind, NextGlobalSolarEclipse, SearchGlobalSolarEclipse } from 'astronomy-engine';
+import { ECLIPSES, entryFromGlobalEclipse, parseRemoteCatalog, type EclipseEntry } from '../lib/eclipseCatalog';
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -28,39 +23,6 @@ const FROM = new Date(arg('--from') ?? Date.now());
 const COUNT = Number(arg('--count') ?? 5);
 const KIND = arg('--kind') ?? 'all'; // total | annular | partial | all
 const WRITE = process.argv.includes('--write');
-
-const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-const KIND_LABEL: Record<string, string> = { total: 'Total', annular: 'Anular', partial: 'Parcial' };
-const BAND_WORD: Record<string, string> = { total: 'totalidad', annular: 'anularidad' };
-
-const DAY_MS = 86_400_000;
-const HOUR_MS = 3_600_000;
-/** Margen del ancla searchStart: SearchLocalSolarEclipse busca el primer eclipse local tras ella. */
-const SEARCH_START_DAYS_BEFORE = 15;
-
-function entryFor(ev: GlobalSolarEclipseInfo): EclipseEntry {
-  const peak = ev.peak.date;
-  const kind = ev.kind as string;
-  const civilDate = peak.toISOString().slice(0, 10);
-  const d = peak.getUTCDate();
-  const mes = MES[peak.getUTCMonth()];
-  const year = peak.getUTCFullYear();
-  const fecha = `${d} ${mes} ${year}`;
-  const fechaMayus = `${d} ${mes.toUpperCase()} ${year}`;
-  const word = BAND_WORD[kind];
-  return {
-    id: `${civilDate}-${kind}`,
-    searchStart: `${new Date(peak.getTime() - SEARCH_START_DAYS_BEFORE * DAY_MS).toISOString().slice(0, 10)}T00:00:00Z`,
-    civilDate,
-    label: `${KIND_LABEL[kind]} · ${fecha}`,
-    bandLabel: word ? `BANDA DE ${word.toUpperCase()} · ${fechaMayus}` : `ECLIPSE PARCIAL · ${fechaMayus}`,
-    bandTooltip: word ? `Banda de ${word} · ${fecha}` : `Eclipse parcial · ${fecha}`,
-    shortDateLabel: `${d} ${mes.toUpperCase()}`,
-    windyFallbackMax: new Date(Math.round(peak.getTime() / HOUR_MS) * HOUR_MS)
-      .toISOString()
-      .replace('.000Z', 'Z'),
-  };
-}
 
 const entries: EclipseEntry[] = [];
 let ev = SearchGlobalSolarEclipse(FROM);
@@ -73,7 +35,7 @@ while (entries.length < COUNT) {
         : '';
     const obs = ev.obscuration !== undefined ? ` · obscuración ${ev.obscuration.toFixed(2)}` : '';
     console.log(`— ${ev.peak.date.toISOString().slice(0, 16)}Z ${kind}${pico}${obs}`);
-    entries.push(entryFor(ev));
+    entries.push(entryFromGlobalEclipse(ev));
   }
   ev = NextGlobalSolarEclipse(ev.peak);
 }

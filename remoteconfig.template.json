@@ -16,7 +16,7 @@
     },
     "eclipse_catalog": {
       "defaultValue": {
-        "value": "[]"
+        "value": "[{\"id\":\"2027-02-06-annular\",\"searchStart\":\"2027-01-22T00:00:00Z\",\"civilDate\":\"2027-02-06\",\"label\":\"Anular · 6 feb 2027\",\"bandLabel\":\"BANDA DE ANULARIDAD · 6 FEB 2027\",\"bandTooltip\":\"Banda de anularidad · 6 feb 2027\",\"shortDateLabel\":\"6 FEB\",\"windyFallbackMax\":\"2027-02-06T16:00:00Z\"},{\"id\":\"2027-08-02-total\",\"searchStart\":\"2027-07-18T00:00:00Z\",\"civilDate\":\"2027-08-02\",\"label\":\"Total · 2 ago 2027\",\"bandLabel\":\"BANDA DE TOTALIDAD · 2 AGO 2027\",\"bandTooltip\":\"Banda de totalidad · 2 ago 2027\",\"shortDateLabel\":\"2 AGO\",\"windyFallbackMax\":\"2027-08-02T10:00:00Z\"},{\"id\":\"2028-01-26-annular\",\"searchStart\":\"2028-01-11T00:00:00Z\",\"civilDate\":\"2028-01-26\",\"label\":\"Anular · 26 ene 2028\",\"bandLabel\":\"BANDA DE ANULARIDAD · 26 ENE 2028\",\"bandTooltip\":\"Banda de anularidad · 26 ene 2028\",\"shortDateLabel\":\"26 ENE\",\"windyFallbackMax\":\"2028-01-26T15:00:00Z\"},{\"id\":\"2028-07-22-total\",\"searchStart\":\"2028-07-07T00:00:00Z\",\"civilDate\":\"2028-07-22\",\"label\":\"Total · 22 jul 2028\",\"bandLabel\":\"BANDA DE TOTALIDAD · 22 JUL 2028\",\"bandTooltip\":\"Banda de totalidad · 22 jul 2028\",\"shortDateLabel\":\"22 JUL\",\"windyFallbackMax\":\"2028-07-22T03:00:00Z\"}]"
       },
       "description": "JSON array de eclipses extra sin release. Campos por entrada: id, searchStart (ISO), civilDate (YYYY-MM-DD), label, bandLabel, bandTooltip, shortDateLabel, windyFallbackMax (ISO). Entradas inválidas se ignoran.",
       "valueType": "STRING"

@@ -3,6 +3,7 @@
  * Los horarios locales salen de astronomy-engine con `searchStart`;
  * banda, ciudades, nubes y copy usan el resto de campos.
  */
+import { SearchGlobalSolarEclipse, type GlobalSolarEclipseInfo } from 'astronomy-engine';
 
 export interface EclipseEntry {
   id: string;
@@ -97,9 +98,51 @@ function eclipseEndMs(entry: EclipseEntry): number {
   return new Date(`${entry.civilDate}T23:59:59Z`).getTime() + 6 * 3_600_000;
 }
 
+const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const KIND_LABEL: Record<string, string> = { total: 'Total', annular: 'Anular', partial: 'Parcial' };
+const BAND_WORD: Record<string, string> = { total: 'totalidad', annular: 'anularidad' };
+const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
+/** Margen del ancla searchStart: SearchLocalSolarEclipse busca el primer eclipse local tras ella. */
+const SEARCH_START_DAYS_BEFORE = 15;
+
+/** Entrada de catálogo derivada de un eclipse global del motor (labels en español). */
+export function entryFromGlobalEclipse(ev: GlobalSolarEclipseInfo): EclipseEntry {
+  const peak = ev.peak.date;
+  const kind = ev.kind as string;
+  const civilDate = peak.toISOString().slice(0, 10);
+  const d = peak.getUTCDate();
+  const mes = MES[peak.getUTCMonth()];
+  const year = peak.getUTCFullYear();
+  const fecha = `${d} ${mes} ${year}`;
+  const fechaMayus = `${d} ${mes.toUpperCase()} ${year}`;
+  const word = BAND_WORD[kind];
+  return {
+    id: `${civilDate}-${kind}`,
+    searchStart: `${new Date(peak.getTime() - SEARCH_START_DAYS_BEFORE * DAY_MS).toISOString().slice(0, 10)}T00:00:00Z`,
+    civilDate,
+    label: `${KIND_LABEL[kind] ?? kind} · ${fecha}`,
+    bandLabel: word ? `BANDA DE ${word.toUpperCase()} · ${fechaMayus}` : `ECLIPSE PARCIAL · ${fechaMayus}`,
+    bandTooltip: word ? `Banda de ${word} · ${fecha}` : `Eclipse parcial · ${fecha}`,
+    shortDateLabel: `${d} ${mes.toUpperCase()}`,
+    windyFallbackMax: new Date(Math.round(peak.getTime() / HOUR_MS) * HOUR_MS)
+      .toISOString()
+      .replace('.000Z', 'Z'),
+  };
+}
+
+/** Catálogo agotado: la app genera sola el siguiente eclipse global (vive sin releases ni RC). */
+let autoEntry: EclipseEntry | null = null;
+function nextAutoEclipse(now: Date): EclipseEntry {
+  if (!autoEntry || eclipseEndMs(autoEntry) < now.getTime()) {
+    autoEntry = entryFromGlobalEclipse(SearchGlobalSolarEclipse(now));
+  }
+  return autoEntry;
+}
+
 /**
  * Eclipse activo: RC si el id existe en catálogo; si no, el primero no pasado;
- * si todos pasaron, el último del catálogo.
+ * si todos pasaron, el siguiente eclipse global autogenerado con el motor.
  */
 export function getActiveEclipse(now: Date = new Date()): EclipseEntry {
   if (remoteActiveId) {
@@ -109,7 +152,12 @@ export function getActiveEclipse(now: Date = new Date()): EclipseEntry {
   const all = allEclipses();
   const t = now.getTime();
   const upcoming = all.find((e) => eclipseEndMs(e) >= t);
-  return upcoming ?? all[all.length - 1];
+  if (upcoming) return upcoming;
+  try {
+    return nextAutoEclipse(now);
+  } catch {
+    return all[all.length - 1]; // motor fallando: último conocido antes que crash
+  }
 }
 
 export function activeSearchStart(now?: Date): Date {

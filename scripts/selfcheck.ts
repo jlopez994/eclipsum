@@ -118,6 +118,12 @@ async function main() {
   setRemoteCatalog('[]');
   assert.equal(getEclipseById('2027-08-02-egipto'), undefined, 'Reset del catálogo remoto');
 
+  // Catálogo agotado → la app genera sola el siguiente eclipse global con el motor
+  const auto = getActiveEclipse(new Date('2030-01-01T00:00:00Z'));
+  assert.equal(auto.civilDate, '2030-06-01', 'Auto: tras 2030-01-01 toca el anular del 1 jun 2030');
+  assert.equal(auto.id, '2030-06-01-annular', 'Auto: id derivado de fecha y tipo');
+  assert.equal(parseRemoteCatalog(JSON.stringify([auto])).length, 1, 'Auto: la entrada pasa el validador de RC');
+
   console.log('selfcheck OK — Zaragoza total', zgz.totalityDurationSec + 's, máximo', max.time.toISOString());
   console.log(
     'Sevilla → totalidad a', dir!.distanceKm, 'km al', bearingLabel(dir!.bearingDeg),
