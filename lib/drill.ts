@@ -12,17 +12,22 @@ export interface DrillConfig {
   totalitySec: number;
 }
 
-/** Parcial corta pero con margen para prepararse; totalidad como la real (~2 min). */
-export const DEFAULT_DRILL: DrillConfig = { partialMin: 15, totalitySec: 120 };
+/** Simulacro breve: serie completa en ~7 min. */
+export const DEFAULT_DRILL: DrillConfig = { partialMin: 3, totalitySec: 60 };
+/** Defaults de la beta.7: si siguen guardados tal cual, se migran a los nuevos. */
+const LEGACY_DEFAULT = { partialMin: 15, totalitySec: 120 };
 
-export const DRILL_PARTIAL = { min: 5, max: 60, step: 5 };
-export const DRILL_TOTALITY = { min: 30, max: 300, step: 30 };
+export const DRILL_PARTIAL = { min: 1, max: 30, step: 1 };
+export const DRILL_TOTALITY = { min: 15, max: 300, step: 15 };
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 
 /** Valida config cargada de prefs (o parcial/ausente) contra los rangos. */
 export function clampDrill(raw: unknown): DrillConfig {
   const src = (raw ?? {}) as Partial<DrillConfig>;
+  if (src.partialMin === LEGACY_DEFAULT.partialMin && src.totalitySec === LEGACY_DEFAULT.totalitySec) {
+    return { ...DEFAULT_DRILL };
+  }
   return {
     partialMin:
       typeof src.partialMin === 'number'

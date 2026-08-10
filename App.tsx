@@ -125,10 +125,11 @@ function AppInner() {
   }, []);
 
   useEffect(() => {
-    const ms = demo || fineClock ? FINE_TICK_MS : COARSE_TICK_MS;
+    // Simulacro incluido: su ventana no coincide con la del eclipse real que vigila fineClock
+    const ms = demo || drill !== null || fineClock ? FINE_TICK_MS : COARSE_TICK_MS;
     const id = setInterval(() => setNow(new Date()), ms);
     return () => clearInterval(id);
-  }, [demo, fineClock]);
+  }, [demo, drill, fineClock]);
 
   // Sembrar puesto deseado con GPS si aún no hay ninguno guardado
   useEffect(() => {
