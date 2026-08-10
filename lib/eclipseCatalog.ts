@@ -1,9 +1,10 @@
 /**
- * Catálogo de eclipses empaquetados en la app.
+ * Catálogo de eclipses: entradas empaquetadas + Remote Config + autogeneradas con el motor.
  * Los horarios locales salen de astronomy-engine con `searchStart`;
  * banda, ciudades, nubes y copy usan el resto de campos.
  */
-import { SearchGlobalSolarEclipse, type GlobalSolarEclipseInfo } from 'astronomy-engine';
+import { NextGlobalSolarEclipse, SearchGlobalSolarEclipse, type GlobalSolarEclipseInfo } from 'astronomy-engine';
+import { bandForEclipse, type BandSlice } from './bandGeo';
 
 export interface EclipseEntry {
   id: string;
@@ -21,6 +22,16 @@ export interface EclipseEntry {
   shortDateLabel: string;
   /** Fallback ISO si aún no hay evento MAX calculado (Windy). */
   windyFallbackMax: string;
+  /** Lat/lon del pico global (solo entradas autogeneradas; orienta la lista de futuros). */
+  peakLat?: number;
+  peakLon?: number;
+  /** Banda de totalidad publicable por RC (~5 KB); ausente → se usa la empaquetada (bandGeo). */
+  band?: BandSlice[];
+}
+
+/** Banda del eclipse: la de su entrada (RC) o la empaquetada por id; null = sin polígono. */
+export function bandOf(e: EclipseEntry): BandSlice[] | null {
+  return e.band ?? bandForEclipse(e.id);
 }
 
 export const ECLIPSES: EclipseEntry[] = [
@@ -41,6 +52,30 @@ let remoteActiveId = '';
 
 export function setRemoteActiveEclipseId(id: string): void {
   remoteActiveId = id.trim();
+}
+
+/**
+ * Selección del usuario (prefs `selectedEclipseDay`); vacío = automático (el más próximo).
+ * La identidad persistida es el DÍA CIVIL, no el id: el mismo eclipse puede tener id de
+ * catálogo («2026-08-12-iberia») o autogenerado («2026-08-12-total») según de dónde salga.
+ */
+let userSelectedDay = '';
+let userSelected: EclipseEntry | null = null;
+
+function resolveByDay(day: string): EclipseEntry | null {
+  return (
+    allEclipses().find((e) => e.civilDate === day) ??
+    upcomingEclipses(UPCOMING_HORIZON).find((e) => e.civilDate === day) ??
+    null
+  );
+}
+
+/** Resuelve una vez por cambio real de selección; llamadas repetidas con el mismo día son no-op. */
+export function setUserSelectedEclipseDay(day: string): void {
+  const trimmed = day.trim();
+  if (trimmed === userSelectedDay) return;
+  userSelectedDay = trimmed;
+  userSelected = trimmed ? resolveByDay(trimmed) : null;
 }
 
 /** Entradas añadidas por Remote Config (`eclipse_catalog`); no requieren release. */
@@ -68,12 +103,25 @@ function isValidEntry(e: unknown): e is EclipseEntry {
   );
 }
 
+/** Banda válida = ≥2 cortes con lon/latS/latN numéricos; si no, se descarta solo la banda. */
+function sanitizeBand(raw: unknown): BandSlice[] | undefined {
+  if (!Array.isArray(raw) || raw.length < 2) return undefined;
+  const ok = raw.every(
+    (s): s is BandSlice =>
+      !!s &&
+      typeof (s as BandSlice).lon === 'number' &&
+      typeof (s as BandSlice).latS === 'number' &&
+      typeof (s as BandSlice).latN === 'number',
+  );
+  return ok ? raw.map((s) => ({ lon: s.lon, latS: s.latS, latN: s.latN })) : undefined;
+}
+
 /** Valida el JSON de RC; entradas malformadas se descartan en silencio (nunca rompe la app). */
 export function parseRemoteCatalog(json: string): EclipseEntry[] {
   try {
     const raw: unknown = JSON.parse(json);
     if (!Array.isArray(raw)) return [];
-    return raw.filter(isValidEntry).map((e) => ({ ...e }));
+    return raw.filter(isValidEntry).map((e) => ({ ...e, band: sanitizeBand((e as EclipseEntry).band) }));
   } catch {
     return [];
   }
@@ -81,6 +129,10 @@ export function parseRemoteCatalog(json: string): EclipseEntry[] {
 
 export function setRemoteCatalog(json: string): void {
   remoteEntries = parseRemoteCatalog(json);
+  catalogVersion++;
+  autoCache = null;
+  // El catálogo nuevo puede contener (o retirar) la selección del usuario
+  if (userSelectedDay) userSelected = resolveByDay(userSelectedDay);
 }
 
 /** Catálogo completo: empaquetado + RC (sin duplicar ids), ordenado por fecha para el rollover. */
@@ -128,36 +180,62 @@ export function entryFromGlobalEclipse(ev: GlobalSolarEclipseInfo): EclipseEntry
     windyFallbackMax: new Date(Math.round(peak.getTime() / HOUR_MS) * HOUR_MS)
       .toISOString()
       .replace('.000Z', 'Z'),
+    peakLat: ev.latitude,
+    peakLon: ev.longitude,
   };
 }
 
-/** Catálogo agotado: la app genera sola el siguiente eclipse global (vive sin releases ni RC). */
-let autoEntry: EclipseEntry | null = null;
-function nextAutoEclipse(now: Date): EclipseEntry {
-  if (!autoEntry || eclipseEndMs(autoEntry) < now.getTime()) {
-    autoEntry = entryFromGlobalEclipse(SearchGlobalSolarEclipse(now));
-  }
-  return autoEntry;
-}
+/** Horizonte de generación con el motor; también tope de `upcomingEclipses`. */
+const UPCOMING_HORIZON = 12;
+/** Se recalcula al cambiar de día civil o de catálogo RC (~12 pasos del motor, una vez). */
+let catalogVersion = 0;
+let upcomingCache: { key: string; list: EclipseEntry[] } | null = null;
 
 /**
- * Eclipse activo: RC si el id existe en catálogo; si no, el primero no pasado;
- * si todos pasaron, el siguiente eclipse global autogenerado con el motor.
+ * Próximos eclipses (máx. UPCOMING_HORIZON), catálogo ∪ motor, orden cronológico,
+ * dedupe por día civil (gana la entrada de catálogo). Es LA definición de «próximo»:
+ * la rama automática de getActiveEclipse usa upcomingEclipses(1).
+ * Nunca lanza: motor fallando → solo catálogo.
+ */
+export function upcomingEclipses(count: number, now: Date = new Date()): EclipseEntry[] {
+  const key = `${now.toISOString().slice(0, 10)}:${catalogVersion}`;
+  if (upcomingCache?.key !== key) {
+    const t = now.getTime();
+    const out = allEclipses().filter((e) => eclipseEndMs(e) >= t);
+    try {
+      let ev = SearchGlobalSolarEclipse(now);
+      for (let i = 0; i < UPCOMING_HORIZON; i++) {
+        const entry = entryFromGlobalEclipse(ev);
+        if (!out.some((e) => e.civilDate === entry.civilDate)) out.push(entry);
+        ev = NextGlobalSolarEclipse(ev.peak);
+      }
+    } catch {
+      // motor fallando: lista con lo que haya en catálogo
+    }
+    upcomingCache = { key, list: out.sort((a, b) => a.civilDate.localeCompare(b.civilDate)) };
+  }
+  return upcomingCache.list.slice(0, count);
+}
+
+/** Memo del automático hasta que pase (monótono en el tiempo; setRemoteCatalog lo invalida). */
+let autoCache: EclipseEntry | null = null;
+
+/**
+ * Eclipse activo, por prioridad: selección del usuario (si sigue vigente) →
+ * override RC → el más próximo (misma regla que la lista de upcomingEclipses).
  */
 export function getActiveEclipse(now: Date = new Date()): EclipseEntry {
+  if (userSelected && eclipseEndMs(userSelected) >= now.getTime()) return userSelected;
   if (remoteActiveId) {
     const forced = getEclipseById(remoteActiveId);
     if (forced) return forced;
   }
-  const all = allEclipses();
-  const t = now.getTime();
-  const upcoming = all.find((e) => eclipseEndMs(e) >= t);
-  if (upcoming) return upcoming;
-  try {
-    return nextAutoEclipse(now);
-  } catch {
-    return all[all.length - 1]; // motor fallando: último conocido antes que crash
+  if (!autoCache || eclipseEndMs(autoCache) < now.getTime()) {
+    autoCache = upcomingEclipses(1, now)[0] ?? null;
   }
+  if (autoCache) return autoCache;
+  const all = allEclipses();
+  return all[all.length - 1]; // motor fallando y catálogo pasado: último conocido antes que crash
 }
 
 export function activeSearchStart(now?: Date): Date {

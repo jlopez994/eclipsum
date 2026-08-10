@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
-import { bandForEclipse, type BandSlice } from '../lib/bandGeo';
+import { type BandSlice } from '../lib/bandGeo';
 import { computeLocalEclipse } from '../lib/eclipse';
-import { getActiveEclipse } from '../lib/eclipseCatalog';
+import { bandOf, getActiveEclipse } from '../lib/eclipseCatalog';
 import { LEAFLET_CSS, LEAFLET_JS } from '../lib/leafletVendor';
 import { C } from './theme';
 
@@ -78,9 +78,10 @@ function tapInfo(lat: number, lon: number): TapInfo {
 export function RealMap({ spot, here, onSelectPoint }: RealMapProps) {
   const webRef = useRef<WebView>(null);
   const [ready, setReady] = useState(false);
-  // HTML congelado al montar: los cambios de puesto se inyectan (flyTo) sin recargar el mapa
+  // HTML congelado al montar: los cambios de puesto se inyectan (flyTo) sin recargar el mapa.
+  // La banda queda fija — el caller remonta con key={eclipseId} al cambiar de eclipse (MapScreen).
   const [html] = useState(() => {
-    return buildHtml(spot, here, bandForEclipse(getActiveEclipse().id));
+    return buildHtml(spot, here, bandOf(getActiveEclipse()));
   });
 
   useEffect(() => {

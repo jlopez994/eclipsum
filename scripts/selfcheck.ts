@@ -2,21 +2,35 @@
 import assert from 'node:assert';
 import { computeLocalEclipse, currentPhase, nextEvent } from '../lib/eclipse';
 import {
+  bandOf,
   ECLIPSES,
   getActiveEclipse,
   getEclipseById,
   parseRemoteCatalog,
   setRemoteCatalog,
+  setUserSelectedEclipseDay,
+  upcomingEclipses,
 } from '../lib/eclipseCatalog';
 import { cloudCoverAt } from '../lib/weather';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
 import type { Spot } from '../lib/spots';
-import { pushRecent, RECENT_CAP, type RecentSpot } from '../lib/prefs';
+import { contextFor, DEFAULT_PREFS, pushRecent, RECENT_CAP, withContext, type RecentSpot } from '../lib/prefs';
 import { buildDrillEclipse, clampDrill, DEFAULT_DRILL } from '../lib/drill';
 
 async function main() {
-  const active = getActiveEclipse(new Date('2026-01-01T00:00:00Z'));
-  assert.equal(active.id, '2026-08-12-iberia', 'Activo pre-evento = Iberia 2026');
+  // Nota: la caché del automático es monótona en el tiempo — los asserts van en fechas crecientes
+  assert.equal(
+    getActiveEclipse(new Date('2026-01-01T00:00:00Z')).id,
+    '2026-02-17-annular',
+    'Auto cronológico: el anular de feb 2026 va antes que Iberia',
+  );
+  const active = getActiveEclipse(new Date('2026-06-01T00:00:00Z'));
+  assert.equal(active.id, '2026-08-12-iberia', 'Pasado feb 2026, activo = Iberia');
+  assert.equal(
+    upcomingEclipses(1, new Date('2026-06-01T00:00:00Z'))[0].id,
+    active.id,
+    'Lista y activo comparten la definición de «próximo»',
+  );
   assert.ok(getEclipseById('2026-08-12-iberia'), 'Catálogo incluye Iberia 2026');
   assert.ok(ECLIPSES.length >= 1, 'Catálogo no vacío');
 
@@ -107,15 +121,33 @@ async function main() {
   setRemoteCatalog(JSON.stringify([rcEntry]));
   assert.equal(getEclipseById('2027-08-02-egipto')?.label, 'Total · 2 ago 2027', 'Entrada RC resoluble por id');
   assert.equal(
-    getActiveEclipse(new Date('2026-01-01T00:00:00Z')).id,
+    getActiveEclipse(new Date('2026-06-01T00:00:00Z')).id,
     '2026-08-12-iberia',
     'Con RC extra, 2026 sigue activo antes del evento',
   );
   assert.equal(
     getActiveEclipse(new Date('2027-01-01T00:00:00Z')).id,
-    '2027-08-02-egipto',
-    'Pasado 2026, rollover a la entrada RC',
+    '2027-02-06-annular',
+    'Pasado 2026, el próximo cronológico gana (RC no adelanta la cola)',
   );
+  assert.equal(
+    upcomingEclipses(4, new Date('2027-01-01T00:00:00Z')).some((e) => e.id === '2027-08-02-egipto'),
+    true,
+    'La entrada RC aparece en la lista con su id propio (dedupe por día)',
+  );
+  // Banda por RC: viaja en la entrada, inválida se descarta sola, bundled cae a bandGeo
+  const band = [
+    { lon: 30, latS: 24, latN: 27 },
+    { lon: 31, latS: 24.2, latN: 27.2 },
+  ];
+  setRemoteCatalog(JSON.stringify([{ ...rcEntry, band }]));
+  assert.deepEqual(bandOf(getEclipseById('2027-08-02-egipto')!), band, 'Banda RC resoluble vía bandOf');
+  setRemoteCatalog(JSON.stringify([{ ...rcEntry, band: [{ lon: 'x' }] }]));
+  const noBand = getEclipseById('2027-08-02-egipto')!;
+  assert.equal(noBand.band, undefined, 'Banda malformada se descarta; la entrada sobrevive');
+  assert.equal(bandOf(noBand), null, 'Sin banda RC ni empaquetada → null');
+  assert.ok(bandOf(getEclipseById('2026-08-12-iberia')!), 'Entrada empaquetada cae a la banda de bandGeo');
+
   setRemoteCatalog('[]');
   assert.equal(getEclipseById('2027-08-02-egipto'), undefined, 'Reset del catálogo remoto');
 
@@ -132,6 +164,52 @@ async function main() {
   assert.deepEqual(clampDrill({ partialMin: 15, totalitySec: 120 }), DEFAULT_DRILL, 'Drill: migra defaults de beta.7');
   assert.deepEqual(clampDrill({ partialMin: 2, totalitySec: 90 }), { partialSec: 120, totalitySec: 90 }, 'Drill: migra minutos de betas previas');
   assert.deepEqual(clampDrill({ partialSec: 90, totalitySec: 90 }), { partialSec: 90, totalitySec: 90 }, 'Drill: config elegida se respeta');
+
+  // upcomingEclipses: catálogo + autogenerados, sin duplicar el día del empaquetado
+  const up = upcomingEclipses(5, new Date('2026-01-01T00:00:00Z'));
+  assert.equal(up.length, 5, 'Upcoming: cinco entradas');
+  assert.equal(up[0].id, '2026-02-17-annular', 'Upcoming: incluye el anular de feb 2026 previo a Iberia');
+  assert.ok(up.some((e) => e.id === '2026-08-12-iberia'), 'Upcoming: la entrada empaquetada, con su id propio');
+  assert.equal(up.filter((e) => e.civilDate === '2026-08-12').length, 1, 'Upcoming: sin duplicados por día');
+  assert.ok(
+    up.every((e, i) => i === 0 || up[i - 1].civilDate < e.civilDate),
+    'Upcoming: orden cronológico',
+  );
+  assert.ok(up[0].peakLat !== undefined && up[0].peakLon !== undefined, 'Upcoming: autogenerados llevan pico');
+
+  // Contexto per-eclipse: defaults, parche inmutable y aislamiento entre eclipses
+  const ctxDefault = contextFor(DEFAULT_PREFS, 'x');
+  assert.equal(ctxDefault.spot, null, 'Contexto: sin puesto por defecto');
+  assert.deepEqual(ctxDefault.alertsOn, { C1: true, C2: true, MAX: true, C3: true, C4: true }, 'Contexto: alertas on por defecto');
+  const spotA: Spot = { name: 'A', lat: 1, lon: 2, origin: 'manual' };
+  const p1 = withContext(DEFAULT_PREFS, 'e1', { spot: spotA });
+  assert.equal(DEFAULT_PREFS.byEclipse.e1, undefined, 'Contexto: withContext no muta el original');
+  assert.equal(contextFor(p1, 'e1').spot?.name, 'A', 'Contexto: parche aplicado');
+  const p2 = withContext(p1, 'e2', { alertsOn: { C1: false, C2: false, MAX: false, C3: false, C4: false } });
+  assert.equal(contextFor(p2, 'e1').spot?.name, 'A', 'Contexto: e1 intacto al tocar e2');
+  assert.equal(contextFor(p2, 'e2').spot, null, 'Contexto: e2 no hereda el puesto de e1');
+  assert.equal(contextFor(p2, 'e1').alertsOn.C1, true, 'Contexto: alertas de e1 no afectadas');
+
+  // Selección de usuario (por día civil): prioridad sobre el automático, caduca sola
+  setUserSelectedEclipseDay('2027-08-02');
+  assert.equal(
+    getActiveEclipse(new Date('2026-06-01T00:00:00Z')).id,
+    '2027-08-02-total',
+    'Selección: gana al automático y resuelve entradas autogeneradas',
+  );
+  setUserSelectedEclipseDay('2026-02-17'); // ya pasado a fecha de hoy → irresoluble
+  assert.equal(
+    getActiveEclipse(new Date('2026-09-01T00:00:00Z')).id,
+    '2027-02-06-annular',
+    'Selección pasada → vuelve al automático',
+  );
+  setUserSelectedEclipseDay('9999-01-01');
+  assert.equal(
+    getActiveEclipse(new Date('2027-01-01T00:00:00Z')).id,
+    '2027-02-06-annular',
+    'Selección irresoluble → automático',
+  );
+  setUserSelectedEclipseDay('');
 
   // Catálogo agotado → la app genera sola el siguiente eclipse global con el motor
   const auto = getActiveEclipse(new Date('2030-01-01T00:00:00Z'));

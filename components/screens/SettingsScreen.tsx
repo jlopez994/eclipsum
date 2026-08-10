@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { bandOf, upcomingEclipses, type EclipseEntry } from '../../lib/eclipseCatalog';
 import { ALERT_SOUND_OPTIONS, sendTestNotification } from '../../lib/notifications';
 import { previewAlertSound } from '../../lib/soundPreview';
 import type { AlertSound } from '../../lib/prefs';
@@ -13,16 +14,34 @@ const IGN_URL = 'https://eclipses.ign.es/como-observar-eclipses.html';
 interface SettingsScreenProps {
   permissions: { location: boolean; notifications: boolean };
   alertSound: AlertSound;
-  eclipseLabel: string;
+  /** Entrada activa resuelta por App (única fuente de verdad; no leer el catálogo aquí) */
+  activeEclipse: EclipseEntry;
   /** URL de gafas certificadas (afiliado, vía Remote Config); vacío = botón oculto */
   glassesUrl?: string;
   onSoundChange: (sound: AlertSound) => void;
   onDemoEclipse: () => void;
+  /** Recibe el día civil elegido; '' = automático */
+  onSelectEclipse: (day: string) => void;
   /** Tramos del simulacro (persisten en prefs) */
   drill: DrillConfig;
   onDrillChange: (drill: DrillConfig) => void;
   /** Arranca el simulacro (modo eclipse + avisos [PRUEBA]); devuelve mensaje de resultado */
   onStartDrill: () => Promise<string>;
+}
+
+const UPCOMING_COUNT = 5;
+
+function fmtCountdown(civilDate: string): string {
+  const d = Math.max(0, Math.ceil((Date.parse(`${civilDate}T00:00:00Z`) - Date.now()) / 86_400_000));
+  return d === 0 ? 'Hoy' : d === 1 ? 'Mañana' : `En ${d} días`;
+}
+
+/** «Pico 41°N 3°O» a partir del pico global (solo entradas autogeneradas). */
+function fmtPeak(e: EclipseEntry): string | null {
+  if (e.peakLat === undefined || e.peakLon === undefined) return null;
+  const lat = `${Math.abs(e.peakLat).toFixed(0)}°${e.peakLat >= 0 ? 'N' : 'S'}`;
+  const lon = `${Math.abs(e.peakLon).toFixed(0)}°${e.peakLon >= 0 ? 'E' : 'O'}`;
+  return `Pico ${lat} ${lon}`;
 }
 
 /** 90 → «1m 30s»; 120 → «2 min» */
@@ -49,16 +68,20 @@ function Stepper({ onLess, onMore, a11y }: { onLess: () => void; onMore: () => v
 export function SettingsScreen({
   permissions,
   alertSound,
-  eclipseLabel,
   glassesUrl,
   onSoundChange,
   onDemoEclipse,
+  activeEclipse,
+  onSelectEclipse,
   drill,
   onDrillChange,
   onStartDrill,
 }: SettingsScreenProps) {
   const insets = useSafeAreaInsets();
   const [drillMsg, setDrillMsg] = useState<string | null>(null);
+  const upcoming = useMemo(() => upcomingEclipses(UPCOMING_COUNT), []);
+  // Elegir el más próximo (fila 0) equivale al modo automático; misma regla que getActiveEclipse
+  const isManualSelection = activeEclipse.civilDate !== upcoming[0]?.civilDate;
 
   const step = (key: keyof DrillConfig, dir: 1 | -1) => {
     const range = key === 'partialSec' ? DRILL_PARTIAL : DRILL_TOTALITY;
@@ -207,16 +230,52 @@ export function SettingsScreen({
         </View>
 
         <View>
+          <Text style={s.section}>PRÓXIMOS ECLIPSES</Text>
+          <View style={s.card}>
+            {upcoming.map((e, i) => {
+              const on = e.civilDate === activeEclipse.civilDate;
+              const sub = [fmtCountdown(e.civilDate), fmtPeak(e), bandOf(e) ? 'Banda en el mapa' : null]
+                .filter(Boolean)
+                .join(' · ');
+              return (
+                <Pressable
+                  key={e.civilDate}
+                  style={[s.rowItem, i < upcoming.length - 1 && s.rowDivider]}
+                  onPress={() => onSelectEclipse(e.civilDate === upcoming[0]?.civilDate ? '' : e.civilDate)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`${e.label}. ${sub}`}
+                >
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={s.rowTitle}>{e.label}</Text>
+                    <Text style={s.soundHint}>{sub}</Text>
+                  </View>
+                  {on && <Text style={s.upcomingActive}>ACTIVO</Text>}
+                  <View style={[s.radio, on && s.radioOn, { marginLeft: 10 }]}>{on && <View style={s.radioDot} />}</View>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={s.upcomingNote}>
+            Por defecto se sigue el más próximo{isManualSelection ? ' — ahora tienes uno elegido a mano' : ''}. Cada
+            eclipse guarda su puesto y alertas; los avisos programados son los del activo.
+          </Text>
+        </View>
+
+        <View>
           <Text style={s.section}>ACERCA DE</Text>
           <Pressable onLongPress={onDemoEclipse} delayLongPress={1500}>
             <View style={s.card}>
               <View style={[s.rowItem, s.rowDivider]}>
                 <Text style={s.rowTitle}>Versión</Text>
-                <Text style={s.aboutValue}>Eclipsum {Constants.expoConfig?.version ?? '1.0'}</Text>
+                <Text style={s.aboutValue}>
+                  Eclipsum {Constants.expoConfig?.version ?? '1.0'}
+                  {Constants.expoConfig?.android?.versionCode ? ` (build ${Constants.expoConfig.android.versionCode})` : ''}
+                </Text>
               </View>
               <View style={[s.rowItem, s.rowDivider]}>
-                <Text style={s.rowTitle}>Próximo eclipse</Text>
-                <Text style={s.aboutValue}>{eclipseLabel}</Text>
+                <Text style={s.rowTitle}>Eclipse activo</Text>
+                <Text style={s.aboutValue}>{activeEclipse.label}</Text>
               </View>
               <View style={{ padding: 16 }}>
                 <Text style={s.aboutNote}>
@@ -317,5 +376,7 @@ const s = StyleSheet.create({
   safetyLink: { fontFamily: F.bold, fontSize: 13, letterSpacing: 1, color: C.corona, marginTop: 12 },
   affiliateNote: { fontFamily: F.regular, fontSize: 11, color: C.dim, marginTop: 4 },
   aboutValue: { fontFamily: F.medium, fontSize: 13, color: C.dim },
+  upcomingActive: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 2, color: C.corona },
+  upcomingNote: { fontFamily: F.regular, fontSize: 11, lineHeight: 16, color: C.dim, marginTop: 8 },
   aboutNote: { fontFamily: F.regular, fontSize: 13, lineHeight: 19, color: C.dim },
 });

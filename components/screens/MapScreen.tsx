@@ -19,7 +19,7 @@ import * as Location from 'expo-location';
 import { nextEvent, type LocalEclipse } from '../../lib/eclipse';
 import { getActiveEclipse } from '../../lib/eclipseCatalog';
 import { bearingLabel, type TotalityDirection } from '../../lib/totality';
-import { track } from '../../lib/firebase';
+import { track, type Sponsor } from '../../lib/firebase';
 import { windyEclipseCloudsUrl } from '../../lib/weather';
 import { Countdown } from '../Countdown';
 import { RealMap } from '../RealMap';
@@ -90,7 +90,8 @@ interface MapScreenProps {
   divergenceKm: number | null;
   onRecalcHere: () => void;
   /** Patrocinador del eclipse (Remote Config); null = sin línea de patrocinio */
-  sponsor?: { name: string; url: string } | null;
+  /** Patrocinador del eclipse (Remote Config); null = sin tarjeta de patrocinio */
+  sponsor?: Sponsor | null;
 }
 
 const fmtHM = (d: Date) =>
@@ -483,6 +484,8 @@ export function MapScreen({
       <Animated.View style={[s.fadeFill, { opacity: fade }]}>
       {mapView === 'real' && (
         <RealMap
+          // Remount al cambiar de eclipse: el HTML (banda) se congela al montar
+          key={activeEclipseMeta.id}
           spot={{ ...spotCoords, label: place }}
           here={hereCoords ? { ...hereCoords, label: hereLabel ?? 'TÚ' } : null}
           onSelectPoint={onSelectMapPoint}
@@ -705,16 +708,18 @@ export function MapScreen({
           )}
           {sponsor && (
             <Pressable
-              style={s.sponsorRow}
+              style={s.sponsorCard}
               onPress={() => {
                 track('sponsor_click', { name: sponsor.name });
                 Linking.openURL(sponsor.url).catch(() => {});
               }}
+              accessibilityRole="link"
               accessibilityLabel={`Patrocinador: ${sponsor.name}`}
             >
-              <Text style={s.sponsorText}>
-                CON EL APOYO DE <Text style={{ color: C.corona }}>{sponsor.name.toUpperCase()}</Text> →
-              </Text>
+              <Text style={s.sponsorKicker}>CON EL APOYO DE</Text>
+              <Text style={s.sponsorName}>{sponsor.name}</Text>
+              {!!sponsor.tagline && <Text style={s.sponsorTagline}>{sponsor.tagline}</Text>}
+              <Text style={s.sponsorCta}>CONOCER MÁS →</Text>
             </Pressable>
           )}
         </ScrollView>
@@ -1022,7 +1027,18 @@ const s = StyleSheet.create({
     borderBottomColor: 'rgba(38,38,58,0.5)',
   },
   cronoLabel: { fontFamily: F.semibold, fontSize: 14, color: C.text },
-  sponsorRow: { alignItems: 'center', paddingVertical: 18 },
-  sponsorText: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 2, color: C.dim },
+  sponsorCard: {
+    marginTop: 18,
+    padding: 18,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surface,
+    gap: 4,
+  },
+  sponsorKicker: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 2.5, color: C.dim },
+  sponsorName: { fontFamily: F.bold, fontSize: 18, letterSpacing: -0.3, color: C.text },
+  sponsorTagline: { fontFamily: F.regular, fontSize: 13, lineHeight: 19, color: C.dim },
+  sponsorCta: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1.5, color: C.corona, marginTop: 8 },
   cronoTime: { fontFamily: F.medium, fontSize: 14, color: C.dim, fontVariant: ['tabular-nums'] },
 });

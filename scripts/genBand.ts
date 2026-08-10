@@ -6,24 +6,28 @@
  *   npx tsx scripts/genBand.ts
  *   npx tsx scripts/genBand.ts --id 2026-08-12-iberia
  *   npx tsx scripts/genBand.ts --id <id> --lon-from -80 --lon-to -60 --lat-min 10 --lat-max 40
+ *   npx tsx scripts/genBand.ts --id <id> --rc   # imprime la entrada con banda para eclipse_catalog (RC)
  *
- * Sin args usa el primer eclipse del catálogo empaquetado. Los rangos por defecto
- * son Iberia; para otros continentes centrar con el pico lat/lon que imprime
- * scripts/genEclipse.ts. LAT_MAX=60 recorta bandas polares: subir el tope si aplica.
+ * Sin args usa el primer eclipse del catálogo empaquetado; --id acepta también entradas
+ * autogeneradas (próximos 12 del motor). Los rangos por defecto son Iberia; para otros
+ * continentes centrar con el pico lat/lon que imprime scripts/genEclipse.ts (o el propio
+ * peakLat/peakLon de la entrada). LAT_MAX=60 recorta bandas polares: subir el tope si aplica.
  */
 import { writeFileSync } from 'node:fs';
 import { computeLocalEclipse } from '../lib/eclipse';
 import { bandForEclipse, type BandSlice } from '../lib/bandGeo';
-import { ECLIPSES, getEclipseById, type EclipseEntry } from '../lib/eclipseCatalog';
+import { ECLIPSES, getEclipseById, upcomingEclipses, type EclipseEntry } from '../lib/eclipseCatalog';
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(name);
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
+const id = arg('--id');
 const entry: EclipseEntry =
-  (arg('--id') ? getEclipseById(arg('--id')!) : undefined) ?? ECLIPSES[0];
+  (id ? getEclipseById(id) ?? upcomingEclipses(12).find((e) => e.id === id) : undefined) ?? ECLIPSES[0];
 const searchStart = new Date(entry.searchStart);
+const RC_MODE = process.argv.includes('--rc');
 
 const LON_FROM = Number(arg('--lon-from') ?? -25);
 const LON_TO = Number(arg('--lon-to') ?? 8);
@@ -75,6 +79,12 @@ for (let lon = LON_FROM; lon <= LON_TO; lon += LON_STEP) {
 
 if (rows.length === 0) {
   throw new Error('0 cortes: la banda no cruza el rango dado — ajustar --lon-from/--lon-to/--lat-min/--lat-max');
+}
+
+if (RC_MODE) {
+  // Entrada completa con banda, lista para pegar en el array `eclipse_catalog` de RC
+  console.log(JSON.stringify({ ...entry, band: rows }));
+  process.exit(0);
 }
 
 // Registro nuevo = bandas existentes de los demás eclipses empaquetados + la recalculada.

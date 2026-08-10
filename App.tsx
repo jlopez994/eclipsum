@@ -20,7 +20,7 @@ import type { Spot } from './lib/spots';
 import { cancelAlertsByIds, scheduleEclipseAlerts, scheduleFakeEclipseAlerts } from './lib/notifications';
 import { buildDrillEclipse } from './lib/drill';
 import { fetchRemoteExtras, type Sponsor } from './lib/firebase';
-import { pushRecent } from './lib/prefs';
+import { contextFor, DEFAULT_PREFS, pushRecent, withContext } from './lib/prefs';
 import { animateNextLayout } from './lib/anim';
 import { useGeo } from './hooks/useGeo';
 import { usePrefs } from './hooks/usePrefs';
@@ -51,6 +51,10 @@ function inFineClockWindow(eclipse: LocalEclipse, t: number): boolean {
 
 function cleanPlaceLabel(name: string): string {
   return name.replace(/\s·\sGPS$/, '').replace(/\s·\sManual$/, '').trim();
+}
+
+function gpsSpot(geo: { place: string; lat: number; lon: number }): Spot {
+  return { name: cleanPlaceLabel(geo.place) || 'Mi posición', lat: geo.lat, lon: geo.lon, origin: 'gps' };
 }
 
 /** Eclipse sintético para la demo: desplaza los eventos para que el siguiente hito caiga en ~2 min. */
@@ -88,6 +92,11 @@ function AppInner() {
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const [fineClock, setFineClock] = useState(false);
+
+  // Eclipse activo: selección del usuario, override RC o el más próximo
+  const activeCatalog = getActiveEclipse();
+  // Contexto per-eclipse (puesto + alertas), clave = día civil; identidad estable sin memo
+  const ctx = contextFor(prefs ?? DEFAULT_PREFS, activeCatalog.civilDate);
 
   useEffect(() => {
     setPermissions((p) => ({ ...p, location: locationGranted }));
@@ -133,20 +142,14 @@ function AppInner() {
     return () => clearInterval(id);
   }, [demo, drill, fineClock]);
 
-  // Sembrar puesto deseado con GPS si aún no hay ninguno guardado
+  // Sembrar puesto deseado con GPS si el eclipse activo aún no tiene ninguno
   useEffect(() => {
-    if (!prefs || !geo || prefs.spot) return;
-    const spot: Spot = {
-      name: cleanPlaceLabel(geo.place) || 'Mi posición',
-      lat: geo.lat,
-      lon: geo.lon,
-      origin: 'gps',
-    };
-    onPrefsChange({ ...prefs, spot });
-  }, [prefs, geo, onPrefsChange]);
+    if (!prefs || !geo || ctx.spot) return;
+    onPrefsChange(withContext(prefs, activeCatalog.civilDate, { spot: gpsSpot(geo) }));
+  }, [prefs, geo, ctx.spot, activeCatalog.civilDate, onPrefsChange]);
 
   // Puesto deseado (cálculos); fallback temporal a GPS mientras se siembra
-  const activeSpot = prefs?.spot ?? null;
+  const activeSpot = ctx.spot;
   const active = activeSpot
     ? { lat: activeSpot.lat, lon: activeSpot.lon, place: activeSpot.name, origin: activeSpot.origin }
     : geo
@@ -155,9 +158,9 @@ function AppInner() {
 
   const eclipse = useMemo(
     () => (active ? computeLocalEclipse(active.lat, active.lon) : null),
-    // catalogEpoch: RC puede forzar otro eclipse del catálogo
+    // activeCatalog.id: selección de usuario o rollover; catalogEpoch: RC puede cambiar la entrada
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [active?.lat, active?.lon, catalogEpoch],
+    [active?.lat, active?.lon, activeCatalog.id, catalogEpoch],
   );
 
   // Reloj fino en la ventana del modo eclipse (fase/seguridad a 1 s)
@@ -198,43 +201,37 @@ function AppInner() {
 
   const { cloud, totality, hereOnMap } = useSpotData(active, eclipse, geo);
 
-  // Reprogramar alertas al cambiar puesto, toggles o permiso de notificaciones
+  // Reprogramar alertas al cambiar puesto, toggles, eclipse activo o permiso.
+  // Sin toggles activos también entra: cancela avisos huérfanos del contexto anterior.
   useEffect(() => {
     if (!eclipse || !prefs || !permissions.notifications) return;
-    if (!Object.values(prefs.alertsOn).some(Boolean)) return;
-    scheduleEclipseAlerts(eclipse, prefs.alertsOn, prefs.alertSound, prefs.alertEarly, prefs.c1PlanAlerts).catch(() => {
+    scheduleEclipseAlerts(eclipse, ctx.alertsOn, prefs.alertSound, ctx.alertEarly, ctx.c1PlanAlerts).catch(() => {
       // sin permiso o error puntual: el usuario puede reprogramar desde Alertas
     });
-  }, [
-    eclipse,
-    permissions.notifications,
-    prefs?.alertsOn,
-    prefs?.alertEarly,
-    prefs?.c1PlanAlerts,
-    prefs?.alertSound,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eclipse, permissions.notifications, ctx, prefs?.alertSound]);
 
   const selectSpot = useCallback(
     (spot: Spot) => {
       if (!prefs) return;
       animateNextLayout();
       const recentSpots = spot.origin === 'gps' ? prefs.recentSpots : pushRecent(prefs.recentSpots, spot);
-      onPrefsChange({ ...prefs, spot, recentSpots });
+      onPrefsChange({ ...withContext(prefs, activeCatalog.civilDate, { spot }), recentSpots });
     },
-    [prefs, onPrefsChange],
+    [prefs, activeCatalog.civilDate, onPrefsChange],
   );
 
   // Simulacro: eclipse sintético con los tramos configurados, C1 en 2 min.
   // La app entra en modo eclipse (ventana de 30 min) y los avisos [PRUEBA] son aditivos.
   const startDrill = useCallback(async () => {
     if (!eclipse || !prefs) return 'Elige primero un puesto en el mapa';
-    if (!Object.values(prefs.alertsOn).some(Boolean)) return 'Activa alguna alerta en ALERTAS primero';
+    if (!Object.values(ctx.alertsOn).some(Boolean)) return 'Activa alguna alerta en ALERTAS primero';
     const c1At = new Date(Date.now() + DRILL_LEAD_MS);
     const fake = buildDrillEclipse(eclipse, c1At, prefs.drill);
-    const ids = await scheduleFakeEclipseAlerts(fake, c1At, prefs.alertsOn, prefs.alertSound, prefs.alertEarly);
+    const ids = await scheduleFakeEclipseAlerts(fake, c1At, ctx.alertsOn, prefs.alertSound, ctx.alertEarly);
     setDrill({ eclipse: fake, ids });
     return `Simulacro en marcha · C1 a las ${c1At.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`;
-  }, [eclipse, prefs]);
+  }, [eclipse, prefs, ctx]);
 
   const exitDrill = useCallback(() => {
     if (drill) void cancelAlertsByIds(drill.ids);
@@ -255,12 +252,12 @@ function AppInner() {
       };
       void cancelAlertsByIds(drill.ids);
       const c1 = shifted.events[0];
-      scheduleFakeEclipseAlerts(shifted, c1.time, prefs.alertsOn, prefs.alertSound, prefs.alertEarly)
+      scheduleFakeEclipseAlerts(shifted, c1.time, ctx.alertsOn, prefs.alertSound, ctx.alertEarly)
         .then((ids) => setDrill({ eclipse: shifted, ids }))
         .catch(() => setDrill({ eclipse: shifted, ids: [] }));
       setNow(new Date()); // repintar fase al instante, sin esperar al tick
     },
-    [drill, prefs],
+    [drill, prefs, ctx],
   );
 
   // Fin natural del simulacro: pasado C4 + margen, la app vuelve sola al modo normal
@@ -282,16 +279,8 @@ function AppInner() {
   );
 
   const recalcHere = useCallback(() => {
-    if (!prefs || !geo) return;
-    animateNextLayout();
-    const spot: Spot = {
-      name: cleanPlaceLabel(geo.place) || 'Mi posición',
-      lat: geo.lat,
-      lon: geo.lon,
-      origin: 'gps',
-    };
-    onPrefsChange({ ...prefs, spot });
-  }, [prefs, geo, onPrefsChange]);
+    if (geo) selectSpot(gpsSpot(geo));
+  }, [geo, selectSpot]);
 
   if (!fontsLoaded || !prefs) {
     return (
@@ -403,15 +392,23 @@ function AppInner() {
           (eclipse ? (
             <AlertsScreen
               eclipse={eclipse}
-              toggles={prefs.alertsOn}
-              early={prefs.alertEarly}
-              c1Plan={prefs.c1PlanAlerts}
+              toggles={ctx.alertsOn}
+              early={ctx.alertEarly}
+              c1Plan={ctx.c1PlanAlerts}
               alertSound={prefs.alertSound}
-              onToggle={(key, value) => onPrefsChange({ ...prefs, alertsOn: { ...prefs.alertsOn, [key]: value } })}
-              onEarlyChange={(key, value) =>
-                onPrefsChange({ ...prefs, alertEarly: { ...prefs.alertEarly, [key]: value } })
+              onToggle={(key, value) =>
+                onPrefsChange(
+                  withContext(prefs, activeCatalog.civilDate, { alertsOn: { ...ctx.alertsOn, [key]: value } }),
+                )
               }
-              onC1PlanChange={(c1PlanAlerts) => onPrefsChange({ ...prefs, c1PlanAlerts })}
+              onEarlyChange={(key, value) =>
+                onPrefsChange(
+                  withContext(prefs, activeCatalog.civilDate, { alertEarly: { ...ctx.alertEarly, [key]: value } }),
+                )
+              }
+              onC1PlanChange={(c1PlanAlerts) =>
+                onPrefsChange(withContext(prefs, activeCatalog.civilDate, { c1PlanAlerts }))
+              }
             />
           ) : (
             <View style={s.loading}>
@@ -422,15 +419,12 @@ function AppInner() {
           <SettingsScreen
             permissions={permissions}
             alertSound={prefs.alertSound}
-            eclipseLabel={getActiveEclipse().label}
+            activeEclipse={activeCatalog}
             glassesUrl={glassesUrl}
-            onSoundChange={(sound) => {
-              onPrefsChange({ ...prefs, alertSound: sound });
-              if (eclipse && Object.values(prefs.alertsOn).some(Boolean)) {
-                scheduleEclipseAlerts(eclipse, prefs.alertsOn, sound, prefs.alertEarly, prefs.c1PlanAlerts).catch(() => {});
-              }
-            }}
+            // El efecto de alertas reprograma solo al cambiar alertSound
+            onSoundChange={(sound) => onPrefsChange({ ...prefs, alertSound: sound })}
             onDemoEclipse={() => setDemo(true)}
+            onSelectEclipse={(day) => onPrefsChange({ ...prefs, selectedEclipseDay: day })}
             drill={prefs.drill}
             onDrillChange={(drillCfg) => onPrefsChange({ ...prefs, drill: drillCfg })}
             onStartDrill={startDrill}

@@ -24,9 +24,11 @@ export interface RemoteExtras {
 export interface Sponsor {
   name: string;
   url: string;
+  /** Línea de copy opcional bajo el nombre en la tarjeta */
+  tagline?: string;
 }
 
-/** RC `sponsor`: {"name","url"}; inválido o vacío → null (nunca rompe). */
+/** RC `sponsor`: {"name","url","tagline"?}; inválido o vacío → null (nunca rompe). */
 function parseSponsor(json: string): Sponsor | null {
   try {
     const raw: unknown = JSON.parse(json);
@@ -34,14 +36,18 @@ function parseSponsor(json: string): Sponsor | null {
     const r = raw as Record<string, unknown>;
     if (typeof r.name !== 'string' || r.name.length === 0) return null;
     if (typeof r.url !== 'string' || !r.url.startsWith('https://')) return null;
-    return { name: r.name, url: r.url };
+    return {
+      name: r.name,
+      url: r.url,
+      tagline: typeof r.tagline === 'string' && r.tagline.length > 0 ? r.tagline : undefined,
+    };
   } catch {
     return null;
   }
 }
 
 /**
- * Remote Config: banner + eclipse activo opcional.
+ * Remote Config: banner, eclipse activo, catálogo extra, gafas, patrocinador y aviso de actualización.
  * Nunca lanza: sin red devuelve últimos valores activados o defaults.
  */
 export async function fetchRemoteExtras(): Promise<RemoteExtras> {
@@ -79,11 +85,6 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       latestApkUrl: '',
     };
   }
-}
-
-/** @deprecated Prefer fetchRemoteExtras — se mantiene por scripts externos. */
-export async function fetchEclipseMessage(): Promise<string> {
-  return (await fetchRemoteExtras()).message;
 }
 
 /** Analytics best-effort: nunca rompe la app por telemetría. */

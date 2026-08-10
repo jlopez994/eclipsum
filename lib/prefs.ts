@@ -28,15 +28,26 @@ export interface RecentSpot extends Spot {
   visits: number;
 }
 
-export interface Prefs {
+/** Estado propio de cada eclipse: puesto elegido y configuración de avisos. */
+export interface EclipseContext {
+  /** Puesto de observación deseado; null hasta la 1ª elección / siembra GPS */
+  spot: Spot | null;
   alertsOn: AlertToggles;
   /** Aviso unos segundos antes del contacto (por hito) */
   alertEarly: AlertEarly;
   /** Avisos opcionales de planificación ligados a C1 (apagados por defecto) */
   c1PlanAlerts: C1PlanAlerts;
-  /** Puesto de observación deseado; null solo hasta la 1ª elección / siembra GPS */
-  spot: Spot | null;
-  /** Puestos habituales (más visitados primero), máx. RECENT_CAP */
+}
+
+export interface Prefs {
+  /** Día civil (YYYY-MM-DD) del eclipse elegido; '' = automático (el más próximo) */
+  selectedEclipseDay: string;
+  /**
+   * Contexto por eclipse, clave = día civil (los ids varían entre catálogo y motor);
+   * los pasados se conservan como histórico
+   */
+  byEclipse: Record<string, EclipseContext>;
+  /** Puestos habituales globales (más visitados primero), máx. RECENT_CAP */
   recentSpots: RecentSpot[];
   /** Vista de la pestaña mapa: diagrama esquemático o mapa real */
   mapView: 'diagram' | 'real';
@@ -62,16 +73,36 @@ export const DEFAULT_C1_PLAN_ALERTS: C1PlanAlerts = {
   before1h: false,
 };
 
-export const DEFAULT_PREFS: Prefs = {
-  alertsOn: { C1: true, C2: true, MAX: true, C3: true, C4: true },
-  alertEarly: { ...DEFAULT_ALERT_EARLY },
-  c1PlanAlerts: { ...DEFAULT_C1_PLAN_ALERTS },
+// Constante compartida (nunca se muta: withContext/parseContext solo hacen spread);
+// identidad estable → los efectos que dependen del contexto no se disparan de más
+const DEFAULT_ECLIPSE_CONTEXT: EclipseContext = {
   spot: null,
+  alertsOn: { C1: true, C2: true, MAX: true, C3: true, C4: true },
+  alertEarly: DEFAULT_ALERT_EARLY,
+  c1PlanAlerts: DEFAULT_C1_PLAN_ALERTS,
+};
+
+export const DEFAULT_PREFS: Prefs = {
+  selectedEclipseDay: '',
+  byEclipse: {},
   recentSpots: [],
   mapView: 'diagram',
   alertSound: 'eclipse',
   drill: { ...DEFAULT_DRILL },
 };
+
+/** Contexto del eclipse con día civil `day`; defaults si aún no tiene nada guardado. */
+export function contextFor(prefs: Prefs, day: string): EclipseContext {
+  return prefs.byEclipse[day] ?? DEFAULT_ECLIPSE_CONTEXT;
+}
+
+/** Copia de prefs con el contexto del día `day` parcheado. */
+export function withContext(prefs: Prefs, day: string, patch: Partial<EclipseContext>): Prefs {
+  return {
+    ...prefs,
+    byEclipse: { ...prefs.byEclipse, [day]: { ...contextFor(prefs, day), ...patch } },
+  };
+}
 
 function parseAlertEarly(raw: unknown, legacyLeads: unknown): AlertEarly {
   if (raw && typeof raw === 'object') {
@@ -107,6 +138,30 @@ function parseC1PlanAlerts(raw: unknown): C1PlanAlerts {
   };
 }
 
+const SPOT_ORIGINS: Spot['origin'][] = ['gps', 'city', 'nearest', 'manual'];
+
+function parseSpot(raw: unknown): Spot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const s = raw as Record<string, unknown>;
+  if (typeof s.name !== 'string' || typeof s.lat !== 'number' || typeof s.lon !== 'number') return null;
+  if (!SPOT_ORIGINS.includes(s.origin as Spot['origin'])) return null;
+  return { name: s.name, lat: s.lat, lon: s.lon, origin: s.origin as Spot['origin'] };
+}
+
+/** Sanea un contexto guardado (o los campos planos legacy pasando el objeto raíz). */
+function parseContext(raw: unknown, legacyLeads?: unknown): EclipseContext {
+  const src = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  return {
+    spot: parseSpot(src.spot),
+    alertsOn: {
+      ...DEFAULT_ECLIPSE_CONTEXT.alertsOn,
+      ...(src.alertsOn && typeof src.alertsOn === 'object' ? (src.alertsOn as Partial<AlertToggles>) : {}),
+    },
+    alertEarly: parseAlertEarly(src.alertEarly, legacyLeads),
+    c1PlanAlerts: parseC1PlanAlerts(src.c1PlanAlerts),
+  };
+}
+
 function sameCoords(a: Spot, b: Spot): boolean {
   return Math.abs(a.lat - b.lat) < 0.01 && Math.abs(a.lon - b.lon) < 0.01;
 }
@@ -123,34 +178,36 @@ export function pushRecent(recent: RecentSpot[], spot: Spot): RecentSpot[] {
     .slice(0, RECENT_CAP);
 }
 
-export async function loadPrefs(): Promise<Prefs> {
+/** `migrationDay`: día civil del eclipse activo, bajo el que migrar prefs planas legacy. */
+export async function loadPrefs(migrationDay: string): Promise<Prefs> {
   try {
     const raw = await AsyncStorage.getItem(KEY);
     if (!raw) return DEFAULT_PREFS;
-    const parsed = JSON.parse(raw) as Partial<Prefs> & { alertLeads?: unknown };
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
     const recentSpots = Array.isArray(parsed.recentSpots)
-      ? parsed.recentSpots
-          .filter(
-            (s): s is RecentSpot =>
-              !!s &&
-              typeof s.name === 'string' &&
-              typeof s.lat === 'number' &&
-              typeof s.lon === 'number' &&
-              typeof s.origin === 'string',
-          )
-          // Migración desde listas sin contador: cada entrada vale 1 visita
-          .map((s) => ({ ...s, visits: typeof s.visits === 'number' ? s.visits : 1 }))
+      ? (parsed.recentSpots as unknown[])
+          .map((s) => {
+            const spot = parseSpot(s);
+            if (!spot) return null;
+            // Migración desde listas sin contador: cada entrada vale 1 visita
+            const visits = (s as { visits?: unknown }).visits;
+            return { ...spot, visits: typeof visits === 'number' ? visits : 1 };
+          })
+          .filter((s): s is RecentSpot => s !== null)
           .slice(0, RECENT_CAP)
       : [];
-    const { alertLeads: _legacyLeads, ...parsedRest } = parsed as Partial<Prefs> & {
-      alertLeads?: unknown;
-    };
+    const byEclipse: Record<string, EclipseContext> = {};
+    if (parsed.byEclipse && typeof parsed.byEclipse === 'object') {
+      for (const [day, ctx] of Object.entries(parsed.byEclipse as Record<string, unknown>)) {
+        byEclipse[day] = parseContext(ctx);
+      }
+    } else {
+      // Migración: prefs planas (una sola configuración) → contexto del eclipse activo
+      byEclipse[migrationDay] = parseContext(parsed, parsed.alertLeads);
+    }
     return {
-      ...DEFAULT_PREFS,
-      ...parsedRest,
-      alertsOn: { ...DEFAULT_PREFS.alertsOn, ...(parsed.alertsOn ?? {}) },
-      alertEarly: parseAlertEarly(parsed.alertEarly, _legacyLeads),
-      c1PlanAlerts: parseC1PlanAlerts(parsed.c1PlanAlerts),
+      selectedEclipseDay: typeof parsed.selectedEclipseDay === 'string' ? parsed.selectedEclipseDay : '',
+      byEclipse,
       recentSpots,
       mapView: parsed.mapView === 'real' ? 'real' : 'diagram',
       alertSound: parsed.alertSound === 'default' ? 'default' : 'eclipse',
