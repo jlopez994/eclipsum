@@ -12,14 +12,15 @@ export interface DrillConfig {
   totalitySec: number;
 }
 
-/** Simulacro breve: serie completa en ~7 min. */
-export const DEFAULT_DRILL: DrillConfig = { partialMin: 3, totalitySec: 60 };
+/** Simulacro ágil: serie completa en ~5 min. */
+export const DEFAULT_DRILL: DrillConfig = { partialMin: 2, totalitySec: 60 };
 /** Defaults de la beta.7: si siguen guardados tal cual, se migran a los nuevos. */
 const LEGACY_DEFAULT = { partialMin: 15, totalitySec: 120 };
 
-export const DRILL_PARTIAL = { min: 1, max: 30, step: 1 };
+// Rangos cortos a propósito: el simulacro es un ensayo, no una recreación
+export const DRILL_PARTIAL = { min: 1, max: 5, step: 1 };
 // Mínimo 45 s: con antelación de 15 s, menos totalidad haría sonar el aviso de fin antes que el Máximo
-export const DRILL_TOTALITY = { min: 45, max: 300, step: 15 };
+export const DRILL_TOTALITY = { min: 45, max: 120, step: 15 };
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 

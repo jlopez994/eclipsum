@@ -127,10 +127,10 @@ async function main() {
   assert.equal(dt(1, 3), 120, 'Drill: totalidad = 120 s');
   assert.equal(dt(3, 4), 900, 'Drill: C3→C4 = 15 min');
   assert.equal(drillE.events[2].azimuth, zgz.events.find((e) => e.key === 'MAX')!.azimuth, 'Drill: azimut del MAX real');
-  assert.deepEqual(clampDrill({ partialMin: 999, totalitySec: 1 }), { partialMin: 30, totalitySec: 45 }, 'Drill: clamp a rangos');
+  assert.deepEqual(clampDrill({ partialMin: 999, totalitySec: 1 }), { partialMin: 5, totalitySec: 45 }, 'Drill: clamp a rangos');
   assert.deepEqual(clampDrill(undefined), DEFAULT_DRILL, 'Drill: defaults si no hay config');
   assert.deepEqual(clampDrill({ partialMin: 15, totalitySec: 120 }), DEFAULT_DRILL, 'Drill: migra defaults de beta.7');
-  assert.deepEqual(clampDrill({ partialMin: 15, totalitySec: 90 }), { partialMin: 15, totalitySec: 90 }, 'Drill: config elegida se respeta');
+  assert.deepEqual(clampDrill({ partialMin: 4, totalitySec: 90 }), { partialMin: 4, totalitySec: 90 }, 'Drill: config elegida se respeta');
 
   // Catálogo agotado → la app genera sola el siguiente eclipse global con el motor
   const auto = getActiveEclipse(new Date('2030-01-01T00:00:00Z'));
