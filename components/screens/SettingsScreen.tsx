@@ -143,6 +143,32 @@ export function SettingsScreen({
         </View>
 
         <View>
+          <Text style={[s.section, { color: C.danger }]}>SEGURIDAD OCULAR</Text>
+          <View style={s.safetyCard}>
+            <Text style={s.safetyTitle}>
+              Nunca mires al sol sin gafas certificadas <Text style={{ color: C.danger }}>ISO 12312-2</Text>
+            </Text>
+            <Text style={s.safetyBody}>
+              Solo durante la totalidad es seguro mirar sin protección. La app te avisará del inicio y del fin
+              exactos.
+            </Text>
+            <Pressable onPress={() => Linking.openURL(IGN_URL)}>
+              <Text style={s.safetyLink}>GUÍA DE SEGURIDAD (IGN) →</Text>
+            </Pressable>
+            {!!glassesUrl && (
+              <>
+                <Pressable onPress={() => Linking.openURL(glassesUrl)}>
+                  <Text style={s.safetyLink}>COMPRAR GAFAS CERTIFICADAS →</Text>
+                </Pressable>
+                <Text style={s.affiliateNote}>
+                  Enlace de afiliado: apoya la app sin coste extra para ti.
+                </Text>
+              </>
+            )}
+          </View>
+        </View>
+
+        <View>
           <Text style={s.section}>SIMULACRO</Text>
           <View style={s.card}>
             <View style={[s.rowItem, s.rowDivider]}>
@@ -177,32 +203,6 @@ export function SettingsScreen({
               </View>
               <Text style={s.playIcon}>▶</Text>
             </Pressable>
-          </View>
-        </View>
-
-        <View>
-          <Text style={[s.section, { color: C.danger }]}>SEGURIDAD OCULAR</Text>
-          <View style={s.safetyCard}>
-            <Text style={s.safetyTitle}>
-              Nunca mires al sol sin gafas certificadas <Text style={{ color: C.danger }}>ISO 12312-2</Text>
-            </Text>
-            <Text style={s.safetyBody}>
-              Solo durante la totalidad es seguro mirar sin protección. La app te avisará del inicio y del fin
-              exactos.
-            </Text>
-            <Pressable onPress={() => Linking.openURL(IGN_URL)}>
-              <Text style={s.safetyLink}>GUÍA DE SEGURIDAD (IGN) →</Text>
-            </Pressable>
-            {!!glassesUrl && (
-              <>
-                <Pressable onPress={() => Linking.openURL(glassesUrl)}>
-                  <Text style={s.safetyLink}>COMPRAR GAFAS CERTIFICADAS →</Text>
-                </Pressable>
-                <Text style={s.affiliateNote}>
-                  Enlace de afiliado: apoya la app sin coste extra para ti.
-                </Text>
-              </>
-            )}
           </View>
         </View>
 
