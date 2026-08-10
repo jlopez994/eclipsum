@@ -25,7 +25,7 @@ import { useGeo } from './hooks/useGeo';
 import { usePrefs } from './hooks/usePrefs';
 import { REAL_PLACE_KM, useSpotData } from './hooks/useSpotData';
 import { TabBar, type TabKey } from './components/TabBar';
-import { SpotSelector } from './components/SpotSelector';
+import { SpotSelector, localityName } from './components/SpotSelector';
 import { MapScreen } from './components/screens/MapScreen';
 import { AlertsScreen } from './components/screens/AlertsScreen';
 import { SettingsScreen } from './components/screens/SettingsScreen';
@@ -216,6 +216,17 @@ function AppInner() {
     [prefs, onPrefsChange],
   );
 
+  // Punto tocado en el mapa real: nombre vía geocoder inverso (fallback coordenadas)
+  const selectMapPoint = useCallback(
+    ({ lat, lon }: { lat: number; lon: number }) => {
+      void (async () => {
+        const name = (await localityName(lat, lon)) ?? `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+        selectSpot({ name, lat, lon, origin: 'manual' });
+      })();
+    },
+    [selectSpot],
+  );
+
   const recalcHere = useCallback(() => {
     if (!prefs || !geo) return;
     animateNextLayout();
@@ -311,6 +322,7 @@ function AppInner() {
               }
               onOpenSelector={() => setSelectorOpen(true)}
               onOpenMaps={() => openInMaps(active.lat, active.lon, active.place)}
+              onSelectMapPoint={selectMapPoint}
               divergenceKm={divergenceKm}
               onRecalcHere={recalcHere}
               sponsor={sponsor}

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { bandForEclipse, type BandSlice } from '../lib/bandGeo';
+import { computeLocalEclipse } from '../lib/eclipse';
 import { getActiveEclipse } from '../lib/eclipseCatalog';
 import { LEAFLET_CSS, LEAFLET_JS } from '../lib/leafletVendor';
 import { C } from './theme';
@@ -15,6 +16,58 @@ interface MapPoint {
 interface RealMapProps {
   spot: MapPoint;
   here: MapPoint | null;
+  /** Punto tocado en el mapa elegido como puesto de observación */
+  onSelectPoint: (p: { lat: number; lon: number }) => void;
+}
+
+/** Contenido del popup de un punto tocado; se calcula en el lado RN (motor memoizado). */
+interface TapInfo {
+  lat: number;
+  lon: number;
+  title: string;
+  color: string;
+  lines: string[];
+  warn: string | null;
+  canSelect: boolean;
+}
+
+const fmtHM = (d: Date) => d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+const fmtDur = (sec: number) => `${Math.floor(sec / 60)}m ${sec % 60}s`;
+
+function tapInfo(lat: number, lon: number): TapInfo {
+  const active = getActiveEclipse();
+  const base = { lat, lon, warn: null, canSelect: true };
+  try {
+    const ec = computeLocalEclipse(lat, lon);
+    const max = ec.events.find((e) => e.key === 'MAX');
+    // El motor devuelve el primer eclipse local tras searchStart: si no cae el día
+    // del eclipse activo, desde este punto no se ve el evento.
+    if (!max || max.time.toISOString().slice(0, 10) !== active.civilDate) {
+      return {
+        ...base,
+        title: 'SIN ECLIPSE AQUÍ',
+        color: C.dim,
+        lines: [`Nada visible el ${active.shortDateLabel}`],
+        canSelect: false,
+      };
+    }
+    const lines = [`Máximo a las ${fmtHM(max.time)}`];
+    const warn = max.altitude < 0 ? 'Bajo el horizonte: no visible' : null;
+    if (ec.kind === 'total') {
+      const title = ec.totalityDurationSec != null ? `TOTAL · ${fmtDur(ec.totalityDurationSec)}` : 'TOTAL';
+      return { ...base, title, color: C.totality, lines, warn };
+    }
+    const pct = (ec.obscuration * 100).toFixed(1).replace('.', ',');
+    return {
+      ...base,
+      title: `${ec.kind === 'annular' ? 'ANULAR' : 'PARCIAL'} · ${pct}% oculto`,
+      color: C.corona,
+      lines,
+      warn,
+    };
+  } catch {
+    return { ...base, title: 'SIN DATOS', color: C.dim, lines: [], canSelect: false };
+  }
 }
 
 /**
@@ -22,7 +75,7 @@ interface RealMapProps {
  * la banda de totalidad dibujada encima y marcadores de puesto y GPS.
  * Los tiles sí requieren red; la librería ya no depende de ningún CDN.
  */
-export function RealMap({ spot, here }: RealMapProps) {
+export function RealMap({ spot, here, onSelectPoint }: RealMapProps) {
   const webRef = useRef<WebView>(null);
   const [ready, setReady] = useState(false);
   // HTML congelado al montar: los cambios de puesto se inyectan (flyTo) sin recargar el mapa
@@ -37,6 +90,22 @@ export function RealMap({ spot, here }: RealMapProps) {
     webRef.current?.injectJavaScript(`window.eclipsumUpdate && window.eclipsumUpdate(${data}); true;`);
   }, [ready, spot.lat, spot.lon, spot.label, here?.lat, here?.lon, here?.label]);
 
+  const onMessage = (e: WebViewMessageEvent) => {
+    try {
+      const msg = JSON.parse(e.nativeEvent.data) as { type: string; lat: number; lon: number };
+      if (msg.type === 'tap') {
+        const info = tapInfo(msg.lat, msg.lon);
+        webRef.current?.injectJavaScript(
+          `window.eclipsumShowInfo && window.eclipsumShowInfo(${JSON.stringify(info)}); true;`,
+        );
+      } else if (msg.type === 'select') {
+        onSelectPoint({ lat: msg.lat, lon: msg.lon });
+      }
+    } catch {
+      // mensaje no-JSON del WebView: ignorar
+    }
+  };
+
   return (
     <WebView
       ref={webRef}
@@ -46,6 +115,7 @@ export function RealMap({ spot, here }: RealMapProps) {
       setSupportMultipleWindows={false}
       overScrollMode="never"
       onLoadEnd={() => setReady(true)}
+      onMessage={onMessage}
     />
   );
 }
@@ -61,7 +131,7 @@ function buildHtml(
   const south = band ? [...band].reverse().map((b) => [b.latS, b.lon]) : [];
   const center = band?.map((b) => [(b.latN + b.latS) / 2, b.lon]) ?? null;
   const polygon = band ? [...north, ...south] : null;
-  const data = JSON.stringify({ polygon, center, spot, here, bandTooltip });
+  const data = JSON.stringify({ polygon, north, south, center, spot, here, bandTooltip });
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -74,6 +144,14 @@ function buildHtml(
   .leaflet-tooltip-top:before { display: none; }
   .leaflet-control-attribution { background: rgba(11,11,18,0.7); color: #666; font-size: 9px; }
   .leaflet-control-attribution a { color: #888; }
+  .leaflet-popup-content-wrapper { background: rgba(21,21,30,0.96); color: ${C.text};
+    border: 1px solid ${C.border}; border-radius: 10px; box-shadow: 0 6px 22px rgba(0,0,0,0.55); }
+  .leaflet-popup-content { margin: 10px 12px; line-height: 1.5; }
+  .leaflet-popup-tip { background: rgba(21,21,30,0.96); }
+  .pop-title { font: 700 12px system-ui; letter-spacing: 1px; }
+  .pop-line { font: 500 11px system-ui; color: ${C.dim}; margin-top: 2px; }
+  .pop-warn { font: 600 11px system-ui; color: ${C.danger}; margin-top: 2px; }
+  .pop-btn { font: 700 11px system-ui; letter-spacing: 1px; color: ${C.corona}; margin-top: 8px; padding: 2px 0; }
 </style>
 </head><body>
 <div id="map"></div>
@@ -86,10 +164,14 @@ function buildHtml(
   }).addTo(map);
 
   if (D.polygon) {
+    // Relleno tenue sin borde: los cierres verticales del polígono son artefactos del dataset
     L.polygon(D.polygon, {
-      color: '${C.totality}', weight: 1.5, opacity: 0.9,
-      fillColor: '${C.totality}', fillOpacity: 0.18,
+      stroke: false, fillColor: '${C.totality}', fillOpacity: 0.1,
     }).addTo(map).bindTooltip(D.bandTooltip, { sticky: true, className: 'lbl' });
+
+    // Límites reales de la banda: líneas finas y suaves
+    L.polyline(D.north, { color: '${C.totality}', weight: 1, opacity: 0.5 }).addTo(map);
+    L.polyline(D.south, { color: '${C.totality}', weight: 1, opacity: 0.5 }).addTo(map);
 
     L.polyline(D.center, { color: '${C.corona}', weight: 2, dashArray: '6 6', opacity: 0.9 })
       .addTo(map).bindTooltip('Centro: máxima duración', { sticky: true, className: 'lbl' });
@@ -120,6 +202,24 @@ function buildHtml(
   }
   draw(D, false);
   window.eclipsumUpdate = function (d) { draw(d, true); };
+
+  // Tap en el mapa → RN calcula el eclipse en ese punto → popup vía eclipsumShowInfo
+  map.on('click', function (e) {
+    window.ReactNativeWebView && window.ReactNativeWebView.postMessage(
+      JSON.stringify({ type: 'tap', lat: e.latlng.lat, lon: e.latlng.lng })
+    );
+  });
+  window.eclipsumShowInfo = function (i) {
+    var h = '<div class="pop-title" style="color:' + i.color + '">' + i.title + '</div>';
+    for (var k = 0; k < i.lines.length; k++) h += '<div class="pop-line">' + i.lines[k] + '</div>';
+    if (i.warn) h += '<div class="pop-warn">' + i.warn + '</div>';
+    if (i.canSelect) h += '<div class="pop-btn" onclick="window.eclipsumPick(' + i.lat + ',' + i.lon + ')">OBSERVAR AQUÍ →</div>';
+    L.popup({ closeButton: false }).setLatLng([i.lat, i.lon]).setContent(h).openOn(map);
+  };
+  window.eclipsumPick = function (lat, lon) {
+    map.closePopup();
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'select', lat: lat, lon: lon }));
+  };
 </script>
 </body></html>`;
 }

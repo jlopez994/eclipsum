@@ -59,7 +59,7 @@ function toRow(spot: Spot, ref: { lat: number; lon: number }, selectValue?: Spot
   };
 }
 
-async function localityName(lat: number, lon: number): Promise<string | null> {
+export async function localityName(lat: number, lon: number): Promise<string | null> {
   try {
     const [addr] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
     return addr?.city ?? addr?.subregion ?? addr?.name ?? null;

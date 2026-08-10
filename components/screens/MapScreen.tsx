@@ -84,6 +84,8 @@ interface MapScreenProps {
   onToggleMapView: () => void;
   onOpenSelector: () => void;
   onOpenMaps: () => void;
+  /** Punto tocado en el mapa real elegido como puesto de observación */
+  onSelectMapPoint: (p: { lat: number; lon: number }) => void;
   /** km entre GPS real y spot activo el día del eclipse; null = sin aviso */
   divergenceKm: number | null;
   onRecalcHere: () => void;
@@ -376,6 +378,7 @@ export function MapScreen({
   onToggleMapView,
   onOpenSelector,
   onOpenMaps,
+  onSelectMapPoint,
   divergenceKm,
   onRecalcHere,
   sponsor,
@@ -482,7 +485,9 @@ export function MapScreen({
         <RealMap
           spot={{ ...spotCoords, label: place }}
           here={hereCoords ? { ...hereCoords, label: hereLabel ?? 'TÚ' } : null}
+          onSelectPoint={onSelectMapPoint}
         />
+
       )}
       {mapView === 'diagram' && (
       <View style={[s.diagramStage, { bottom: sheetMin }]} pointerEvents="box-none">
