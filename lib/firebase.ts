@@ -16,10 +16,14 @@ export interface RemoteExtras {
   donateUrl: string;
   /** Patrocinador del eclipse activo; null = sin patrocinio */
   sponsor: Sponsor | null;
-  /** versionCode de la última APK publicada; 0 = sin dato */
+  /** versionCode de la última APK estable publicada; 0 = sin dato */
   latestVersionCode: number;
-  /** URL de descarga de la última APK; vacío = sin aviso de actualización */
+  /** URL de descarga de la última APK estable; vacío = sin aviso de actualización */
   latestApkUrl: string;
+  /** versionCode de la última beta (pre-release); solo lo mira el canal beta */
+  latestBetaVersionCode: number;
+  /** URL de la APK de la última beta (asset de su tag); vacío = sin aviso de beta */
+  latestBetaApkUrl: string;
   /** Puestos recomendados para el selector; vacío = sección oculta */
   suggestedSpots: SuggestedSpot[];
 }
@@ -113,6 +117,10 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       latest_version_code: '0',
       suggested_spots: BUNDLED_SUGGESTED_SPOTS,
       latest_apk_url: 'https://github.com/jlopez994/eclipsum/releases/latest/download/eclipsum.apk',
+      // Sin default útil: la URL de una beta apunta al asset de SU tag, así que la escribe
+      // el workflow en cada publicación. 0 + vacío = el canal beta no avisa de nada.
+      latest_beta_version_code: '0',
+      latest_beta_apk_url: '',
     };
     try {
       await fetchAndActivate(rc);
@@ -126,6 +134,8 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
     const sponsor = parseSponsor(getString(rc, 'sponsor'));
     const latestVersionCode = Number.parseInt(getString(rc, 'latest_version_code'), 10) || 0;
     const latestApkUrl = getString(rc, 'latest_apk_url');
+    const latestBetaVersionCode = Number.parseInt(getString(rc, 'latest_beta_version_code'), 10) || 0;
+    const latestBetaApkUrl = getString(rc, 'latest_beta_apk_url');
     const suggestedSpots = parseSuggestedSpots(getString(rc, 'suggested_spots'));
     // Orden: primero el catálogo extra, luego el id activo (puede apuntar a una entrada remota)
     setRemoteCatalog(getString(rc, 'eclipse_catalog'));
@@ -137,6 +147,8 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       sponsor,
       latestVersionCode,
       latestApkUrl,
+      latestBetaVersionCode,
+      latestBetaApkUrl,
       suggestedSpots,
     };
   } catch (e) {
@@ -149,6 +161,8 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       sponsor: null,
       latestVersionCode: 0,
       latestApkUrl: '',
+      latestBetaVersionCode: 0,
+      latestBetaApkUrl: '',
       suggestedSpots: [],
     };
   }

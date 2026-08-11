@@ -99,7 +99,8 @@ function AppInner() {
   const { prefs, update: onPrefsChange } = usePrefs();
   const { geo, locating, granted: locationGranted } = useGeo();
   const { permissions, request: requestPermission } = usePermissions(locationGranted);
-  const remote = useRemoteExtras();
+  // Antes de cargar prefs, canal estable: nunca ofrecer una beta a quien no la pidió
+  const remote = useRemoteExtras(prefs?.updateChannel ?? 'stable');
   const [tab, setTab] = useState<TabKey>('mapa');
   /** Instante en que se lanzó la demo; null = demo apagada. Ancla fija de la serie sintética */
   const [demoAt, setDemoAt] = useState<Date | null>(null);
@@ -540,6 +541,8 @@ function AppInner() {
             donateUrl={remote.donateUrl}
             // El efecto de alertas reprograma solo al cambiar alertSound
             onSoundChange={(sound) => onPrefsChange({ ...prefs, alertSound: sound })}
+            updateChannel={prefs.updateChannel}
+            onUpdateChannelChange={(channel) => onPrefsChange({ ...prefs, updateChannel: channel })}
             onDemoEclipse={() => setDemoAt(new Date())}
             language={prefs.language}
             onLanguageChange={(lang) => onPrefsChange({ ...prefs, language: lang })}

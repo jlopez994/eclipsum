@@ -8,7 +8,7 @@ import { previewAlertSound } from '../../lib/soundPreview';
 import { track } from '../../lib/firebase';
 import { LANG_META, LANGS, t, type I18nKey, type Lang } from '../../lib/i18n';
 import type { PermissionKind, Permissions } from '../../hooks/usePermissions';
-import type { AlertSound } from '../../lib/prefs';
+import type { AlertSound, UpdateChannel } from '../../lib/prefs';
 import { C, F } from '../theme';
 
 /** Filas de la sección PERMISOS: qué es y para qué lo usa la app. */
@@ -16,6 +16,12 @@ const PERMISSION_ROWS: { kind: PermissionKind; label: I18nKey; why: I18nKey }[] 
   { kind: 'location', label: 'settings.location', why: 'settings.location.why' },
   { kind: 'notifications', label: 'settings.notifications', why: 'settings.notifications.why' },
   { kind: 'camera', label: 'settings.camera', why: 'settings.camera.why' },
+];
+
+/** Canal de avisos de actualización; beta incluye también las estables más nuevas. */
+const UPDATE_CHANNELS: { id: UpdateChannel; label: I18nKey; hint: I18nKey }[] = [
+  { id: 'stable', label: 'settings.channel.stable', hint: 'settings.channel.stableHint' },
+  { id: 'beta', label: 'settings.channel.beta', hint: 'settings.channel.betaHint' },
 ];
 
 interface SettingsScreenProps {
@@ -28,6 +34,9 @@ interface SettingsScreenProps {
   /** URL de donaciones (Buy Me a Coffee, vía Remote Config); vacío = sección oculta */
   donateUrl?: string;
   onSoundChange: (sound: AlertSound) => void;
+  /** Canal del que se aceptan avisos de actualización */
+  updateChannel: UpdateChannel;
+  onUpdateChannelChange: (channel: UpdateChannel) => void;
   onDemoEclipse: () => void;
   /** Idioma elegido; '' = automático (sistema) */
   language: Lang | '';
@@ -69,6 +78,8 @@ export function SettingsScreen({
   alertSound,
   donateUrl,
   onSoundChange,
+  updateChannel,
+  onUpdateChannelChange,
   onDemoEclipse,
   language,
   onLanguageChange,
@@ -79,6 +90,7 @@ export function SettingsScreen({
 }: SettingsScreenProps) {
   const insets = useSafeAreaInsets();
   const [drillMsg, setDrillMsg] = useState<string | null>(null);
+  const missingPermission = PERMISSION_ROWS.some((r) => !permissions[r.kind]);
   // Sin memo: upcomingEclipses ya cachea por día+catálogo, y así un catálogo RC
   // recién activado refresca la lista sin esperar a remontar la pantalla
   const nextFew = upcomingEclipses(UPCOMING_COUNT);
@@ -119,11 +131,16 @@ export function SettingsScreen({
             {PERMISSION_ROWS.map((row, i) => {
               const on = permissions[row.kind];
               return (
-                // Concedido: solo estado, nada que tocar. Sin conceder: la fila ES la acción,
-                // así no hay que ir a buscar la pantalla que lo usa (ni a los ajustes del sistema)
+                // El peso visual va al que PIDE algo: concedido se resuelve con un check
+                // discreto y sin robar ancho al texto, y solo lo pendiente se pinta como
+                // llamada. Tocar la fila lo concede, sin ir a buscar la pantalla que lo usa.
                 <Pressable
                   key={row.kind}
-                  style={[s.rowItem, i < PERMISSION_ROWS.length - 1 && s.rowDivider]}
+                  style={[
+                    s.permRow,
+                    !on && s.permRowPending,
+                    i < PERMISSION_ROWS.length - 1 && s.rowDivider,
+                  ]}
                   onPress={on ? undefined : () => onRequestPermission(row.kind)}
                   disabled={on}
                   accessibilityRole={on ? undefined : 'button'}
@@ -131,16 +148,23 @@ export function SettingsScreen({
                 >
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={s.rowTitle}>{t(row.label)}</Text>
-                    <Text style={s.soundHint}>{t(row.why)}</Text>
+                    <Text style={s.permWhy}>{t(row.why)}</Text>
                   </View>
-                  <Text style={on ? s.activeTag : s.grantTag}>
-                    {on ? t('settings.granted') : t('settings.permissions.grant')}
-                  </Text>
+                  {on ? (
+                    <View style={s.permOk}>
+                      <Text style={s.permOkIcon}>✓</Text>
+                    </View>
+                  ) : (
+                    <View style={s.permCta}>
+                      <Text style={s.permCtaTxt}>{t('settings.permissions.grant')}</Text>
+                    </View>
+                  )}
                 </Pressable>
               );
             })}
           </View>
-          <Text style={s.upcomingNote}>{t('settings.permissions.hint')}</Text>
+          {/* Con todo concedido la explicación sobra: sería ruido permanente */}
+          {missingPermission && <Text style={s.upcomingNote}>{t('settings.permissions.hint')}</Text>}
         </View>
 
         <View>
@@ -219,6 +243,31 @@ export function SettingsScreen({
             <Text style={s.drillCtaText}>{t('settings.drill.start')}</Text>
           </Pressable>
           <Text style={s.drillNote}>{drillMsg ?? t('settings.drill.startHint')}</Text>
+        </View>
+
+        <View>
+          <Text style={s.section}>{t('settings.channel')}</Text>
+          <View style={s.card}>
+            {UPDATE_CHANNELS.map((opt, i) => {
+              const on = updateChannel === opt.id;
+              return (
+                <Pressable
+                  key={opt.id}
+                  style={[s.permRow, i < UPDATE_CHANNELS.length - 1 && s.rowDivider]}
+                  onPress={() => onUpdateChannelChange(opt.id)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`${t(opt.label)}. ${t(opt.hint)}`}
+                >
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={s.rowTitle}>{t(opt.label)}</Text>
+                    <Text style={s.permWhy}>{t(opt.hint)}</Text>
+                  </View>
+                  <View style={[s.radio, on && s.radioOn]}>{on && <View style={s.radioDot} />}</View>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
 
         <View>
@@ -383,9 +432,31 @@ const s = StyleSheet.create({
   langChipOn: { borderColor: 'rgba(255,196,87,0.55)', backgroundColor: 'rgba(255,196,87,0.12)' },
   langChipTxt: { fontFamily: F.semibold, fontSize: 13, color: C.dim },
   langChipTxtOn: { color: C.corona },
-  activeTag: { fontFamily: F.medium, fontSize: 12, color: C.ok },
-  /** Sin conceder la fila es accionable: se pinta como llamada, no como estado de error */
-  grantTag: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1.5, color: C.corona },
+  permRow: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16 },
+  /** Tinte tenue: de un vistazo se ve cuál falta sin leer nada */
+  permRowPending: { backgroundColor: 'rgba(255,184,77,0.05)' },
+  permWhy: { fontFamily: F.regular, fontSize: 12, lineHeight: 16, color: C.dim, marginTop: 3 },
+  /** Concedido = confirmación callada; no compite con el texto ni le roba ancho */
+  permOk: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(94,204,143,0.4)',
+    backgroundColor: 'rgba(94,204,143,0.12)',
+  },
+  permOkIcon: { fontFamily: F.bold, fontSize: 12, lineHeight: 15, color: C.ok },
+  permCta: {
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,184,77,0.45)',
+    backgroundColor: 'rgba(255,184,77,0.12)',
+  },
+  permCtaTxt: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1.2, color: C.corona },
   linkCta: { fontFamily: F.bold, fontSize: 13, letterSpacing: 1, color: C.corona, marginTop: 12 },
   aboutValue: { fontFamily: F.medium, fontSize: 13, color: C.dim },
   tourAction: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1.5, color: C.corona },

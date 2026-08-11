@@ -56,6 +56,20 @@
       "description": "URL pública de la APK latest (GitHub Releases, asset de nombre fijo). Vacío = sin aviso aunque haya versionCode nuevo.",
       "valueType": "STRING"
     },
+    "latest_beta_version_code": {
+      "defaultValue": {
+        "value": "0"
+      },
+      "description": "android.versionCode de la última beta (pre-release). Lo escribe release-apk. Solo lo leen quienes eligen el canal beta en Ajustes. 0 = sin beta anunciada.",
+      "valueType": "STRING"
+    },
+    "latest_beta_apk_url": {
+      "defaultValue": {
+        "value": ""
+      },
+      "description": "URL de la APK de la última beta (asset de su tag, no releases/latest). Lo escribe release-apk. Vacío = sin aviso de beta.",
+      "valueType": "STRING"
+    },
     "suggested_spots": {
       "defaultValue": {
         "value": "[{\"name\":\"Palencia\",\"lat\":42.0096,\"lon\":-4.5288},{\"name\":\"Burgos\",\"lat\":42.3439,\"lon\":-3.6969},{\"name\":\"Soria\",\"lat\":41.7665,\"lon\":-2.479},{\"name\":\"Zaragoza\",\"lat\":41.6488,\"lon\":-0.8891},{\"name\":\"Teruel\",\"lat\":40.3456,\"lon\":-1.1065},{\"name\":\"Peñíscola\",\"lat\":40.3583,\"lon\":0.4067}]"

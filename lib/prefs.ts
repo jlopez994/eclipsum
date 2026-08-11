@@ -17,6 +17,12 @@ export const ALERT_EARLY_SECONDS = 15;
 /** Sonido de alerta: el WAV propio de la app, o el tono por defecto del sistema. */
 export type AlertSound = 'eclipse' | 'default';
 
+/**
+ * Canal del que se aceptan avisos de actualización. `beta` incluye también las estables:
+ * quien prueba betas no debe perderse una estable más nueva que su build.
+ */
+export type UpdateChannel = 'stable' | 'beta';
+
 /** Avisos de planificación opcionales antes de C1 (independientes del anticipo del contacto). */
 export interface C1PlanAlerts {
   before24h: boolean;
@@ -51,6 +57,8 @@ export interface Prefs {
   recentSpots: RecentSpot[];
   /** Audio de las notificaciones locales */
   alertSound: AlertSound;
+  /** Canal de los avisos de actualización; 'stable' por defecto */
+  updateChannel: UpdateChannel;
   /** Idioma de la app; '' = automático (el del sistema) */
   language: Lang | '';
   /**
@@ -97,6 +105,7 @@ export const DEFAULT_PREFS: Prefs = {
   byEclipse: {},
   recentSpots: [],
   alertSound: 'eclipse',
+  updateChannel: 'stable',
   language: '',
   donateOpens: 0,
   tourSeen: false,
@@ -217,6 +226,8 @@ export async function loadPrefs(migrationDay: string): Promise<Prefs> {
       byEclipse,
       recentSpots,
       alertSound: parsed.alertSound === 'default' ? 'default' : 'eclipse',
+      // Ausente = prefs anteriores al selector de canal: estable, como venían comportándose
+      updateChannel: parsed.updateChannel === 'beta' ? 'beta' : 'stable',
       language: parsed.language === 'es' || parsed.language === 'en' ? parsed.language : '',
       donateOpens: typeof parsed.donateOpens === 'number' ? parsed.donateOpens : 0,
       // Ausente = prefs anteriores al tutorial: se enseña una vez tras actualizar

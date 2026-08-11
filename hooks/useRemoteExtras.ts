@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import Constants from 'expo-constants';
-import { fetchRemoteExtras, type Sponsor, type SuggestedSpot } from '../lib/firebase';
+import { fetchRemoteExtras, type RemoteExtras, type Sponsor, type SuggestedSpot } from '../lib/firebase';
+import type { UpdateChannel } from '../lib/prefs';
 
 /**
  * En desarrollo la app se hace pasar por una build antigua para que el aviso de
@@ -38,10 +39,21 @@ const EMPTY: RemoteExtrasState = {
 };
 
 /**
+ * APK a anunciar según el canal elegido. En beta gana la más nueva de las dos: quien
+ * prueba betas no debe perderse una estable posterior (al publicar la estable de una
+ * beta su versionCode es mayor, así que el aviso lleva a la definitiva).
+ */
+function updateFor(r: RemoteExtras, channel: UpdateChannel, ownVc: number): string {
+  const candidates = [{ vc: r.latestVersionCode, url: r.latestApkUrl }];
+  if (channel === 'beta') candidates.push({ vc: r.latestBetaVersionCode, url: r.latestBetaApkUrl });
+  return candidates.filter((c) => c.url !== '' && c.vc > ownVc).sort((a, b) => b.vc - a.vc)[0]?.url ?? '';
+}
+
+/**
  * Remote Config al arrancar y al volver a primer plano (fetchRemoteExtras respeta
  * su propia caché). Nunca lanza: sin red se queda con lo último activado.
  */
-export function useRemoteExtras(): RemoteExtrasState {
+export function useRemoteExtras(channel: UpdateChannel): RemoteExtrasState {
   const [state, setState] = useState<RemoteExtrasState>(EMPTY);
 
   useEffect(() => {
@@ -55,7 +67,7 @@ export function useRemoteExtras(): RemoteExtrasState {
           donateUrl: r.donateUrl,
           sponsor: r.sponsor,
           suggestedSpots: r.suggestedSpots,
-          updateUrl: r.latestVersionCode > ownVc && r.latestApkUrl ? r.latestApkUrl : '',
+          updateUrl: updateFor(r, channel, ownVc),
           catalogEpoch: prev.catalogEpoch + 1,
         }));
       });
@@ -65,7 +77,8 @@ export function useRemoteExtras(): RemoteExtrasState {
       if (s === 'active') pull();
     });
     return () => sub.remove();
-  }, []);
+    // channel en las deps: cambiarlo en Ajustes reevalúa el aviso sin esperar a otro arranque
+  }, [channel]);
 
   return state;
 }

@@ -102,29 +102,54 @@ jobs:
             --title "Eclipsum $V" \
             --notes "APK $V · descarga estable: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/eclipsum.apk"
 
-      # Solo estable: anuncia la actualización en la app vía Remote Config
-      - name: Publicar Remote Config (latest_version_code)
-        if: steps.v.outputs.skip != 'true' && steps.v.outputs.prerelease != 'true'
+      # Anuncia la actualización en la app vía Remote Config. Cada canal escribe SU par:
+      # estable en latest_* (asset fijo de releases/latest), beta en latest_beta_* (asset
+      # de su propio tag, porque una pre-release no mueve releases/latest). La app lee uno
+      # u otro según el canal elegido en Ajustes, así que una beta nunca avisa a un estable.
+      - name: Publicar Remote Config
+        if: steps.v.outputs.skip != 'true'
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          IS_BETA: ${{ steps.v.outputs.prerelease }}
+          VC: ${{ steps.v.outputs.vc }}
+          REPO: ${{ github.repository }}
         run: |
+          echo "$FIREBASE_SERVICE_ACCOUNT" > /tmp/sa.json
+          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json
+          # El deploy sube el template ENTERO. Si estuviera desincronizado (un deploy manual
+          # sin commitear), publicar una beta haría retroceder el aviso del canal estable.
+          # Se leen los valores vivos y se conservan los del canal que esta build NO toca.
+          npx firebase-tools@latest remoteconfig:get --project eclipsum-app-jl -o /tmp/rc-prod.json
           node -e "
             const fs = require('fs');
             const rc = JSON.parse(fs.readFileSync('remoteconfig.template.json', 'utf8'));
-            rc.parameters.latest_version_code.defaultValue.value = '${{ steps.v.outputs.vc }}';
+            const prod = JSON.parse(fs.readFileSync('/tmp/rc-prod.json', 'utf8')).parameters || {};
+            const beta = process.env.IS_BETA === 'true';
+            const set = (k, v) => { rc.parameters[k].defaultValue.value = v; };
+            // Punto de partida: lo que hay publicado (estas cuatro claves solo las escribe este workflow)
+            for (const k of ['latest_version_code', 'latest_apk_url', 'latest_beta_version_code', 'latest_beta_apk_url']) {
+              const live = prod[k] && prod[k].defaultValue && prod[k].defaultValue.value;
+              if (live !== undefined) set(k, live);
+            }
+            if (beta) {
+              set('latest_beta_version_code', process.env.VC);
+              set('latest_beta_apk_url',
+                'https://github.com/' + process.env.REPO + '/releases/download/b' + process.env.VC + '/eclipsum.apk');
+            } else {
+              set('latest_version_code', process.env.VC);
+            }
             fs.writeFileSync('remoteconfig.template.json', JSON.stringify(rc, null, 2) + '\n');
           "
-          echo "$FIREBASE_SERVICE_ACCOUNT" > /tmp/sa.json
-          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json
           npx firebase-tools@latest deploy --only remoteconfig --project eclipsum-app-jl --non-interactive
 
       - name: Commitear template actualizado
-        if: steps.v.outputs.skip != 'true' && steps.v.outputs.prerelease != 'true'
+        if: steps.v.outputs.skip != 'true'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add remoteconfig.template.json
           git diff --cached --quiet || {
-            git commit -m "chore(rc): latest_version_code ${{ steps.v.outputs.vc }} [skip ci]"
+            git commit -m "chore(rc): build ${{ steps.v.outputs.vc }} [skip ci]"
+            git pull --rebase
             git push
           }
