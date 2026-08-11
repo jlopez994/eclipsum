@@ -55,6 +55,13 @@
       },
       "description": "URL pública de la APK latest (GitHub Releases, asset de nombre fijo). Vacío = sin aviso aunque haya versionCode nuevo.",
       "valueType": "STRING"
+    },
+    "suggested_spots": {
+      "defaultValue": {
+        "value": "[{\"name\":\"Palencia\",\"lat\":42.0096,\"lon\":-4.5288},{\"name\":\"Burgos\",\"lat\":42.3439,\"lon\":-3.6969},{\"name\":\"Soria\",\"lat\":41.7665,\"lon\":-2.479},{\"name\":\"Zaragoza\",\"lat\":41.6488,\"lon\":-0.8891},{\"name\":\"Teruel\",\"lat\":40.3456,\"lon\":-1.1065},{\"name\":\"Peñíscola\",\"lat\":40.3583,\"lon\":0.4067}]"
+      },
+      "description": "Puestos recomendados del selector: [{\"name\",\"lat\",\"lon\"}], máx. 6. Solo se muestran los que caen en banda del eclipse activo; [] oculta la sección.",
+      "valueType": "STRING"
     }
   }
 }

@@ -11,6 +11,7 @@ import {
 import * as Location from 'expo-location';
 import { computeLocalEclipse } from '../lib/eclipse';
 import { openInMaps } from '../lib/maps';
+import type { SuggestedSpot } from '../lib/firebase';
 import type { Spot, SpotOption } from '../lib/spots';
 import { cloudCoverAt, fetchCloudCoverBatch } from '../lib/weather';
 import { localeTag, t } from '../lib/i18n';
@@ -28,6 +29,8 @@ interface SpotSelectorProps {
   gpsPlace: string;
   activeSpot: Spot | null;
   recentSpots: Spot[];
+  /** Lista curada servida por Remote Config; vacía = sin sección de sugerencias */
+  suggestedSpots: SuggestedSpot[];
   onSelect: (spot: Spot) => void;
 }
 
@@ -80,6 +83,7 @@ export function SpotSelector({
   gpsPlace,
   activeSpot,
   recentSpots,
+  suggestedSpots,
   onSelect,
 }: SpotSelectorProps) {
   const [sections, setSections] = useState<Section[] | null>(null);
@@ -148,6 +152,22 @@ export function SpotSelector({
         allForClouds.push(...recentRows);
         next.push({ title: t('spot.recent'), rows: recentRows });
       }
+
+      // Sugerencias curadas (RC). Se filtran contra el eclipse activo: una lista
+      // pensada para un eclipse no debe recomendar sitios en parcial para otro.
+      if (suggestedSpots.length > 0) {
+        const suggestedRows: Row[] = [];
+        for (const s of suggestedSpots) {
+          await yieldUI();
+          if (cancelled) return;
+          const row = toRow({ name: s.name, lat: s.lat, lon: s.lon, origin: 'city' }, ref);
+          if (row.kind !== 'partial') suggestedRows.push(row);
+        }
+        if (suggestedRows.length > 0) {
+          allForClouds.push(...suggestedRows);
+          next.push({ title: t('spot.suggested'), rows: suggestedRows });
+        }
+      }
       // Primer pintado con lo ya calculado; el resto llega por tandas
       publish();
 
@@ -194,7 +214,7 @@ export function SpotSelector({
     return () => {
       cancelled = true;
     };
-  }, [visible, userGeo?.lat, userGeo?.lon, gpsPlace, recentSpots]);
+  }, [visible, userGeo?.lat, userGeo?.lon, gpsPlace, recentSpots, suggestedSpots]);
 
   const applySearch = async () => {
     const q = query.trim();

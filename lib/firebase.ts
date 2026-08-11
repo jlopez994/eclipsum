@@ -22,6 +22,15 @@ export interface RemoteExtras {
   latestVersionCode: number;
   /** URL de descarga de la última APK; vacío = sin aviso de actualización */
   latestApkUrl: string;
+  /** Puestos recomendados para el selector; vacío = sección oculta */
+  suggestedSpots: SuggestedSpot[];
+}
+
+/** Puesto curado que viaja en RC: el selector calcula sus circunstancias en local. */
+export interface SuggestedSpot {
+  name: string;
+  lat: number;
+  lon: number;
 }
 
 export interface Sponsor {
@@ -49,6 +58,44 @@ function parseSponsor(json: string): Sponsor | null {
   }
 }
 
+/** Tope de la lista curada: son sugerencias, no un directorio. */
+const MAX_SUGGESTED_SPOTS = 6;
+
+/**
+ * Lista curada empaquetada: el día del eclipse la red falla justo cuando importa,
+ * así que el default del cliente lleva ya las sugerencias del 12-ago-2026.
+ * RC la sobrescribe sin publicar APK; el filtro por banda evita que se cuele en otro eclipse.
+ */
+const BUNDLED_SUGGESTED_SPOTS = JSON.stringify([
+  { name: 'Palencia', lat: 42.0096, lon: -4.5288 },
+  { name: 'Burgos', lat: 42.3439, lon: -3.6969 },
+  { name: 'Soria', lat: 41.7665, lon: -2.479 },
+  { name: 'Zaragoza', lat: 41.6488, lon: -0.8891 },
+  { name: 'Teruel', lat: 40.3456, lon: -1.1065 },
+  { name: 'Peñíscola', lat: 40.3583, lon: 0.4067 },
+]);
+
+/** RC `suggested_spots`: [{"name","lat","lon"}]; entradas inválidas se descartan (nunca rompe). */
+function parseSuggestedSpots(json: string): SuggestedSpot[] {
+  try {
+    const raw: unknown = JSON.parse(json);
+    if (!Array.isArray(raw)) return [];
+    const out: SuggestedSpot[] = [];
+    for (const item of raw) {
+      if (typeof item !== 'object' || item === null) continue;
+      const r = item as Record<string, unknown>;
+      if (typeof r.name !== 'string' || r.name.length === 0) continue;
+      if (typeof r.lat !== 'number' || !Number.isFinite(r.lat) || Math.abs(r.lat) > 90) continue;
+      if (typeof r.lon !== 'number' || !Number.isFinite(r.lon) || Math.abs(r.lon) > 180) continue;
+      out.push({ name: r.name, lat: r.lat, lon: r.lon });
+      if (out.length === MAX_SUGGESTED_SPOTS) break;
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Remote Config: banner, eclipse activo, catálogo extra, gafas, patrocinador y aviso de actualización.
  * Nunca lanza: sin red devuelve últimos valores activados o defaults.
@@ -66,6 +113,7 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       donate_url: '',
       sponsor: '',
       latest_version_code: '0',
+      suggested_spots: BUNDLED_SUGGESTED_SPOTS,
       latest_apk_url: 'https://github.com/jlopez994/eclipsum/releases/latest/download/eclipsum.apk',
     };
     try {
@@ -81,10 +129,20 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
     const sponsor = parseSponsor(getString(rc, 'sponsor'));
     const latestVersionCode = Number.parseInt(getString(rc, 'latest_version_code'), 10) || 0;
     const latestApkUrl = getString(rc, 'latest_apk_url');
+    const suggestedSpots = parseSuggestedSpots(getString(rc, 'suggested_spots'));
     // Orden: primero el catálogo extra, luego el id activo (puede apuntar a una entrada remota)
     setRemoteCatalog(getString(rc, 'eclipse_catalog'));
     setRemoteActiveEclipseId(activeEclipseId);
-    return { message, activeEclipseId, glassesUrl, donateUrl, sponsor, latestVersionCode, latestApkUrl };
+    return {
+      message,
+      activeEclipseId,
+      glassesUrl,
+      donateUrl,
+      sponsor,
+      latestVersionCode,
+      latestApkUrl,
+      suggestedSpots,
+    };
   } catch (e) {
     // Aquí solo se llega por fallo del SDK (la falta de red se traga arriba): reportable
     trackError('remote_config', e);
@@ -96,6 +154,7 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       sponsor: null,
       latestVersionCode: 0,
       latestApkUrl: '',
+      suggestedSpots: [],
     };
   }
 }
