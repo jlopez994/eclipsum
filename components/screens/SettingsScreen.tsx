@@ -26,6 +26,8 @@ interface SettingsScreenProps {
   onSelectEclipse: (day: string) => void;
   /** Arranca el simulacro (modo eclipse + avisos [PRUEBA]); devuelve mensaje de resultado */
   onStartDrill: () => Promise<string>;
+  /** Reabre el tutorial de bienvenida */
+  onShowTour: () => void;
 }
 
 const UPCOMING_COUNT = 5;
@@ -62,6 +64,7 @@ export function SettingsScreen({
   activeEclipse,
   onSelectEclipse,
   onStartDrill,
+  onShowTour,
 }: SettingsScreenProps) {
   const insets = useSafeAreaInsets();
   const [drillMsg, setDrillMsg] = useState<string | null>(null);
@@ -237,6 +240,17 @@ export function SettingsScreen({
           <Text style={s.section}>{t('settings.about')}</Text>
           <Pressable onLongPress={onDemoEclipse} delayLongPress={1500}>
             <View style={s.card}>
+              {/* Pressable propio dentro del de la demo: el toque corto es suyo,
+                  la pulsación larga sigue siendo la del easter egg */}
+              <Pressable
+                style={[s.rowItem, s.rowDivider]}
+                onPress={onShowTour}
+                accessibilityRole="button"
+                accessibilityLabel={t('settings.tour')}
+              >
+                <Text style={s.rowTitle}>{t('settings.tour')}</Text>
+                <Text style={s.tourAction}>{t('settings.tour.action')}</Text>
+              </Pressable>
               <View style={[s.rowItem, s.rowDivider]}>
                 <Text style={s.rowTitle}>{t('settings.version')}</Text>
                 {/* La versión ES el build (b<versionCode>, ver release.sh) */}
@@ -350,6 +364,7 @@ const s = StyleSheet.create({
   deniedTag: { fontFamily: F.medium, fontSize: 12, color: C.danger },
   linkCta: { fontFamily: F.bold, fontSize: 13, letterSpacing: 1, color: C.corona, marginTop: 12 },
   aboutValue: { fontFamily: F.medium, fontSize: 13, color: C.dim },
+  tourAction: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1.5, color: C.corona },
   upcomingActive: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 2, color: C.corona },
   upcomingNote: { fontFamily: F.regular, fontSize: 11, lineHeight: 16, color: C.dim, marginTop: 8 },
   aboutNote: { fontFamily: F.regular, fontSize: 13, lineHeight: 19, color: C.dim },

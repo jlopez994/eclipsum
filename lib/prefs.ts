@@ -58,6 +58,8 @@ export interface Prefs {
    * DONATE_PROMPT_DONE = resuelto (donó o lo descartó): no se vuelve a mostrar.
    */
   donateOpens: number;
+  /** Tutorial de bienvenida ya visto (o saltado); se repite a mano desde Ajustes */
+  tourSeen: boolean;
 }
 
 /** Centinela de `donateOpens`: el aviso ya no volverá a aparecer */
@@ -97,6 +99,7 @@ export const DEFAULT_PREFS: Prefs = {
   alertSound: 'eclipse',
   language: '',
   donateOpens: 0,
+  tourSeen: false,
 };
 
 /** Contexto del eclipse con día civil `day`; defaults si aún no tiene nada guardado. */
@@ -216,6 +219,8 @@ export async function loadPrefs(migrationDay: string): Promise<Prefs> {
       alertSound: parsed.alertSound === 'default' ? 'default' : 'eclipse',
       language: parsed.language === 'es' || parsed.language === 'en' ? parsed.language : '',
       donateOpens: typeof parsed.donateOpens === 'number' ? parsed.donateOpens : 0,
+      // Ausente = prefs anteriores al tutorial: se enseña una vez tras actualizar
+      tourSeen: parsed.tourSeen === true,
     };
   } catch {
     return DEFAULT_PREFS;

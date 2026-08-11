@@ -41,6 +41,7 @@ import { useSpotData } from './hooks/useSpotData';
 import { NoticeStack } from './components/NoticeStack';
 import { OutOfZoneNotice } from './components/OutOfZoneNotice';
 import { TabBar, type TabKey } from './components/TabBar';
+import { Tour } from './components/Tour';
 import { SpotSelector, localityName } from './components/SpotSelector';
 import { MapScreen } from './components/screens/MapScreen';
 import { AlertsScreen } from './components/screens/AlertsScreen';
@@ -97,6 +98,8 @@ function AppInner() {
   const [tab, setTab] = useState<TabKey>('mapa');
   const [demo, setDemo] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
+  /** Repetición manual desde Ajustes; el primer pase lo dispara prefs.tourSeen */
+  const [tourOpen, setTourOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const [fineClock, setFineClock] = useState(false);
 
@@ -487,6 +490,7 @@ function AppInner() {
               onPrefsChange({ ...prefs, selectedEclipseDay: day });
             }}
             onStartDrill={startDrill}
+            onShowTour={() => setTourOpen(true)}
           />
         )}
       </View>
@@ -501,6 +505,16 @@ function AppInner() {
         suggestedSpots={remote.suggestedSpots}
         onSelect={selectSpot}
       />
+      {/* Primer arranque o repetición desde Ajustes. Fuera del modo eclipse: ese return
+          va antes, así que el día D nunca se cruza por delante del evento. */}
+      {(tourOpen || !prefs.tourSeen) && (
+        <Tour
+          onClose={() => {
+            setTourOpen(false);
+            if (!prefs.tourSeen) onPrefsChange({ ...prefs, tourSeen: true });
+          }}
+        />
+      )}
     </View>
   );
 }
