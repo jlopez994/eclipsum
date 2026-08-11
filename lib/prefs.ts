@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { clampDrill, DEFAULT_DRILL, type DrillConfig } from './drill';
 import type { EclipseEvent } from './eclipse';
 import type { Lang } from './i18n';
 import type { Spot } from './spots';
@@ -52,8 +51,6 @@ export interface Prefs {
   recentSpots: RecentSpot[];
   /** Audio de las notificaciones locales */
   alertSound: AlertSound;
-  /** Tramos del modo simulacro */
-  drill: DrillConfig;
   /** Idioma de la app; '' = automático (el del sistema) */
   language: Lang | '';
   /**
@@ -98,7 +95,6 @@ export const DEFAULT_PREFS: Prefs = {
   byEclipse: {},
   recentSpots: [],
   alertSound: 'eclipse',
-  drill: { ...DEFAULT_DRILL },
   language: '',
   donateOpens: 0,
 };
@@ -222,7 +218,6 @@ export async function loadPrefs(migrationDay: string): Promise<Prefs> {
       byEclipse,
       recentSpots,
       alertSound: parsed.alertSound === 'default' ? 'default' : 'eclipse',
-      drill: clampDrill(parsed.drill),
       language: parsed.language === 'es' || parsed.language === 'en' ? parsed.language : '',
       donateOpens: typeof parsed.donateOpens === 'number' ? parsed.donateOpens : 0,
     };

@@ -8,7 +8,6 @@ import { previewAlertSound } from '../../lib/soundPreview';
 import { track } from '../../lib/firebase';
 import { LANG_META, LANGS, t, type Lang } from '../../lib/i18n';
 import type { AlertSound } from '../../lib/prefs';
-import { DRILL_PARTIAL, DRILL_TOTALITY, type DrillConfig } from '../../lib/drill';
 import { C, F } from '../theme';
 
 interface SettingsScreenProps {
@@ -26,8 +25,6 @@ interface SettingsScreenProps {
   /** Recibe el día civil elegido; '' = automático */
   onSelectEclipse: (day: string) => void;
   /** Tramos del simulacro (persisten en prefs) */
-  drill: DrillConfig;
-  onDrillChange: (drill: DrillConfig) => void;
   /** Arranca el simulacro (modo eclipse + avisos [PRUEBA]); devuelve mensaje de resultado */
   onStartDrill: () => Promise<string>;
 }
@@ -45,55 +42,6 @@ function fmtPeak(e: EclipseEntry): string | null {
   const lat = `${Math.abs(e.peakLat).toFixed(0)}°${e.peakLat >= 0 ? t('bearing.N') : t('bearing.S')}`;
   const lon = `${Math.abs(e.peakLon).toFixed(0)}°${e.peakLon >= 0 ? t('bearing.E') : t('bearing.W')}`;
   return t('settings.upcoming.peak', { lat, lon });
-}
-
-/** 90 → «1m 30s»; 120 → «2 min» */
-function fmtTotality(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  if (m === 0) return `${s} s`;
-  return s === 0 ? `${m} min` : `${m}m ${s}s`;
-}
-
-/** Stepper con el valor entre los botones; en los topes el botón se apaga y no responde. */
-function Stepper({
-  value,
-  range,
-  onLess,
-  onMore,
-  a11y,
-}: {
-  value: number;
-  range: { min: number; max: number };
-  onLess: () => void;
-  onMore: () => void;
-  a11y: string;
-}) {
-  const atMin = value <= range.min;
-  const atMax = value >= range.max;
-  return (
-    <View style={s.stepper}>
-      <Pressable
-        style={[s.stepBtn, atMin && s.stepBtnOff]}
-        onPress={onLess}
-        disabled={atMin}
-        hitSlop={6}
-        accessibilityLabel={t('settings.drill.less', { what: a11y })}
-      >
-        <Text style={[s.stepTxt, atMin && s.stepTxtOff]}>−</Text>
-      </Pressable>
-      <Text style={s.stepValue}>{fmtTotality(value)}</Text>
-      <Pressable
-        style={[s.stepBtn, atMax && s.stepBtnOff]}
-        onPress={onMore}
-        disabled={atMax}
-        hitSlop={6}
-        accessibilityLabel={t('settings.drill.more', { what: a11y })}
-      >
-        <Text style={[s.stepTxt, atMax && s.stepTxtOff]}>+</Text>
-      </Pressable>
-    </View>
-  );
 }
 
 /** Chips del selector de idioma: «Automático» localizado + endónimo de cada idioma (LANG_META). */
@@ -114,8 +62,6 @@ export function SettingsScreen({
   onLanguageChange,
   activeEclipse,
   onSelectEclipse,
-  drill,
-  onDrillChange,
   onStartDrill,
 }: SettingsScreenProps) {
   const insets = useSafeAreaInsets();
@@ -125,12 +71,6 @@ export function SettingsScreen({
   const upcoming = upcomingEclipses(UPCOMING_COUNT);
   // Elegir el más próximo (fila 0) equivale al modo automático; misma regla que getActiveEclipse
   const isManualSelection = activeEclipse.civilDate !== upcoming[0]?.civilDate;
-
-  const step = (key: keyof DrillConfig, dir: 1 | -1) => {
-    const range = key === 'partialSec' ? DRILL_PARTIAL : DRILL_TOTALITY;
-    const next = Math.min(range.max, Math.max(range.min, drill[key] + dir * range.step));
-    onDrillChange({ ...drill, [key]: next });
-  };
 
   const runDrill = () => {
     onStartDrill()
@@ -241,34 +181,6 @@ export function SettingsScreen({
 
         <View>
           <Text style={s.section}>{t('settings.drill')}</Text>
-          <View style={s.card}>
-            <View style={[s.rowItem, s.rowDivider]}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={s.rowTitle}>{t('settings.drill.partial')}</Text>
-                <Text style={s.soundHint}>{t('settings.drill.partialHint')}</Text>
-              </View>
-              <Stepper
-                value={drill.partialSec}
-                range={DRILL_PARTIAL}
-                onLess={() => step('partialSec', -1)}
-                onMore={() => step('partialSec', 1)}
-                a11y={t('settings.drill.partialA11y')}
-              />
-            </View>
-            <View style={s.rowItem}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={s.rowTitle}>{t('settings.drill.totality')}</Text>
-                <Text style={s.soundHint}>{t('settings.drill.totalityHint')}</Text>
-              </View>
-              <Stepper
-                value={drill.totalitySec}
-                range={DRILL_TOTALITY}
-                onLess={() => step('totalitySec', -1)}
-                onMore={() => step('totalitySec', 1)}
-                a11y={t('settings.drill.totalityA11y')}
-              />
-            </View>
-          </View>
           <Pressable style={s.drillCta} onPress={runDrill} accessibilityLabel={t('settings.drill.startA11y')}>
             <Text style={s.drillCtaIcon}>▶</Text>
             <Text style={s.drillCtaText}>{t('settings.drill.start')}</Text>
@@ -378,27 +290,6 @@ const s = StyleSheet.create({
     minWidth: 0,
   },
   soundHint: { fontFamily: F.regular, fontSize: 12, color: C.dim, marginTop: 2 },
-  stepper: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  stepBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: C.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepBtnOff: { borderColor: 'rgba(38,38,58,0.45)' },
-  stepTxt: { fontFamily: F.bold, fontSize: 17, color: C.text, lineHeight: 20 },
-  stepTxtOff: { color: C.knobTrack },
-  stepValue: {
-    fontFamily: F.semibold,
-    fontSize: 13,
-    color: C.corona,
-    fontVariant: ['tabular-nums'],
-    minWidth: 54,
-    textAlign: 'center',
-  },
   drillCta: {
     flexDirection: 'row',
     alignItems: 'center',

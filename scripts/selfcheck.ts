@@ -15,6 +15,7 @@ import { cloudCoverAt } from '../lib/weather';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
 import type { Spot } from '../lib/spots';
 import {
+  ALERT_EARLY_SECONDS,
   contextFor,
   DEFAULT_PREFS,
   DONATE_PROMPT_AFTER,
@@ -24,7 +25,7 @@ import {
   withContext,
   type RecentSpot,
 } from '../lib/prefs';
-import { buildDrillEclipse, clampDrill, DEFAULT_DRILL } from '../lib/drill';
+import { buildDrillEclipse, DRILL_PARTIAL_SEC, DRILL_TOTALITY_SEC } from '../lib/drill';
 
 async function main() {
   // Nota: la caché del automático es monótona en el tiempo — los asserts van en fechas crecientes
@@ -167,19 +168,17 @@ async function main() {
   setRemoteCatalog('[]');
   assert.equal(getEclipseById('2027-08-02-egipto'), undefined, 'Reset del catálogo remoto');
 
-  // Simulacro: tramos configurados y geometría copiada del eclipse real
-  const drillE = buildDrillEclipse(zgz, new Date('2026-08-10T15:00:00Z'), { partialSec: 90, totalitySec: 120 });
+  // Simulacro: tramos fijos mínimos y geometría copiada del eclipse real
+  const drillE = buildDrillEclipse(zgz, new Date('2026-08-10T15:00:00Z'));
   const dt = (a: number, b: number) => (drillE.events[b].time.getTime() - drillE.events[a].time.getTime()) / 1000;
   assert.equal(drillE.kind, 'total', 'Drill: siempre total');
-  assert.equal(dt(0, 1), 90, 'Drill: C1→C2 = 90 s');
-  assert.equal(dt(1, 3), 120, 'Drill: totalidad = 120 s');
-  assert.equal(dt(3, 4), 90, 'Drill: C3→C4 = 90 s');
+  assert.equal(dt(0, 1), DRILL_PARTIAL_SEC, 'Drill: C1→C2 = parcial fijo');
+  assert.equal(dt(1, 3), DRILL_TOTALITY_SEC, 'Drill: totalidad fija');
+  assert.equal(dt(3, 4), DRILL_PARTIAL_SEC, 'Drill: C3→C4 = parcial fijo');
   assert.equal(drillE.events[2].azimuth, zgz.events.find((e) => e.key === 'MAX')!.azimuth, 'Drill: azimut del MAX real');
-  assert.deepEqual(clampDrill({ partialSec: 99_999, totalitySec: 1 }), { partialSec: 300, totalitySec: 45 }, 'Drill: clamp a rangos');
-  assert.deepEqual(clampDrill(undefined), DEFAULT_DRILL, 'Drill: defaults si no hay config');
-  assert.deepEqual(clampDrill({ partialMin: 15, totalitySec: 120 }), DEFAULT_DRILL, 'Drill: migra defaults de beta.7');
-  assert.deepEqual(clampDrill({ partialMin: 2, totalitySec: 90 }), { partialSec: 120, totalitySec: 90 }, 'Drill: migra minutos de betas previas');
-  assert.deepEqual(clampDrill({ partialSec: 90, totalitySec: 90 }), { partialSec: 90, totalitySec: 90 }, 'Drill: config elegida se respeta');
+  // Los mínimos deben dejar sitio a los avisos anticipados sin cruzarse entre hitos
+  assert.ok(DRILL_PARTIAL_SEC > ALERT_EARLY_SECONDS, 'Drill: aviso previo a C2 cae tras C1');
+  assert.ok(DRILL_TOTALITY_SEC / 2 > ALERT_EARLY_SECONDS, 'Drill: MAX suena antes del aviso previo a C3');
 
   // upcomingEclipses: catálogo + autogenerados, sin duplicar el día del empaquetado
   const up = upcomingEclipses(5, new Date('2026-01-01T00:00:00Z'));

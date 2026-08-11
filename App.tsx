@@ -19,7 +19,7 @@ import { openInMaps } from './lib/maps';
 import type { Spot } from './lib/spots';
 import { cancelAlertsByIds, scheduleEclipseAlerts, scheduleFakeEclipseAlerts } from './lib/notifications';
 import { buildDrillEclipse } from './lib/drill';
-import { fetchRemoteExtras, track, trackError, type Sponsor } from './lib/firebase';
+import { fetchRemoteExtras, track, trackError, type Sponsor, type SuggestedSpot } from './lib/firebase';
 import {
   contextFor,
   DEFAULT_PREFS,
@@ -50,8 +50,8 @@ import { C, F } from './components/theme';
 const PREVIEW_UPDATE_IN_DEV = __DEV__;
 
 const ECLIPSE_MODE_LEAD_MS = 30 * 60_000;
-/** Espera hasta el C1 del simulacro: da tiempo a bloquear el móvil y esperar el aviso */
-const DRILL_LEAD_MS = 2 * 60_000;
+/** Espera hasta el C1 del simulacro: lo justo para bloquear el móvil y esperar el aviso */
+const DRILL_LEAD_MS = 60_000;
 /** Al saltar de fase, el hito cae en 20 s: los avisos con antelación (15 s) aún suenan */
 const DRILL_JUMP_LEAD_MS = 20_000;
 const ECLIPSE_MODE_TAIL_MS = 5 * 60_000;
@@ -100,6 +100,8 @@ function AppInner() {
   const [glassesUrl, setGlassesUrl] = useState('');
   const [donateUrl, setDonateUrl] = useState('');
   const [sponsor, setSponsor] = useState<Sponsor | null>(null);
+  /** Puestos recomendados (RC); vacío = el selector no enseña la sección */
+  const [suggestedSpots, setSuggestedSpots] = useState<SuggestedSpot[]>([]);
   const [updateUrl, setUpdateUrl] = useState('');
   /** Avisos ocultados con la ✕; en memoria a propósito: vuelven al reiniciar la app */
   const [updateHidden, setUpdateHidden] = useState(false);
@@ -174,6 +176,7 @@ function AppInner() {
         setGlassesUrl(r.glassesUrl);
         setDonateUrl(r.donateUrl);
         setSponsor(r.sponsor);
+        setSuggestedSpots(r.suggestedSpots);
         // Aviso de actualización sin tienda: RC anuncia versionCode y URL de la APK
         const ownVc = PREVIEW_UPDATE_IN_DEV ? 0 : Constants.expoConfig?.android?.versionCode ?? 0;
         setUpdateUrl(r.latestVersionCode > ownVc && r.latestApkUrl ? r.latestApkUrl : '');
@@ -285,13 +288,13 @@ function AppInner() {
     [prefs, activeCatalog.civilDate, onPrefsChange],
   );
 
-  // Simulacro: eclipse sintético con los tramos configurados, C1 en 2 min.
+  // Simulacro: eclipse sintético de tramos mínimos, C1 en 1 min.
   // La app entra en modo eclipse (ventana de 30 min) y los avisos [PRUEBA] son aditivos.
   const startDrill = useCallback(async () => {
     if (!eclipse || !prefs) return t('app.drill.needSpot');
     if (!Object.values(ctx.alertsOn).some(Boolean)) return t('app.drill.needAlert');
     const c1At = new Date(Date.now() + DRILL_LEAD_MS);
-    const fake = buildDrillEclipse(eclipse, c1At, prefs.drill);
+    const fake = buildDrillEclipse(eclipse, c1At);
     const ids = await scheduleFakeEclipseAlerts(fake, c1At, ctx.alertsOn, prefs.alertSound, ctx.alertEarly);
     setDrill({ eclipse: fake, ids });
     track('drill_started');
@@ -516,8 +519,6 @@ function AppInner() {
               track('eclipse_selected', { day: day || 'auto' });
               onPrefsChange({ ...prefs, selectedEclipseDay: day });
             }}
-            drill={prefs.drill}
-            onDrillChange={(drillCfg) => onPrefsChange({ ...prefs, drill: drillCfg })}
             onStartDrill={startDrill}
           />
         )}
@@ -530,6 +531,7 @@ function AppInner() {
         gpsPlace={geo?.place ?? t('spot.yourPosition')}
         activeSpot={activeSpot}
         recentSpots={prefs.recentSpots}
+        suggestedSpots={suggestedSpots}
         onSelect={selectSpot}
       />
     </View>
