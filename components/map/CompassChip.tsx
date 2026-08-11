@@ -8,14 +8,8 @@ import { C, F } from '../theme';
 
 interface CompassChipProps {
   targetAzimuthDeg: number;
-  /**
-   * Despliega el detalle (altura del sol y acceso al visor). El panel lo pinta
-   * MapScreen: aquí no cabe — el chip mide 40 px y Yoga encoge a ese ancho a los
-   * hijos absolutos sin medida propia, partiendo el texto letra a letra.
-   */
+  /** Abre el visor de cámara. Sin handler (sin GPS o sol bajo el horizonte) el chip es inerte. */
   onPress?: () => void;
-  /** Detalle abierto: solo para el estado accesible del botón */
-  expanded?: boolean;
 }
 
 /**
@@ -23,7 +17,7 @@ interface CompassChipProps {
  * Con sensor, gira respecto al rumbo del móvil — cuando miras bien, la aguja queda arriba.
  * Sin sensor (emulador): muestra el rumbo cardenal fijo (arriba = N del diagrama).
  */
-export function CompassChip({ targetAzimuthDeg, onPress, expanded = false }: CompassChipProps) {
+export function CompassChip({ targetAzimuthDeg, onPress }: CompassChipProps) {
   const [heading, setHeading] = useState<number | null>(null);
   const target = ((targetAzimuthDeg % 360) + 360) % 360;
   const label = bearingLabel(target);
@@ -63,7 +57,6 @@ export function CompassChip({ targetAzimuthDeg, onPress, expanded = false }: Com
       disabled={!onPress}
       hitSlop={8}
       accessibilityRole={onPress ? 'button' : 'image'}
-      accessibilityState={onPress ? { expanded } : undefined}
       accessibilityLabel={dirLabel}
       accessibilityHint={onPress ? t('map.compass.a11yHint') : undefined}
     >

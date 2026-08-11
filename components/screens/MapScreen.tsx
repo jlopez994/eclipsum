@@ -26,7 +26,6 @@ import { fmtFixed1, t, type I18nKey } from '../../lib/i18n';
 import { bearingLabel, haversineKm, type TotalityDirection } from '../../lib/totality';
 import type { Sponsor } from '../../lib/firebase';
 import { cloudLevel, windyEclipseCloudsUrl } from '../../lib/weather';
-import { animateNextLayout } from '../../lib/anim';
 import { useSheet } from '../../hooks/useSheet';
 import { Countdown } from '../Countdown';
 import { RealMap, type RealMapHandle } from '../RealMap';
@@ -98,7 +97,6 @@ export function MapScreen({
   const { height: winH } = useWindowDimensions();
   const [sheetMin, setSheetMin] = useState(SHEET_MIN_FALLBACK);
   const [finderOpen, setFinderOpen] = useState(false);
-  const [compassOpen, setCompassOpen] = useState(false);
 
   /**
    * Tocar cualquier control de la app cierra el globo del mapa. Va en la fase de captura
@@ -155,8 +153,10 @@ export function MapScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gpsCoords?.lat, gpsCoords?.lon, eclipse]);
 
-  // La brújula tolera el respaldo del puesto (es orientativa); el visor no: ver abajo
+  // La brújula tolera el respaldo del puesto (es orientativa); el visor no: solo abre con
+  // posición real y sol por encima del horizonte
   const compassTarget = sunHere ?? maxEvent ?? null;
+  const canOpenFinder = sunHere !== null && sunHere.altitude > 0;
 
   // A partir de unos km los obstáculos de aquí no dicen nada de los de allí: se avisa
   const awayFromSpot = (() => {
@@ -257,39 +257,16 @@ export function MapScreen({
               <Text style={s.chipChevron}>▾</Text>
             </Pressable>
           </View>
+          {/* La brújula abre el visor directamente. El panel intermedio que había aquí solo
+              repetía la altura del sol —que ya está en el diagrama de la hoja— y metía un
+              toque de más antes de lo único que se quería hacer. */}
           <CompassChip
             targetAzimuthDeg={compassTarget?.azimuth ?? 270}
-            expanded={compassOpen}
-            onPress={
-              compassTarget
-                ? () => {
-                    animateNextLayout();
-                    setCompassOpen((v) => !v);
-                  }
-                : undefined
-            }
+            // El visor exige posición REAL: sin GPS no sabemos qué cielo hay sobre la cámara,
+            // y con el sol bajo el horizonte no hay nada que señalar. Sin eso, chip inerte.
+            onPress={canOpenFinder ? () => setFinderOpen(true) : undefined}
           />
         </View>
-        {/* Fuera del chip a propósito: aquí el ancho disponible es el de la pantalla,
-            así el panel se ajusta a su texto en vez de encogerse a los 40 px de la brújula */}
-        {compassOpen && compassTarget && (
-          <View style={s.compassPanelRow}>
-            <View style={s.compassPanel}>
-              <Text style={s.compassPanelText}>
-                {compassTarget.altitude > 0
-                  ? t('map.compass.height', { deg: Math.round(compassTarget.altitude) })
-                  : t('map.compass.belowHorizon')}
-              </Text>
-              {/* El visor exige posición REAL: sin GPS no sabemos qué cielo hay sobre la
-                  cámara, y con el sol bajo el horizonte no hay nada que señalar */}
-              {sunHere && sunHere.altitude > 0 && (
-                <Pressable onPress={() => setFinderOpen(true)} hitSlop={6}>
-                  <Text style={s.compassPanelLink}>{t('map.compass.finder')}</Text>
-                </Pressable>
-              )}
-            </View>
-          </View>
-        )}
         {divergenceKm !== null && (
           <View style={s.divergence}>
             <Text style={s.divergenceText}>{t('map.divergence', { km: Math.round(divergenceKm) })}</Text>
@@ -424,19 +401,6 @@ const s = StyleSheet.create({
     maxWidth: 260,
   },
   chipText: { fontFamily: F.semibold, fontSize: 13, color: C.text, flexShrink: 1 },
-  /** Alineado a la derecha bajo la brújula; el panel se ajusta a su propio texto */
-  compassPanelRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 20 },
-  compassPanel: {
-    alignItems: 'flex-end',
-    backgroundColor: 'rgba(21,21,30,0.92)',
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  compassPanelText: { fontFamily: F.semibold, fontSize: 11.5, color: C.text },
-  compassPanelLink: { fontFamily: F.bold, fontSize: 10, letterSpacing: 1, color: C.corona, marginTop: 6 },
   chipChevron: { fontFamily: F.semibold, fontSize: 12, color: C.dim, marginLeft: 2 },
   sheet: {
     position: 'absolute',
