@@ -5,7 +5,7 @@
  */
 import { NextGlobalSolarEclipse, SearchGlobalSolarEclipse, type GlobalSolarEclipseInfo } from 'astronomy-engine';
 import { bandForEclipse, type BandSlice } from './bandGeo';
-import { getLang, LANG_META, t, type I18nKey } from './i18n';
+import { getLang, monthShort, t, type I18nKey } from './i18n';
 
 export interface EclipseEntry {
   id: string;
@@ -181,7 +181,7 @@ function labelFields(
   peak: Date,
 ): Pick<EclipseEntry, 'label' | 'bandLabel' | 'bandTooltip' | 'shortDateLabel'> {
   const d = peak.getUTCDate();
-  const mes = LANG_META[getLang()].monthsShort[peak.getUTCMonth()];
+  const mes = monthShort(peak.getUTCMonth());
   const year = peak.getUTCFullYear();
   const fecha = `${d} ${mes} ${year}`;
   const fechaMayus = `${d} ${mes.toUpperCase()} ${year}`;

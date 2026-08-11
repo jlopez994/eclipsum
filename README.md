@@ -40,9 +40,11 @@ lib/
   prefs.ts               Preferencias persistidas, contexto por eclipse
   firebase.ts            Remote Config + Analytics + Crashlytics (best-effort)
   drill.ts               Eclipse sintético del simulacro
-  i18n.ts                Diccionario es/en, t(), sin dependencias
+  i18n.ts                t(), LANGS/LANG_META; diccionarios en locales/*.json
   spots.ts               Tipos Spot/SpotOption
   maps.ts / anim.ts / soundPreview.ts / leafletVendor.ts
+locales/
+  es.json / en.json      Traducciones (JSON plano; ver «Añadir un idioma»)
 hooks/
   useGeo.ts              GPS one-shot + geocoder inverso
   usePrefs.ts            Carga/guarda prefs, resuelve idioma
@@ -109,14 +111,13 @@ Curación manual (opcional, el workflow hace lo mismo solo): `npx tsx scripts/ge
 
 ## Añadir un idioma
 
-Los idiomas viven en un único fichero, `lib/i18n.ts`, y las contribuciones son bienvenidas:
+Las traducciones son JSON plano en `locales/` (una clave por texto, interpolación `{var}`) y las contribuciones son bienvenidas — traducir no requiere saber programar:
 
-1. Añade el código a `LANGS` (p. ej. `'fr'`).
-2. Rellena su entrada en `LANG_META`: endónimo (`name`), etiqueta BCP-47 (`tag`), separador decimal y meses abreviados. El compilador obliga a completarla.
-3. Copia el diccionario `en`, tradúcelo y regístralo en `DICTS`.
-4. `npm run selfcheck` verifica la paridad de claves con `es` — si falta alguna, falla con su nombre.
+1. Copia `locales/en.json` a `locales/<código>.json` (p. ej. `fr.json`) y traduce los valores (las claves y los `{var}` no se tocan). Los meses abreviados son las claves `month.0`–`month.11`.
+2. En `lib/i18n.ts`: añade el código a `LANGS`, su entrada en `LANG_META` (endónimo, etiqueta BCP-47, separador decimal) e importa/registra el JSON en `DICTS`. El compilador obliga a completar los tres.
+3. `npm run selfcheck` verifica la paridad de claves con `es` — si falta alguna, falla con su nombre.
 
-El selector de Ajustes se genera solo a partir de `LANGS`; no hay que tocar UI. Contexto útil para traducir: los textos en MAYÚSCULAS son labels de interfaz compactos; los `notif.*` son notificaciones que el usuario lee sin la app abierta; C1–C4/MÁX son los contactos del eclipse (jerga estándar).
+El selector de Ajustes se genera solo a partir de `LANGS`; no hay que tocar UI. Contexto útil para traducir: los textos en MAYÚSCULAS son labels de interfaz compactos; los `notif.*` son notificaciones que el usuario lee sin la app abierta; C1–C4/MÁX son los contactos del eclipse (jerga estándar). El formato es compatible tal cual con plataformas de traducción (Crowdin, Weblate, Tolgee) si algún día hace falta.
 
 ## Seguridad ocular
 

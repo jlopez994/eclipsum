@@ -218,10 +218,9 @@ async function main() {
   assert.equal(parseRemoteCatalog(JSON.stringify([auto])).length, 1, 'Auto: la entrada pasa el validador de RC');
 
   // i18n: mismos keys en ambos idiomas y el cambio de idioma surte efecto real
-  const { dictKeys, getLang, setLang, t: tr, LANGS, LANG_META } = await import('../lib/i18n');
+  const { dictKeys, getLang, setLang, t: tr, LANGS } = await import('../lib/i18n');
   for (const l of LANGS) {
     assert.deepEqual(dictKeys(l), dictKeys('es'), `i18n: paridad de claves es/${l}`);
-    assert.equal(LANG_META[l].monthsShort.length, 12, `i18n: 12 meses en LANG_META.${l}`);
   }
   assert.equal(getLang(), 'es', 'i18n: idioma por defecto es');
   const esWest = tr('bearing.W');
