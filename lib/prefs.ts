@@ -50,8 +50,6 @@ export interface Prefs {
   byEclipse: Record<string, EclipseContext>;
   /** Puestos habituales globales (más visitados primero), máx. RECENT_CAP */
   recentSpots: RecentSpot[];
-  /** Vista de la pestaña mapa: diagrama esquemático o mapa real */
-  mapView: 'diagram' | 'real';
   /** Audio de las notificaciones locales */
   alertSound: AlertSound;
   /** Tramos del modo simulacro */
@@ -89,7 +87,6 @@ export const DEFAULT_PREFS: Prefs = {
   selectedEclipseDay: '',
   byEclipse: {},
   recentSpots: [],
-  mapView: 'diagram',
   alertSound: 'eclipse',
   drill: { ...DEFAULT_DRILL },
   language: '',
@@ -213,7 +210,6 @@ export async function loadPrefs(migrationDay: string): Promise<Prefs> {
       selectedEclipseDay: typeof parsed.selectedEclipseDay === 'string' ? parsed.selectedEclipseDay : '',
       byEclipse,
       recentSpots,
-      mapView: parsed.mapView === 'real' ? 'real' : 'diagram',
       alertSound: parsed.alertSound === 'default' ? 'default' : 'eclipse',
       drill: clampDrill(parsed.drill),
       language: parsed.language === 'es' || parsed.language === 'en' ? parsed.language : '',

@@ -364,8 +364,6 @@ function AppInner() {
               eclipse={eclipse}
               place={cleanPlaceLabel(active.place)}
               hereLabel={hereLabel}
-              spotIsGps={active.origin === 'gps'}
-              hereOnMap={hereOnMap}
               cloudPct={cloud.pct}
               cloudAgeHours={cloud.ageH}
               cloudLoading={cloud.loading}
@@ -373,12 +371,7 @@ function AppInner() {
               now={now}
               spotCoords={{ lat: active.lat, lon: active.lon }}
               hereCoords={hereOnMap && geo ? { lat: geo.lat, lon: geo.lon } : null}
-              mapView={prefs.mapView}
-              onToggleMapView={() => {
-                const next = prefs.mapView === 'real' ? 'diagram' : 'real';
-                track('map_view', { view: next });
-                onPrefsChange({ ...prefs, mapView: next });
-              }}
+              gpsCoords={geo ? { lat: geo.lat, lon: geo.lon } : null}
               onOpenSelector={() => setSelectorOpen(true)}
               onOpenMaps={() => openInMaps(active.lat, active.lon, active.place)}
               onSelectMapPoint={selectMapPoint}

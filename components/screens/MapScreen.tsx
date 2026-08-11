@@ -12,8 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Defs, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
-import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { nextEvent, type LocalEclipse } from '../../lib/eclipse';
 import { bandOf, getActiveEclipse } from '../../lib/eclipseCatalog';
 import { fmtFixed1, localeTag, t, type I18nKey } from '../../lib/i18n';
@@ -22,29 +21,15 @@ import { track, type Sponsor } from '../../lib/firebase';
 import { windyEclipseCloudsUrl } from '../../lib/weather';
 import { useSheet } from '../../hooks/useSheet';
 import { Countdown } from '../Countdown';
-import { RealMap } from '../RealMap';
+import { RealMap, type RealMapHandle } from '../RealMap';
 import { CompassChip } from '../map/CompassChip';
-import { HereDot, UserDot } from '../map/Dots';
 import { HorizonDiagram } from '../map/HorizonDiagram';
-import { TotalPill } from '../map/TotalPill';
-import { UmbraSweep } from '../map/UmbraSweep';
 import { C, F } from '../theme';
 
 /** Fallback bajo: mejor recortar un instante que asomar la cronología. */
 const SHEET_MIN_FALLBACK = 140;
 /** Mínimo de mapa visible con la hoja estirada */
 const SHEET_TOP_GAP = 150;
-
-/**
- * Fracciones verticales relativas al lienzo del diagrama (zona sobre la hoja).
- * Así el contenido usa toda la altura libre sin el hueco muerto encima de la tarjeta.
- */
-const BAND_ANCHOR = 0.38;
-const DOT_TOTAL = 0.3;
-const DOT_NEAR = 0.56;
-const DOT_FAR = 0.84;
-/** km que mapean a DOT_FAR; más allá se satura. */
-const DIST_SCALE_KM = 150;
 
 const EVENT_ACCENT: Record<string, string> = {
   C1: C.corona,
@@ -61,18 +46,6 @@ interface MapScreenProps {
   place: string;
   /** Nombre corto del GPS cuando difiere del puesto; se pinta en el punto «TÚ» */
   hereLabel: string | null;
-  /** El puesto activo es un snapshot GPS */
-  spotIsGps: boolean;
-  /**
-   * Posición GPS en la escala del diagrama cuando difiere del puesto.
-   * null = solapados / sin segundo punto.
-   */
-  hereOnMap: {
-    isTotal: boolean;
-    totality: TotalityDirection | 'none' | null;
-    km: number;
-    obscuration: number | null;
-  } | null;
   cloudPct: number | null;
   /** Antigüedad en horas del dato de nubes cuando viene de caché sin red; null = fresco */
   cloudAgeHours: number | null;
@@ -84,9 +57,8 @@ interface MapScreenProps {
   spotCoords: { lat: number; lon: number };
   /** Coordenadas GPS cuando difiere del puesto; null = sin segundo marcador */
   hereCoords: { lat: number; lon: number } | null;
-  /** Vista elegida: diagrama esquemático o mapa real */
-  mapView: 'diagram' | 'real';
-  onToggleMapView: () => void;
+  /** Posición GPS real (botón de recentrar); null = sin GPS, botón oculto */
+  gpsCoords: { lat: number; lon: number } | null;
   onOpenSelector: () => void;
   onOpenMaps: () => void;
   /** Punto tocado en el mapa real elegido como puesto de observación */
@@ -101,27 +73,10 @@ interface MapScreenProps {
 const fmtHM = (d: Date) =>
   d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-const fmtPct = (o: number) => `${fmtFixed1(o * 100)}%`;
-
-/** Fracción vertical para una distancia a la banda dada. */
-function kmFraction(km: number): number {
-  const t = Math.min(1, km / DIST_SCALE_KM);
-  return DOT_NEAR + t * (DOT_FAR - DOT_NEAR);
-}
-
-/** Fracción vertical del punto: más cerca de la banda cuanto menor sea la distancia. */
-function dotTopFraction(isTotal: boolean, totality: TotalityDirection | 'none' | null): number {
-  if (isTotal) return DOT_TOTAL;
-  if (totality === null || totality === 'none') return DOT_FAR;
-  return kmFraction(totality.distanceKm);
-}
-
 export function MapScreen({
   eclipse,
   place,
   hereLabel,
-  spotIsGps,
-  hereOnMap,
   cloudPct,
   cloudAgeHours,
   cloudLoading,
@@ -129,8 +84,7 @@ export function MapScreen({
   now,
   spotCoords,
   hereCoords,
-  mapView,
-  onToggleMapView,
+  gpsCoords,
   onOpenSelector,
   onOpenMaps,
   onSelectMapPoint,
@@ -141,6 +95,7 @@ export function MapScreen({
   const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
   const [sheetMin, setSheetMin] = useState(SHEET_MIN_FALLBACK);
+  const mapRef = useRef<RealMapHandle>(null);
 
   // Fundido al cambiar de puesto: los datos nuevos entran suaves en vez de saltar
   const fade = useRef(new Animated.Value(1)).current;
@@ -209,143 +164,35 @@ export function MapScreen({
         };
 
   const obscuracion = fmtFixed1(eclipse.obscuration * 100);
-  const showHere = hereOnMap !== null;
-  const spotFrac = dotTopFraction(isTotal, totality);
-  const hereFrac = showHere ? dotTopFraction(hereOnMap.isTotal, hereOnMap.totality) : spotFrac;
-  // Si casi se solapan en vertical: lado a lado a la misma altura, sin guía
-  const dotsCollide = showHere && Math.abs(spotFrac - hereFrac) < 0.09;
-  const midFrac = (spotFrac + hereFrac) / 2;
-  const spotTop = dotsCollide ? midFrac : spotFrac;
-  const hereTop = dotsCollide ? midFrac : hereFrac;
-  // Guía: con dos puntos conecta punto a punto; con uno, desde la banda al punto
-  const guideTop = showHere ? Math.min(spotFrac, hereFrac) : BAND_ANCHOR;
-  const guideHeightFrac = Math.max(0, Math.max(spotFrac, hereFrac) - guideTop);
-  const showGuide =
-    !dotsCollide &&
-    guideHeightFrac > 0.02 &&
-    (showHere || (!isTotal && totality !== null && totality !== 'none'));
-  const guideKm = showHere
-    ? hereOnMap.km
-    : totality !== null && totality !== 'none'
-      ? totality.distanceKm
-      : null;
 
   return (
     <View style={s.root}>
       <Animated.View style={[s.fadeFill, { opacity: fade }]}>
-      {mapView === 'real' && (
-        <RealMap
-          // Remount al cambiar de eclipse Y al llegar la banda por RC (el HTML se
-          // congela al montar: sin esto, un catálogo activado con el mapa abierto
-          // no pinta la banda hasta cambiar de eclipse o de vista)
-          key={`${activeEclipseMeta.id}${bandOf(activeEclipseMeta) ? ':band' : ''}`}
-          spot={{ ...spotCoords, label: place }}
-          here={hereCoords ? { ...hereCoords, label: hereLabel ?? t('map.you') } : null}
-          onSelectPoint={onSelectMapPoint}
-        />
+      <RealMap
+        ref={mapRef}
+        // Remount al cambiar de eclipse Y al llegar la banda por RC (el HTML se
+        // congela al montar: sin esto, un catálogo activado con el mapa abierto
+        // no pinta la banda hasta cambiar de eclipse)
+        key={`${activeEclipseMeta.id}${bandOf(activeEclipseMeta) ? ':band' : ''}`}
+        spot={{ ...spotCoords, label: place }}
+        here={hereCoords ? { ...hereCoords, label: hereLabel ?? t('map.you') } : null}
+        onSelectPoint={onSelectMapPoint}
+      />
 
-      )}
-      {mapView === 'diagram' && (
-      <View style={[s.diagramStage, { bottom: sheetMin }]} pointerEvents="box-none">
-      {/* Fondo + costa esquemática */}
-      <Svg style={StyleSheet.absoluteFill} viewBox="0 0 390 780" preserveAspectRatio="none">
-        <Defs>
-          <RadialGradient id="bgGlow" cx="75%" cy="12%" r="90%">
-            <Stop offset="0%" stopColor="#12121C" />
-            <Stop offset="55%" stopColor={C.bg} />
-          </RadialGradient>
-        </Defs>
-        <Rect x={0} y={0} width={390} height={780} fill="url(#bgGlow)" />
-        <Path
-          d="M0 130 H390 M0 260 H390 M0 390 H390 M0 520 H390 M78 0 V780 M156 0 V780 M234 0 V780 M312 0 V780"
-          stroke="#191926"
-          strokeWidth={1}
-        />
-        <Path
-          d="M-20 560 C 60 520, 120 585, 205 545 S 350 585, 410 540 L 410 800 L -20 800 Z"
-          fill="#101019"
-          stroke="#1D1D2C"
-          strokeWidth={1}
-        />
-        <Path
-          d="M-20 250 C 80 215, 170 265, 260 230 S 380 250, 420 225"
-          fill="none"
-          stroke="#1D1D2C"
-          strokeWidth={1.5}
-        />
-      </Svg>
-
-      {/* Banda de totalidad */}
-      <View style={s.band}>
-        <LinearGradient
-          colors={[
-            'transparent',
-            'rgba(124,108,255,0.10)',
-            'rgba(124,108,255,0.24)',
-            'rgba(255,184,77,0.22)',
-            'rgba(124,108,255,0.24)',
-            'rgba(124,108,255,0.10)',
-            'transparent',
-          ]}
-          locations={[0, 0.22, 0.4, 0.5, 0.6, 0.78, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-        <UmbraSweep />
-        <View style={s.bandLine} />
-        <Text style={s.bandLabel}>{activeEclipseMeta.bandLabel}</Text>
-        <Text style={s.bandHint}>{t('map.bandHint')}</Text>
-      </View>
-
-
-      {/* Guía hacia la banda: longitud hasta el punto más alejado */}
-      {showGuide && (
-        <View
-          style={[
-            s.guide,
-            {
-              top: `${guideTop * 100}%`,
-              height: `${guideHeightFrac * 100}%`,
-            },
-          ]}
-        />
-      )}
-      {/* km sobre la guía: distancia puesto↔GPS, o puesto↔banda si solo hay un punto */}
-      {showGuide && guideKm !== null && guideHeightFrac > 0.07 && (
-        <View
-          style={[s.guideKmWrap, { top: `${(guideTop + guideHeightFrac / 2) * 100}%` }]}
-          pointerEvents="none"
+      {/* Botón GPS: recentra el mapa en la posición actual */}
+      {gpsCoords && (
+        <Pressable
+          style={[s.gpsBtn, { bottom: sheetMin + 14 }]}
+          onPress={() => mapRef.current?.flyTo(gpsCoords.lat, gpsCoords.lon)}
+          hitSlop={8}
+          accessibilityLabel={t('map.recenter')}
         >
-          {!showHere && totality !== null && totality !== 'none' ? (
-            <TotalPill distanceKm={totality.distanceKm} bearingDeg={totality.bearingDeg} />
-          ) : (
-            <Text style={s.guideKmText}>{guideKm} km</Text>
-          )}
-        </View>
-      )}
-
-      {showHere && (
-        <View style={[s.userArea, dotsCollide && s.hereArea, { top: `${hereTop * 100}%` }]}>
-          <HereDot />
-          <Text style={s.hereLabel}>{hereLabel ?? t('map.you')}</Text>
-          {!hereOnMap.isTotal && hereOnMap.obscuration !== null && (
-            <Text style={s.dotPct}>{fmtPct(hereOnMap.obscuration)}</Text>
-          )}
-        </View>
-      )}
-      <View style={[s.userArea, dotsCollide && s.spotArea, { top: `${spotTop * 100}%` }]}>
-        <UserDot />
-        <Text style={s.userLabel} numberOfLines={1}>
-          {showHere || !spotIsGps ? place : t('map.yourPosition')}
-        </Text>
-        {!isTotal && <Text style={s.dotPct}>{obscuracion}%</Text>}
-      </View>
-      {/* Con puntos lado a lado la guía se oculta: km a la banda anclados sobre la hoja */}
-      {dotsCollide && !isTotal && totality !== null && totality !== 'none' && (
-        <View style={s.totalAnchor} pointerEvents="none">
-          <TotalPill distanceKm={totality.distanceKm} bearingDeg={totality.bearingDeg} />
-        </View>
-      )}
-      </View>
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={C.text} strokeWidth={2}>
+            <Circle cx={12} cy={12} r={7} />
+            <Circle cx={12} cy={12} r={2} fill={C.text} stroke="none" />
+            <Path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+          </Svg>
+        </Pressable>
       )}
 
       {/* Overlay superior: chips + lugares + aviso divergencia */}
@@ -360,24 +207,6 @@ export function MapScreen({
                 {place}
               </Text>
               <Text style={s.chipChevron}>▾</Text>
-            </Pressable>
-            <Pressable
-              style={s.viewToggle}
-              onPress={onToggleMapView}
-              hitSlop={8}
-              accessibilityLabel={mapView === 'diagram' ? t('map.viewReal') : t('map.viewDiagram')}
-            >
-              {mapView === 'diagram' ? (
-                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={C.dim} strokeWidth={2}>
-                  <Path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2V6z" />
-                  <Path d="M9 4v14M15 6v14" />
-                </Svg>
-              ) : (
-                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={C.dim} strokeWidth={2}>
-                  <Path d="M3 16L21 8" />
-                  <Circle cx={7} cy={14.2} r={2.4} fill={C.dim} stroke="none" />
-                </Svg>
-              )}
             </Pressable>
           </View>
           <CompassChip targetAzimuthDeg={maxEvent?.azimuth ?? 270} />
@@ -490,124 +319,18 @@ export function MapScreen({
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg, overflow: 'hidden' },
   fadeFill: { flex: 1 },
-  /** Lienzo del diagrama: altura fija sobre la hoja colapsada (no se reescala al expandir). */
-  diagramStage: {
+  gpsBtn: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    overflow: 'hidden',
-  },
-  band: {
-    position: 'absolute',
-    top: '20%',
-    left: '-32%',
-    width: '164%',
-    height: 200,
-    transform: [{ rotate: '-13deg' }],
-  },
-  bandLine: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: '50%',
-    height: 3,
-    marginTop: -1,
-    backgroundColor: C.corona,
-    shadowColor: C.corona,
-    shadowOpacity: 0.45,
-    shadowRadius: 13,
-    elevation: 8,
-  },
-  bandLabel: {
-    position: 'absolute',
-    alignSelf: 'center',
-    top: 14,
-    fontFamily: F.semibold,
-    fontSize: 10,
-    letterSpacing: 3,
-    color: C.violet,
-  },
-  guide: {
-    position: 'absolute',
-    left: '50%',
-    borderLeftWidth: 2,
-    borderLeftColor: 'rgba(242,239,233,0.32)',
-    borderStyle: 'dashed',
-  },
-  guideKmWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center', marginTop: -10 },
-  totalAnchor: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 28,
-    alignItems: 'center',
-  },
-  guideKmText: {
-    fontFamily: F.semibold,
-    fontSize: 11,
-    color: C.text,
-    backgroundColor: 'rgba(11,11,18,0.9)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    overflow: 'hidden',
-  },
-  bandHint: {
-    position: 'absolute',
-    alignSelf: 'center',
-    top: 30,
-    fontFamily: F.medium,
-    fontSize: 9,
-    letterSpacing: 2,
-    color: 'rgba(124,108,255,0.6)',
-  },
-  viewToggle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(21,21,30,0.85)',
+    right: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(21,21,30,0.9)',
     borderWidth: 1,
     borderColor: C.border,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  dotPct: {
-    fontFamily: F.semibold,
-    fontSize: 9,
-    letterSpacing: 0.5,
-    color: C.dim,
-    backgroundColor: 'rgba(11,11,18,0.85)',
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  userArea: { position: 'absolute', left: 0, right: 0, alignItems: 'center', gap: 8 },
-  /** Lado a lado cuando las Y casi coinciden */
-  hereArea: { transform: [{ translateX: -52 }] },
-  spotArea: { transform: [{ translateX: 52 }] },
-  userLabel: {
-    fontFamily: F.medium,
-    fontSize: 11,
-    letterSpacing: 1,
-    color: C.text,
-    backgroundColor: 'rgba(11,11,18,0.85)',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 5,
-    overflow: 'hidden',
-  },
-  hereLabel: {
-    fontFamily: F.semibold,
-    fontSize: 10,
-    letterSpacing: 0.8,
-    color: C.corona,
-    backgroundColor: 'rgba(11,11,18,0.85)',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 5,
-    overflow: 'hidden',
+    zIndex: 2,
   },
   topOverlay: { position: 'absolute', left: 0, right: 0, gap: 12, zIndex: 2 },
   chipsRow: {

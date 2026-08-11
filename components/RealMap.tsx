@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { type BandSlice } from '../lib/bandGeo';
@@ -19,6 +19,11 @@ interface RealMapProps {
   here: MapPoint | null;
   /** Punto tocado en el mapa elegido como puesto de observación */
   onSelectPoint: (p: { lat: number; lon: number }) => void;
+}
+
+export interface RealMapHandle {
+  /** Vuela a unas coordenadas (botón GPS); el zoom lo decide el mapa (mín. útil local) */
+  flyTo: (lat: number, lon: number) => void;
 }
 
 /** Contenido del popup de un punto tocado; se calcula en el lado RN (motor memoizado). */
@@ -82,7 +87,10 @@ function tapInfo(lat: number, lon: number): TapInfo {
  * la banda de totalidad dibujada encima y marcadores de puesto y GPS.
  * Los tiles sí requieren red; la librería ya no depende de ningún CDN.
  */
-export function RealMap({ spot, here, onSelectPoint }: RealMapProps) {
+export const RealMap = forwardRef<RealMapHandle, RealMapProps>(function RealMap(
+  { spot, here, onSelectPoint }: RealMapProps,
+  ref,
+) {
   const webRef = useRef<WebView>(null);
   const [ready, setReady] = useState(false);
   // HTML congelado al montar: los cambios de puesto se inyectan (flyTo) sin recargar el mapa.
@@ -90,6 +98,18 @@ export function RealMap({ spot, here, onSelectPoint }: RealMapProps) {
   const [html] = useState(() => {
     return buildHtml(spot, here, bandOf(getActiveEclipse()));
   });
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      flyTo: (lat: number, lon: number) => {
+        webRef.current?.injectJavaScript(
+          `map.flyTo([${lat}, ${lon}], Math.max(map.getZoom(), 8), { duration: 0.8 }); true;`,
+        );
+      },
+    }),
+    [],
+  );
 
   useEffect(() => {
     if (!ready) return;
@@ -125,7 +145,7 @@ export function RealMap({ spot, here, onSelectPoint }: RealMapProps) {
       onMessage={onMessage}
     />
   );
-}
+});
 
 function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | null): string {
   // Eclipse sin banda empaquetada (p. ej. añadido por Remote Config): solo marcadores
@@ -133,7 +153,15 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
   const south = band ? [...band].reverse().map((b) => [b.latS, b.lon]) : [];
   const center = band?.map((b) => [(b.latN + b.latS) / 2, b.lon]) ?? null;
   const polygon = band ? [...north, ...south] : null;
-  const data = toJs({ polygon, north, south, center, spot, here });
+  // Franja interior (50% del ancho): dos rellenos superpuestos simulan el degradado
+  // transversal hacia el centro (más luz donde más dura) sin gradientes reales en Leaflet
+  const inner = band
+    ? [
+        ...band.map((b) => [(b.latN + b.latS) / 2 + (b.latN - b.latS) / 4, b.lon]),
+        ...[...band].reverse().map((b) => [(b.latN + b.latS) / 2 - (b.latN - b.latS) / 4, b.lon]),
+      ]
+    : null;
+  const data = toJs({ polygon, inner, north, south, center, spot, here });
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -169,16 +197,20 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
   if (D.polygon) {
     // Marca fija y tenue, sin interacción: el tap pasa limpio al mapa (popup)
     // y el WebView no pinta el focus ring sobre el SVG de la banda.
+    // Dos rellenos superpuestos (banda + franja interior) = degradado sutil hacia el centro.
     L.polygon(D.polygon, {
+      interactive: false, stroke: false, fillColor: '${C.totality}', fillOpacity: 0.05,
+    }).addTo(map);
+    L.polygon(D.inner, {
       interactive: false, stroke: false, fillColor: '${C.totality}', fillOpacity: 0.06,
     }).addTo(map);
 
     // Límites reales de la banda (los cierres verticales del polígono son artefactos del dataset)
-    L.polyline(D.north, { interactive: false, color: '${C.totality}', weight: 1, opacity: 0.3 }).addTo(map);
-    L.polyline(D.south, { interactive: false, color: '${C.totality}', weight: 1, opacity: 0.3 }).addTo(map);
+    L.polyline(D.north, { interactive: false, color: '${C.totality}', weight: 1, opacity: 0.5 }).addTo(map);
+    L.polyline(D.south, { interactive: false, color: '${C.totality}', weight: 1, opacity: 0.5 }).addTo(map);
 
-    L.polyline(D.center, { interactive: false, color: '${C.corona}', weight: 1.5, dashArray: '6 6', opacity: 0.45 })
-      .addTo(map);
+    // Línea central luminosa y fina: protagonista discreta de la banda
+    L.polyline(D.center, { interactive: false, color: '${C.violet}', weight: 1.5, opacity: 0.75 }).addTo(map);
   }
 
   var ptLayer = L.layerGroup().addTo(map);
@@ -200,13 +232,26 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
 
     if (fly) {
       if (pts.length > 1) map.flyToBounds(pts, { padding: [70, 70], duration: 0.9 });
-      else map.flyTo(pts[0], 7, { duration: 0.9 });
+      else map.flyTo(pts[0], DEFAULT_ZOOM, { duration: 0.9 });
     } else {
       if (pts.length > 1) map.fitBounds(pts, { padding: [70, 70] });
-      else map.setView(pts[0], 7);
+      else map.setView(pts[0], DEFAULT_ZOOM);
     }
   }
-  draw(D, false);
+  var DEFAULT_ZOOM = 6;
+  // Encuadre inicial abierto: el tramo de banda alrededor del puesto (±12° de lon,
+  // robusto al antimeridiano) + el puesto. Sin banda cerca, vista regional del puesto.
+  function initialView() {
+    if (!D.polygon) { draw(D, false); return; }
+    function lonNear(lon) { return Math.abs(((lon - D.spot.lon + 540) % 360) - 180) <= 12; }
+    var seg = D.north.concat(D.south).filter(function (p) { return lonNear(p[1]); });
+    if (!seg.length) { draw(D, false); return; }
+    seg.push([D.spot.lat, D.spot.lon]);
+    if (D.here) seg.push([D.here.lat, D.here.lon]);
+    draw(D, false);
+    map.fitBounds(seg, { padding: [40, 40], maxZoom: 7 });
+  }
+  initialView();
   window.eclipsumUpdate = function (d) { draw(d, true); };
 
   // Tap en el mapa → RN calcula el eclipse en ese punto → popup vía eclipsumShowInfo
