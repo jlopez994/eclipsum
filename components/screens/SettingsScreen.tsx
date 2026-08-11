@@ -59,14 +59,42 @@ function fmtTotality(sec: number): string {
   return s === 0 ? `${m} min` : `${m}m ${s}s`;
 }
 
-function Stepper({ onLess, onMore, a11y }: { onLess: () => void; onMore: () => void; a11y: string }) {
+/** Stepper con el valor entre los botones; en los topes el botón se apaga y no responde. */
+function Stepper({
+  value,
+  range,
+  onLess,
+  onMore,
+  a11y,
+}: {
+  value: number;
+  range: { min: number; max: number };
+  onLess: () => void;
+  onMore: () => void;
+  a11y: string;
+}) {
+  const atMin = value <= range.min;
+  const atMax = value >= range.max;
   return (
     <View style={s.stepper}>
-      <Pressable style={s.stepBtn} onPress={onLess} hitSlop={6} accessibilityLabel={t('settings.drill.less', { what: a11y })}>
-        <Text style={s.stepTxt}>−</Text>
+      <Pressable
+        style={[s.stepBtn, atMin && s.stepBtnOff]}
+        onPress={onLess}
+        disabled={atMin}
+        hitSlop={6}
+        accessibilityLabel={t('settings.drill.less', { what: a11y })}
+      >
+        <Text style={[s.stepTxt, atMin && s.stepTxtOff]}>−</Text>
       </Pressable>
-      <Pressable style={s.stepBtn} onPress={onMore} hitSlop={6} accessibilityLabel={t('settings.drill.more', { what: a11y })}>
-        <Text style={s.stepTxt}>+</Text>
+      <Text style={s.stepValue}>{fmtTotality(value)}</Text>
+      <Pressable
+        style={[s.stepBtn, atMax && s.stepBtnOff]}
+        onPress={onMore}
+        disabled={atMax}
+        hitSlop={6}
+        accessibilityLabel={t('settings.drill.more', { what: a11y })}
+      >
+        <Text style={[s.stepTxt, atMax && s.stepTxtOff]}>+</Text>
       </Pressable>
     </View>
   );
@@ -244,33 +272,35 @@ export function SettingsScreen({
             <View style={[s.rowItem, s.rowDivider]}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={s.rowTitle}>{t('settings.drill.partial')}</Text>
-                <Text style={s.soundHint}>{t('settings.drill.partialHint', { dur: fmtTotality(drill.partialSec) })}</Text>
+                <Text style={s.soundHint}>{t('settings.drill.partialHint')}</Text>
               </View>
               <Stepper
+                value={drill.partialSec}
+                range={DRILL_PARTIAL}
                 onLess={() => step('partialSec', -1)}
                 onMore={() => step('partialSec', 1)}
                 a11y={t('settings.drill.partialA11y')}
               />
             </View>
-            <View style={[s.rowItem, s.rowDivider]}>
+            <View style={s.rowItem}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={s.rowTitle}>{t('settings.drill.totality')}</Text>
-                <Text style={s.soundHint}>{fmtTotality(drill.totalitySec)}</Text>
+                <Text style={s.soundHint}>{t('settings.drill.totalityHint')}</Text>
               </View>
               <Stepper
+                value={drill.totalitySec}
+                range={DRILL_TOTALITY}
                 onLess={() => step('totalitySec', -1)}
                 onMore={() => step('totalitySec', 1)}
                 a11y={t('settings.drill.totalityA11y')}
               />
             </View>
-            <Pressable style={s.rowItem} onPress={runDrill} accessibilityLabel={t('settings.drill.startA11y')}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={[s.rowTitle, { color: C.corona }]}>{t('settings.drill.start')}</Text>
-                <Text style={s.soundHint}>{drillMsg ?? t('settings.drill.startHint')}</Text>
-              </View>
-              <Text style={s.playIcon}>▶</Text>
-            </Pressable>
           </View>
+          <Pressable style={s.drillCta} onPress={runDrill} accessibilityLabel={t('settings.drill.startA11y')}>
+            <Text style={s.drillCtaIcon}>▶</Text>
+            <Text style={s.drillCtaText}>{t('settings.drill.start')}</Text>
+          </Pressable>
+          <Text style={s.drillNote}>{drillMsg ?? t('settings.drill.startHint')}</Text>
         </View>
 
         <View>
@@ -375,7 +405,7 @@ const s = StyleSheet.create({
     minWidth: 0,
   },
   soundHint: { fontFamily: F.regular, fontSize: 12, color: C.dim, marginTop: 2 },
-  stepper: { flexDirection: 'row', gap: 8 },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   stepBtn: {
     width: 34,
     height: 34,
@@ -385,7 +415,32 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  stepBtnOff: { borderColor: 'rgba(38,38,58,0.45)' },
   stepTxt: { fontFamily: F.bold, fontSize: 17, color: C.text, lineHeight: 20 },
+  stepTxtOff: { color: C.knobTrack },
+  stepValue: {
+    fontFamily: F.semibold,
+    fontSize: 13,
+    color: C.corona,
+    fontVariant: ['tabular-nums'],
+    minWidth: 54,
+    textAlign: 'center',
+  },
+  drillCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+    marginTop: 12,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,184,77,0.45)',
+    backgroundColor: 'rgba(255,184,77,0.10)',
+  },
+  drillCtaIcon: { fontFamily: F.bold, fontSize: 11, color: C.corona },
+  drillCtaText: { fontFamily: F.bold, fontSize: 13, letterSpacing: 1.5, color: C.corona },
+  drillNote: { fontFamily: F.regular, fontSize: 11, lineHeight: 16, color: C.dim, marginTop: 8 },
   playBtn: {
     width: 36,
     height: 36,
