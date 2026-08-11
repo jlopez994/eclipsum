@@ -30,7 +30,7 @@
     },
     "donate_url": {
       "defaultValue": {
-        "value": ""
+        "value": "https://buymeacoffee.com/jlopezh"
       },
       "description": "URL de donaciones (Buy Me a Coffee). Vacío = sección APOYA EL PROYECTO oculta en Ajustes.",
       "valueType": "STRING"
