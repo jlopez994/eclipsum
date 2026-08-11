@@ -39,14 +39,14 @@
       "defaultValue": {
         "value": "22"
       },
-      "description": "android.versionCode de la última APK publicada. La app avisa si el suyo es menor. 0 = sin aviso.",
+      "description": "android.versionCode de la última APK publicada (lo escribe el workflow release-apk). La app avisa si el suyo es menor. 0 = sin aviso.",
       "valueType": "STRING"
     },
     "latest_apk_url": {
       "defaultValue": {
-        "value": "https://cdn.jlh.app/eclipsum/eclipsum.apk"
+        "value": "https://github.com/jlopez994/eclipsum/releases/latest/download/eclipsum.apk"
       },
-      "description": "URL pública de la APK latest (CDN sobre el DAS). Vacío = sin aviso aunque haya versionCode nuevo.",
+      "description": "URL pública de la APK latest (GitHub Releases, asset de nombre fijo). Vacío = sin aviso aunque haya versionCode nuevo.",
       "valueType": "STRING"
     }
   }

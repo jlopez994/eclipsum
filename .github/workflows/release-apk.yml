@@ -1,0 +1,126 @@
+# Compila y publica la APK al llegar a main un versionCode nuevo.
+# Pushear código NO despliega: el guard salta si la release b<versionCode> ya existe,
+# así que desplegar = bumpear expo.android.versionCode en app.json (chore(release): build N).
+#
+# Estable: release b<vc> con asset de nombre fijo eclipsum.apk (la URL
+#   releases/latest/download/eclipsum.apk nunca cambia) + Remote Config
+#   latest_version_code=<vc> para que la app avise de la actualización.
+# Beta/rc (versión contiene beta|rc): pre-release — no pisa releases/latest
+#   y no toca Remote Config.
+#
+# Secretos requeridos (Settings → Secrets → Actions):
+#   GOOGLE_SERVICES_JSON     — contenido de google-services.json (gitignorado)
+#   FIREBASE_SERVICE_ACCOUNT — el mismo que usa sync-remote-config
+name: release-apk
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-apk
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versión y guard
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="$(node -p "require('./app.json').expo.version")"
+          VC="$(node -p "require('./app.json').expo.android.versionCode")"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "vc=$VC" >> "$GITHUB_OUTPUT"
+          case "$V" in
+            *beta*|*rc*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+          esac
+          if gh release view "b$VC" >/dev/null 2>&1; then
+            echo "b$VC ya publicada — nada que hacer"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.v.outputs.skip != 'true'
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        if: steps.v.outputs.skip != 'true'
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Dependencias
+        if: steps.v.outputs.skip != 'true'
+        run: npm ci
+
+      # Puerta de calidad: si el motor, el catálogo o los tipos se rompen, no sale APK
+      - name: Selfcheck + typecheck
+        if: steps.v.outputs.skip != 'true'
+        run: npm run selfcheck && npm run typecheck
+
+      - name: google-services.json
+        if: steps.v.outputs.skip != 'true'
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: echo "$GOOGLE_SERVICES_JSON" > google-services.json
+
+      - name: Compilar APK release
+        if: steps.v.outputs.skip != 'true'
+        run: |
+          npx expo prebuild --platform android --no-install
+          cd android && ./gradlew assembleRelease
+
+      - name: GitHub Release
+        if: steps.v.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          VC="${{ steps.v.outputs.vc }}"
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          cp "$APK" eclipsum.apk
+          cp "$APK" "eclipsum-$V-b$VC.apk"
+          FLAGS=""
+          [ "${{ steps.v.outputs.prerelease }}" = "true" ] && FLAGS="--prerelease"
+          gh release create "b$VC" eclipsum.apk "eclipsum-$V-b$VC.apk" $FLAGS \
+            --title "Eclipsum $V (build $VC)" \
+            --notes "APK $V · versionCode $VC · descarga estable: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/eclipsum.apk"
+
+      # Solo estable: anuncia la actualización en la app vía Remote Config
+      - name: Publicar Remote Config (latest_version_code)
+        if: steps.v.outputs.skip != 'true' && steps.v.outputs.prerelease != 'true'
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const rc = JSON.parse(fs.readFileSync('remoteconfig.template.json', 'utf8'));
+            rc.parameters.latest_version_code.defaultValue.value = '${{ steps.v.outputs.vc }}';
+            fs.writeFileSync('remoteconfig.template.json', JSON.stringify(rc, null, 2) + '\n');
+          "
+          echo "$FIREBASE_SERVICE_ACCOUNT" > /tmp/sa.json
+          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json
+          npx firebase-tools@latest deploy --only remoteconfig --project eclipsum-app-jl --non-interactive
+
+      - name: Commitear template actualizado
+        if: steps.v.outputs.skip != 'true' && steps.v.outputs.prerelease != 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add remoteconfig.template.json
+          git diff --cached --quiet || {
+            git commit -m "chore(rc): latest_version_code ${{ steps.v.outputs.vc }} [skip ci]"
+            git push
+          }

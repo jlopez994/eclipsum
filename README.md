@@ -12,7 +12,8 @@ Primer objetivo: el eclipse solar **total del 12 de agosto de 2026** (norte y ce
 - **Alertas locales** (`expo-notifications`, sin red): aviso exacto por contacto, aviso previo opcional, recordatorios 24 h/1 h, y marca «tras el ocaso» en contactos sin sol. Sonido propio o del sistema.
 - **Modo eclipse**: pantalla de evento automática en la ventana del eclipse (cuenta atrás, fase, banner GAFAS/SIN GAFAS, pantalla siempre encendida). Incluye **simulacro** configurable para ensayar con notificaciones reales.
 - **Nubosidad** a la hora del máximo vía Open-Meteo (modelo ECMWF, el mismo que pinta Windy — el chip enlaza allí), con caché offline por día y coordenada.
-- **Multi-eclipse**: catálogo ampliable por Remote Config sin publicar release; cada eclipse guarda su puesto y alertas. Agotado el catálogo, la app autogenera el siguiente eclipse global con el motor.
+- **Multi-eclipse**: el motor autocompleta siempre la lista de próximos eclipses globales; el catálogo (empaquetado + Remote Config) cura labels y bandas por encima, sin publicar release. Cada eclipse guarda su puesto y alertas.
+- **Bilingüe es/en**: idioma automático por sistema (español → es, resto → en) o forzado en Ajustes. Los textos de las notificaciones se hornean en el idioma activo al programarlas.
 
 ## Offline vs red
 
@@ -39,19 +40,31 @@ lib/
   prefs.ts               Preferencias persistidas, contexto por eclipse
   firebase.ts            Remote Config + Analytics + Crashlytics (best-effort)
   drill.ts               Eclipse sintético del simulacro
+  i18n.ts                Diccionario es/en, t(), sin dependencias
+  spots.ts               Tipos Spot/SpotOption
+  maps.ts / anim.ts / soundPreview.ts / leafletVendor.ts
+hooks/
+  useGeo.ts              GPS one-shot + geocoder inverso
+  usePrefs.ts            Carga/guarda prefs, resuelve idioma
+  useSheet.ts            Hoja inferior arrastrable
+  useSpotData.ts         Nubes + totalidad cercana + punto GPS del puesto
 components/
   screens/               MapScreen, AlertsScreen, SettingsScreen, EclipseModeScreen
   map/                   Piezas visuales del mapa (CompassChip, HorizonDiagram, …)
   RealMap.tsx            WebView Leaflet (vendored en lib/leafletVendor.ts, sin CDN)
+  SpotSelector.tsx       Modal de puesto: buscador, habituales, nubes por lote
+  Countdown.tsx / TabBar.tsx / theme.ts
 scripts/
   selfcheck.ts           Asserts del motor y catálogo en Node (puerta de CI)
   genEclipse.ts          Genera entradas de catálogo (--write fusiona en template RC)
   genBand.ts             Banda empaquetada por id → lib/bandGeo.ts
   syncBands.ts           Genera bandas que falten en el template RC
-  publish-apk.sh         Sube APK a DAS/CDN + GitHub Release
+  dev.sh / mensaje.sh    Emulador con GPS simulado / banner RC rápido
 ```
 
-Restricción: `lib/{eclipse,totality,spots,prefs,weather,eclipseCatalog}.ts` deben seguir libres de imports de react-native — `npm run selfcheck` los ejecuta en Node.
+Restricción: `lib/{eclipse,totality,spots,prefs,weather,eclipseCatalog}.ts` deben seguir libres de imports de `react-native` — `npm run selfcheck` los ejecuta en Node (AsyncStorage se permite: su entry CJS carga en Node y el módulo nativo es diferido).
+
+Detalle de módulos y flujos: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Desarrollo
 
@@ -66,13 +79,14 @@ Requisitos para compilar: `google-services.json` del proyecto Firebase en la ra�
 
 ## Release
 
-```bash
-npm run apk          # prebuild + gradle release + publish-apk.sh
-```
+El despliegue vive en **GitHub Actions** (`.github/workflows/release-apk.yml`): al llegar a main un `expo.android.versionCode` nuevo, compila la APK (con `selfcheck` + `typecheck` como puerta), crea el **GitHub Release** `b<versionCode>` y publica `latest_version_code` en Remote Config para que la app avise de la actualización.
 
-- **Identidad de build = `android.versionCode`** (monótono, nunca baja). La versión (`expo.version`) es la línea: `1.0.0` estable, `*-beta` canal beta. Release nueva = subir solo versionCode + `latest_version_code` en el template RC.
-- `publish-apk.sh` copia la APK al DAS (`/Volumes/DAS/s3/eclipsum`, servido por `https://cdn.jlh.app/eclipsum/`): histórico `eclipsum-<versión>-b<vc>-<fecha>.apk` + `eclipsum.apk` (estable) o `eclipsum-beta.apk` (si la versión contiene beta/rc). También crea el **GitHub Release** `b<versionCode>` con la APK adjunta.
-- **Actualizaciones sin tienda**: la app compara su versionCode con RC `latest_version_code` y muestra banner de descarga (`latest_apk_url`). Publicar: `npx firebase-tools deploy --only remoteconfig`.
+- **Desplegar = bumpear versionCode** en `app.json` y pushear a main (`chore(release): build N`). Pushear código sin bump no publica nada (el guard ve que la release ya existe).
+- **Identidad de build = `android.versionCode`** (monótono, nunca baja). La versión (`expo.version`) es la línea: `1.0.0` estable, `*-beta` canal beta (sale como pre-release: no pisa el estable ni toca RC).
+- **URL estable de descarga**: `https://github.com/jlopez994/eclipsum/releases/latest/download/eclipsum.apk` — el asset se llama siempre igual, la URL no cambia entre releases.
+- **Actualizaciones sin tienda**: la app compara su versionCode con RC `latest_version_code` y muestra banner de descarga (`latest_apk_url`).
+- Build local (sin publicar): `npm run apk` → `android/app/build/outputs/apk/release/app-release.apk`.
+- Secretos del workflow: `GOOGLE_SERVICES_JSON` (contenido del fichero) y `FIREBASE_SERVICE_ACCOUNT` (compartida con sync-remote-config).
 
 ## Remote Config (`remoteconfig.template.json`)
 
@@ -90,6 +104,17 @@ Descripciones de parámetros: máx. 256 caracteres (límite de RC).
 ## Pipeline autónomo de catálogo
 
 `.github/workflows/sync-remote-config.yml` (mensual + manual): `genEclipse --write` → `syncBands` → `selfcheck` como puerta → publica RC con la service account (`FIREBASE_SERVICE_ACCOUNT`, rol Firebase Remote Config Admin = `roles/cloudconfig.admin`) → auto-commitea el template. Los eclipses nuevos llegan a la app sin tocar código ni publicar APK.
+
+## Añadir un idioma
+
+Los idiomas viven en un único fichero, `lib/i18n.ts`, y las contribuciones son bienvenidas:
+
+1. Añade el código a `LANGS` (p. ej. `'fr'`).
+2. Rellena su entrada en `LANG_META`: endónimo (`name`), etiqueta BCP-47 (`tag`), separador decimal y meses abreviados. El compilador obliga a completarla.
+3. Copia el diccionario `en`, tradúcelo y regístralo en `DICTS`.
+4. `npm run selfcheck` verifica la paridad de claves con `es` — si falta alguna, falla con su nombre.
+
+El selector de Ajustes se genera solo a partir de `LANGS`; no hay que tocar UI. Contexto útil para traducir: los textos en MAYÚSCULAS son labels de interfaz compactos; los `notif.*` son notificaciones que el usuario lee sin la app abierta; C1–C4/MÁX son los contactos del eclipse (jerga estándar).
 
 ## Seguridad ocular
 
