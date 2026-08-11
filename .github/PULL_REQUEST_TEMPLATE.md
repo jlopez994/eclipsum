@@ -1,16 +1,16 @@
-## Qué cambia
+## What changes
 
-<!-- Una frase por cambio. Enlaza el issue si existe: Fixes #N -->
+<!-- One sentence per change. Link the issue if it exists: Fixes #N -->
 
-## Cómo se ha probado
+## How it was tested
 
-- [ ] `npm run typecheck` pasa
-- [ ] `npm run selfcheck` pasa
-- [ ] Probado en dispositivo/emulador (indica cuál)
+- [ ] `npm run typecheck` passes
+- [ ] `npm run selfcheck` passes
+- [ ] Tested on device/emulator (say which)
 
 ## Checklist
 
-- [ ] `lib/{eclipse,totality,spots,prefs,weather,eclipseCatalog}.ts` siguen sin imports de react-native (selfcheck corre en Node)
-- [ ] Lo que deba funcionar offline sigue funcionando offline (errores de red degradan, no rompen)
-- [ ] Sin secretos ni credenciales en el diff
-- [ ] Si cambia el esquema de Remote Config: `remoteconfig.template.json` actualizado (descripciones ≤256 chars)
+- [ ] `lib/{eclipse,totality,spots,prefs,weather,eclipseCatalog}.ts` still have no react-native imports (selfcheck runs in Node)
+- [ ] Whatever must work offline still works offline (network errors degrade, never break)
+- [ ] No secrets or credentials in the diff
+- [ ] If the Remote Config schema changes: `remoteconfig.template.json` updated (descriptions ≤256 chars)

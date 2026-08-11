@@ -1,53 +1,53 @@
 name: 🐞 Bug
-description: Algo no funciona como debería
+description: Something doesn't work as it should
 labels: [bug]
 body:
   - type: textarea
-    id: que-paso
+    id: what-happened
     attributes:
-      label: Qué pasó
-      description: Y qué esperabas que pasara.
-      placeholder: "Al cambiar de eclipse, la totalidad más cercana muestra la del anterior…"
+      label: What happened
+      description: And what you expected to happen. Spanish is welcome too / también puedes escribir en español.
+      placeholder: "After switching eclipses, the nearest totality still shows the previous one…"
     validations:
       required: true
   - type: textarea
-    id: pasos
+    id: steps
     attributes:
-      label: Pasos para reproducirlo
+      label: Steps to reproduce
       placeholder: |
-        1. Abrir Ajustes → Próximos eclipses
-        2. Elegir el de 2027-08-02
-        3. Volver al mapa
+        1. Open Settings → Upcoming eclipses
+        2. Pick the 2027-08-02 one
+        3. Go back to the map
     validations:
       required: true
   - type: input
     id: build
     attributes:
       label: Build
-      description: Ajustes → Acerca de → «build N».
-      placeholder: "build 22"
+      description: Settings → About → "build N".
+      placeholder: "build 23"
     validations:
       required: true
   - type: input
-    id: dispositivo
+    id: device
     attributes:
-      label: Dispositivo y versión de Android
+      label: Device and Android version
       placeholder: "Pixel 7 · Android 15"
     validations:
       required: true
   - type: dropdown
-    id: conexion
+    id: connection
     attributes:
-      label: ¿Con o sin conexión?
-      description: Buena parte de la app funciona offline — importa para reproducir.
+      label: Online or offline?
+      description: Much of the app works offline — it matters for reproducing.
       options:
-        - Con conexión
-        - Sin conexión
-        - No lo sé / da igual
+        - Online
+        - Offline
+        - Don't know / doesn't matter
     validations:
       required: true
   - type: textarea
-    id: capturas
+    id: screenshots
     attributes:
-      label: Capturas o vídeo
-      description: Arrastra aquí imágenes si ayudan.
+      label: Screenshots or video
+      description: Drag images here if they help.

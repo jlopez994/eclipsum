@@ -1,124 +1,124 @@
 # Eclipsum
 
-App Android (Expo / React Native) para vivir eclipses solares: horarios exactos de los contactos en tu ubicación, mapa con la banda de totalidad, alertas locales y un modo eclipse a pantalla completa que te dice cuándo ponerte y quitarte las gafas.
+Android app (Expo / React Native) for experiencing solar eclipses: exact contact times at your location, a map with the path of totality, local alerts, and a full-screen eclipse mode that tells you when to put your glasses on and take them off.
 
-Primer objetivo: el eclipse solar **total del 12 de agosto de 2026** (norte y centro de la península). Estado: **1.0.0 estable**, distribuida como APK directa (sin Play Store).
+First target: the **total solar eclipse of August 12, 2026** (northern and central Spain). Status: **1.0.0 stable**, distributed as a direct APK (no Play Store).
 
-## Qué hace
+## What it does
 
-- **Cálculo 100 % local** con [astronomy-engine](https://github.com/cosinekitty/astronomy): contactos C1–C4, máximo, obscuración, duración de totalidad y ocaso para cualquier coordenada. Sin backend.
-- **Mapa** en dos vistas: diagrama esquemático y mapa real (Leaflet embebido + tiles Carto). Tocar un punto muestra sus circunstancias y permite fijarlo como puesto de observación.
-- **Totalidad más cercana**: si el puesto queda fuera de la banda, distancia, rumbo y duración en destino (bisección sobre 8 rumbos, tope 700 km).
-- **Alertas locales** (`expo-notifications`, sin red): aviso exacto por contacto, aviso previo opcional, recordatorios 24 h/1 h, y marca «tras el ocaso» en contactos sin sol. Sonido propio o del sistema.
-- **Modo eclipse**: pantalla de evento automática en la ventana del eclipse (cuenta atrás, fase, banner GAFAS/SIN GAFAS, pantalla siempre encendida). Incluye **simulacro** configurable para ensayar con notificaciones reales.
-- **Nubosidad** a la hora del máximo vía Open-Meteo (modelo ECMWF, el mismo que pinta Windy — el chip enlaza allí), con caché offline por día y coordenada.
-- **Multi-eclipse**: el motor autocompleta siempre la lista de próximos eclipses globales; el catálogo (empaquetado + Remote Config) cura labels y bandas por encima, sin publicar release. Cada eclipse guarda su puesto y alertas.
-- **Bilingüe es/en**: idioma automático por sistema (español → es, resto → en) o forzado en Ajustes. Los textos de las notificaciones se hornean en el idioma activo al programarlas.
+- **100% local computation** with [astronomy-engine](https://github.com/cosinekitty/astronomy): C1–C4 contacts, maximum, obscuration, totality duration and sunset for any coordinate. No backend.
+- **Map** with two views: schematic diagram and real map (embedded Leaflet + Carto tiles). Tapping a point shows its circumstances and lets you set it as your observation spot.
+- **Nearest totality**: if your spot is outside the path — distance, bearing and duration at the destination (bisection over 8 bearings, capped at 700 km).
+- **Local alerts** (`expo-notifications`, no network): exact notification per contact, optional early warning, 24 h/1 h reminders, and an "after sunset" mark on contacts with no sun. Custom or system sound.
+- **Eclipse mode**: automatic event screen during the eclipse window (countdown, phase, GLASSES ON/OFF banner, screen always on). Includes a configurable **drill** to rehearse with real notifications.
+- **Cloud cover** at maximum time via Open-Meteo (ECMWF model, the same one Windy paints — the chip links there), with offline cache per day and coordinate.
+- **Multi-eclipse**: the engine always auto-completes the list of upcoming global eclipses; the catalog (bundled + Remote Config) curates labels and paths on top, with no release needed. Each eclipse keeps its own spot and alerts.
+- **Bilingual es/en**: language follows the system (Spanish → es, everything else → en) or can be forced in Settings. Notification texts are baked in the active language when scheduled.
 
-## Offline vs red
+## Offline vs network
 
-| Función | Sin conexión |
+| Feature | Offline |
 |---|---|
-| Horarios, fases, alertas, diagrama, simulacro | ✅ todo local |
-| Banda en mapa real (datos) | ✅ empaquetada o RC ya activado |
-| Tiles del mapa real | ❌ (fondo gris, banda y puntos se pintan igual) |
-| Nubes | ✅ última descarga cacheada (marca `· Xh`) |
-| Buscador de lugares / geocoder | ❌ (fallback a coordenadas) |
-| Remote Config | ✅ últimos valores activados persisten |
+| Times, phases, alerts, diagram, drill | ✅ fully local |
+| Path on the real map (data) | ✅ bundled or previously activated RC |
+| Real map tiles | ❌ (gray background; path and markers still render) |
+| Clouds | ✅ last download cached (`· Xh` mark) |
+| Place search / geocoder | ❌ (falls back to coordinates) |
+| Remote Config | ✅ last activated values persist |
 
-## Estructura
+## Structure
 
 ```
-App.tsx                  Estado raíz: eclipse activo, permisos, RC, drill, tabs
+App.tsx                  Root state: active eclipse, permissions, RC, drill, tabs
 lib/
-  eclipse.ts             Circunstancias locales (memoizado) — SIN imports de react-native
-  eclipseCatalog.ts      Catálogo (empaquetado + RC + autogenerado), eclipse activo
-  totality.ts            Totalidad más cercana, haversine, rumbos
-  bandGeo.ts             Bandas empaquetadas (generado por scripts/genBand.ts)
-  notifications.ts       Alertas locales (cola serializada, canales Android)
-  weather.ts             Open-Meteo ECMWF + caché AsyncStorage
-  prefs.ts               Preferencias persistidas, contexto por eclipse
+  eclipse.ts             Local circumstances (memoized) — NO react-native imports
+  eclipseCatalog.ts      Catalog (bundled + RC + auto-generated), active eclipse
+  totality.ts            Nearest totality, haversine, bearings
+  bandGeo.ts             Bundled paths (generated by scripts/genBand.ts)
+  notifications.ts       Local alerts (serialized queue, Android channels)
+  weather.ts             Open-Meteo ECMWF + AsyncStorage cache
+  prefs.ts               Persisted preferences, per-eclipse context
   firebase.ts            Remote Config + Analytics + Crashlytics (best-effort)
-  drill.ts               Eclipse sintético del simulacro
-  i18n.ts                t(), LANGS/LANG_META; diccionarios en locales/*.json
-  spots.ts               Tipos Spot/SpotOption
+  drill.ts               Synthetic eclipse for the drill
+  i18n.ts                t(), LANGS/LANG_META; dictionaries in locales/*.json
+  spots.ts               Spot/SpotOption types
   maps.ts / anim.ts / soundPreview.ts / leafletVendor.ts
 locales/
-  es.json / en.json      Traducciones (JSON plano; ver «Añadir un idioma»)
+  es.json / en.json      Translations (flat JSON; see "Adding a language")
 hooks/
-  useGeo.ts              GPS one-shot + geocoder inverso
-  usePrefs.ts            Carga/guarda prefs, resuelve idioma
-  useSheet.ts            Hoja inferior arrastrable
-  useSpotData.ts         Nubes + totalidad cercana + punto GPS del puesto
+  useGeo.ts              One-shot GPS + reverse geocoder
+  usePrefs.ts            Loads/saves prefs, resolves language
+  useSheet.ts            Draggable bottom sheet
+  useSpotData.ts         Clouds + nearest totality + GPS point for the spot
 components/
   screens/               MapScreen, AlertsScreen, SettingsScreen, EclipseModeScreen
-  map/                   Piezas visuales del mapa (CompassChip, HorizonDiagram, …)
-  RealMap.tsx            WebView Leaflet (vendored en lib/leafletVendor.ts, sin CDN)
-  SpotSelector.tsx       Modal de puesto: buscador, habituales, nubes por lote
+  map/                   Visual map pieces (CompassChip, HorizonDiagram, …)
+  RealMap.tsx            Leaflet WebView (vendored in lib/leafletVendor.ts, no CDN)
+  SpotSelector.tsx       Spot modal: search, frequent spots, batched clouds
   Countdown.tsx / TabBar.tsx / theme.ts
 scripts/
-  selfcheck.ts           Asserts del motor y catálogo en Node (puerta de CI)
-  genEclipse.ts          Genera entradas de catálogo (--write fusiona en template RC)
-  genBand.ts             Banda empaquetada por id → lib/bandGeo.ts
-  syncBands.ts           Genera bandas que falten en el template RC
-  dev.sh / mensaje.sh    Emulador con GPS simulado / banner RC rápido
+  selfcheck.ts           Engine and catalog asserts in Node (CI gate)
+  genEclipse.ts          Generates catalog entries (--write merges into RC template)
+  genBand.ts             Bundled path by id → lib/bandGeo.ts
+  syncBands.ts           Generates missing paths in the RC template
+  dev.sh / mensaje.sh    Emulator with simulated GPS / quick RC banner
 ```
 
-Restricción: `lib/{eclipse,totality,spots,prefs,weather,eclipseCatalog}.ts` deben seguir libres de imports de `react-native` — `npm run selfcheck` los ejecuta en Node (AsyncStorage se permite: su entry CJS carga en Node y el módulo nativo es diferido).
+Constraint: `lib/{eclipse,totality,spots,prefs,weather,eclipseCatalog}.ts` must stay free of `react-native` imports — `npm run selfcheck` runs them in Node (AsyncStorage is allowed: its CJS entry loads in Node and the native module is deferred).
 
-Detalle de módulos y flujos: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+Module and flow details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
-## Desarrollo
+## Development
 
 ```bash
 npm install
 npm run dev          # expo start (scripts/dev.sh)
 npm run typecheck    # tsc --noEmit
-npm run selfcheck    # asserts de motor/catálogo/prefs en Node
+npm run selfcheck    # engine/catalog/prefs asserts in Node
 ```
 
-Requisitos para compilar: `google-services.json` del proyecto Firebase en la raíz (el del repo apunta al proyecto original; para un fork, usa el de tu propio proyecto Firebase) y Android Studio (se usa su JDK embebido; no hace falta JDK del sistema).
+Build requirements: `google-services.json` from the Firebase project in the repo root (the one in the repo points to the original project; for a fork, use your own Firebase project's) and Android Studio (its embedded JDK is used; no system JDK needed).
 
 ## Release
 
-El despliegue vive en **GitHub Actions** (`.github/workflows/release-apk.yml`): al llegar a main un `expo.android.versionCode` nuevo, compila la APK (con `selfcheck` + `typecheck` como puerta), crea el **GitHub Release** `b<versionCode>` y publica `latest_version_code` en Remote Config para que la app avise de la actualización.
+Deployment lives in **GitHub Actions** (`.github/workflows/release-apk.yml`): when a new `expo.android.versionCode` lands on main, it builds the APK (gated by `selfcheck` + `typecheck`), creates the **GitHub Release** `b<versionCode>` and publishes `latest_version_code` to Remote Config so the app announces the update.
 
-- **Desplegar = bumpear versionCode** en `app.json` y pushear a main (`chore(release): build N`). Pushear código sin bump no publica nada (el guard ve que la release ya existe).
-- **Identidad de build = `android.versionCode`** (monótono, nunca baja). La versión (`expo.version`) es la línea: `1.0.0` estable, `*-beta` canal beta (sale como pre-release: no pisa el estable ni toca RC).
-- **URL estable de descarga**: `https://github.com/jlopez994/eclipsum/releases/latest/download/eclipsum.apk` — el asset se llama siempre igual, la URL no cambia entre releases.
-- **Actualizaciones sin tienda**: la app compara su versionCode con RC `latest_version_code` y muestra banner de descarga (`latest_apk_url`).
-- Build local (sin publicar): `npm run apk` → `android/app/build/outputs/apk/release/app-release.apk`.
-- Secretos del workflow: `GOOGLE_SERVICES_JSON` (contenido del fichero) y `FIREBASE_SERVICE_ACCOUNT` (compartida con sync-remote-config).
+- **Deploying = bumping versionCode** in `app.json` and pushing to main (`chore(release): build N`). Pushing code without a bump publishes nothing (the guard sees the release already exists).
+- **Build identity = `android.versionCode`** (monotonic, never decreases). The version (`expo.version`) is the line: `1.0.0` stable, `*-beta` beta channel (published as pre-release: doesn't override stable or touch RC).
+- **Stable download URL**: `https://github.com/jlopez994/eclipsum/releases/latest/download/eclipsum.apk` — the asset always has the same name, the URL never changes.
+- **Store-less updates**: the app compares its versionCode against RC `latest_version_code` and shows a download banner (`latest_apk_url`).
+- Local build (no publishing): `npm run apk` → `android/app/build/outputs/apk/release/app-release.apk`.
+- Workflow secrets: `GOOGLE_SERVICES_JSON` (file contents) and `FIREBASE_SERVICE_ACCOUNT` (shared with sync-remote-config).
 
 ## Remote Config (`remoteconfig.template.json`)
 
-| Parámetro | Uso |
+| Parameter | Purpose |
 |---|---|
-| `eclipse_message` | Banner superior; vacío = oculto |
-| `active_eclipse_id` | Fuerza eclipse activo; vacío = el más próximo |
-| `eclipse_catalog` | JSON de eclipses extra (con banda opcional `band`) sin release |
-| `glasses_url` | Afiliado gafas ISO 12312-2; vacío = botón oculto |
-| `sponsor` | `{"name","url","tagline"?}` patrocinador del eclipse activo |
-| `latest_version_code` / `latest_apk_url` | Aviso de actualización in-app |
+| `eclipse_message` | Top banner; empty = hidden |
+| `active_eclipse_id` | Forces the active eclipse; empty = the nearest |
+| `eclipse_catalog` | JSON of extra eclipses (with optional `band` path) without a release |
+| `glasses_url` | ISO 12312-2 glasses affiliate; empty = button hidden |
+| `sponsor` | `{"name","url","tagline"?}` sponsor of the active eclipse |
+| `latest_version_code` / `latest_apk_url` | In-app update notice |
 
-Descripciones de parámetros: máx. 256 caracteres (límite de RC).
+Parameter descriptions: max 256 characters (RC limit).
 
-## Pipeline autónomo de catálogo
+## Autonomous catalog pipeline
 
-`.github/workflows/sync-remote-config.yml` (mensual + manual): `genEclipse --write` → `syncBands` → `selfcheck` como puerta → publica RC con la service account (`FIREBASE_SERVICE_ACCOUNT`, rol Firebase Remote Config Admin = `roles/cloudconfig.admin`) → auto-commitea el template. Los eclipses nuevos llegan a la app sin tocar código ni publicar APK.
+`.github/workflows/sync-remote-config.yml` (monthly + manual): `genEclipse --write` → `syncBands` → `selfcheck` as gate → publishes RC with the service account (`FIREBASE_SERVICE_ACCOUNT`, Firebase Remote Config Admin role = `roles/cloudconfig.admin`) → auto-commits the template. New eclipses reach the app without touching code or publishing an APK.
 
-Curación manual (opcional, el workflow hace lo mismo solo): `npx tsx scripts/genEclipse.ts --kind total --write` fusiona entradas en el template (dedupe por día civil), `npx tsx scripts/syncBands.ts` completa bandas RC que falten, y `npx firebase-tools deploy --only remoteconfig` publica. Banda **empaquetada** (visible sin red la primera vez): entrada en `ECLIPSES` (`lib/eclipseCatalog.ts`) + `npx tsx scripts/genBand.ts --id <id>` — esta vía sí requiere release.
+Manual curation (optional, the workflow does the same on its own): `npx tsx scripts/genEclipse.ts --kind total --write` merges entries into the template (dedupe by civil day), `npx tsx scripts/syncBands.ts` fills in missing RC paths, and `npx firebase-tools deploy --only remoteconfig` publishes. **Bundled** path (visible offline on first run): entry in `ECLIPSES` (`lib/eclipseCatalog.ts`) + `npx tsx scripts/genBand.ts --id <id>` — this route does require a release.
 
-## Añadir un idioma
+## Adding a language
 
-Las traducciones son JSON plano en `locales/` (una clave por texto, interpolación `{var}`) y las contribuciones son bienvenidas — traducir no requiere saber programar:
+Translations are flat JSON in `locales/` (one key per text, `{var}` interpolation) and contributions are welcome — translating requires no programming:
 
-1. Copia `locales/en.json` a `locales/<código>.json` (p. ej. `fr.json`) y traduce los valores (las claves y los `{var}` no se tocan). Los meses abreviados son las claves `month.0`–`month.11`.
-2. En `lib/i18n.ts`: añade el código a `LANGS`, su entrada en `LANG_META` (endónimo, etiqueta BCP-47, separador decimal) e importa/registra el JSON en `DICTS`. El compilador obliga a completar los tres.
-3. `npm run selfcheck` verifica la paridad de claves con `es` — si falta alguna, falla con su nombre.
+1. Copy `locales/en.json` to `locales/<code>.json` (e.g. `fr.json`) and translate the values (keys and `{var}` placeholders stay untouched). Abbreviated months are the `month.0`–`month.11` keys.
+2. In `lib/i18n.ts`: add the code to `LANGS`, its entry in `LANG_META` (endonym, BCP-47 tag, decimal separator) and import/register the JSON in `DICTS`. The compiler enforces all three.
+3. `npm run selfcheck` verifies key parity against `es` — a missing key fails with its name.
 
-El selector de Ajustes se genera solo a partir de `LANGS`; no hay que tocar UI. Contexto útil para traducir: los textos en MAYÚSCULAS son labels de interfaz compactos; los `notif.*` son notificaciones que el usuario lee sin la app abierta; C1–C4/MÁX son los contactos del eclipse (jerga estándar). El formato es compatible tal cual con plataformas de traducción (Crowdin, Weblate, Tolgee) si algún día hace falta.
+The Settings selector is generated from `LANGS`; no UI changes needed. Useful context for translating: ALL-CAPS texts are compact UI labels; `notif.*` are notifications read without the app open; C1–C4/MAX are the eclipse contacts (standard jargon). The format is directly compatible with translation platforms (Crowdin, Weblate, Tolgee) if ever needed.
 
-## Seguridad ocular
+## Eye safety
 
-La app avisa de los momentos exactos, pero la regla es una: **nunca mirar al sol sin gafas certificadas ISO 12312-2, salvo durante la totalidad**. Guía del IGN enlazada en Ajustes.
+The app announces the exact moments, but the rule is one: **never look at the sun without ISO 12312-2 certified glasses, except during totality**. IGN safety guide linked in Settings.

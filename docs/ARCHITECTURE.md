@@ -1,94 +1,94 @@
-# Arquitectura
+# Architecture
 
-> Fiel a la implementación en `main` (1.0.0, versionCode 23). Visión general y runbook de releases en el [README](../README.md).
+> Faithful to the implementation on `main` (1.0.0, versionCode 23). Overview and release runbook in the [README](../README.md).
 
-## Principio rector
+## Guiding principle
 
-El **motor de cálculo es TypeScript puro** ejecutable en Node: `lib/{eclipse,totality,spots,prefs,weather,eclipseCatalog}.ts` no importan `react-native` (AsyncStorage sí está permitido: su entry CJS carga en Node y el acceso al módulo nativo es diferido). `npm run selfcheck` (`scripts/selfcheck.ts`) los ejecuta en Node con asserts de motor, catálogo, RC, drill, prefs, totalidad e i18n — es la puerta de CI y del workflow de Remote Config.
+The **computation engine is pure TypeScript** runnable in Node: `lib/{eclipse,totality,spots,prefs,weather,eclipseCatalog}.ts` do not import `react-native` (AsyncStorage is allowed: its CJS entry loads in Node and native module access is deferred). `npm run selfcheck` (`scripts/selfcheck.ts`) runs them in Node with asserts covering the engine, catalog, RC, drill, prefs, totality and i18n — it is the gate for CI and for the Remote Config workflow.
 
-Todo el cálculo astronómico es 100 % local ([astronomy-engine](https://github.com/cosinekitty/astronomy)). No hay backend propio; la única red es Open-Meteo (nubes), tiles de mapa, geocoder de Expo y Firebase (RC/Analytics/Crashlytics, best-effort).
+All astronomical computation is 100% local ([astronomy-engine](https://github.com/cosinekitty/astronomy)). There is no backend; the only network calls are Open-Meteo (clouds), map tiles, Expo's geocoder and Firebase (RC/Analytics/Crashlytics, best-effort).
 
-## App.tsx — estado raíz
+## App.tsx — root state
 
-Único componente con estado global (~500 líneas). No hay store externo.
+The only component with global state (~500 lines). No external store.
 
-| Estado | Origen | Uso |
+| State | Source | Purpose |
 |---|---|---|
-| `prefs` | `usePrefs()` | preferencias persistidas; `null` = cargando (spinner) |
-| `geo`, `locating` | `useGeo()` | posición GPS one-shot |
-| `permissions` | releído en arranque y en cada `AppState → active` | ubicación + notificaciones, sin volver a pedir |
-| `remoteMsg`, `glassesUrl`, `sponsor`, `updateUrl` | `fetchRemoteExtras()` | valores de Remote Config |
-| `catalogEpoch` | contador | invalida el memo del eclipse cuando RC cambia el catálogo |
-| `tab` | `'mapa' \| 'alertas' \| 'ajustes'` | pestaña activa |
-| `demo` | bool | modo demo (long-press 1,5 s en *Acerca de*, en Ajustes) |
-| `drill` | `{eclipse, ids} \| null` | simulacro activo + ids de sus notificaciones `[PRUEBA]` |
-| `now`, `fineClock` | reloj | tick 30 s normal, 1 s si demo/drill/ventana de eclipse |
+| `prefs` | `usePrefs()` | persisted preferences; `null` = loading (spinner) |
+| `geo`, `locating` | `useGeo()` | one-shot GPS position |
+| `permissions` | re-read on launch and on every `AppState → active` | location + notifications, without re-prompting |
+| `remoteMsg`, `glassesUrl`, `sponsor`, `updateUrl` | `fetchRemoteExtras()` | Remote Config values |
+| `catalogEpoch` | counter | invalidates the eclipse memo when RC changes the catalog |
+| `tab` | `'mapa' \| 'alertas' \| 'ajustes'` | active tab |
+| `demo` | bool | demo mode (1.5 s long-press on *About*, in Settings) |
+| `drill` | `{eclipse, ids} \| null` | active drill + ids of its `[PRUEBA]` notifications |
+| `now`, `fineClock` | clock | 30 s tick normally, 1 s during demo/drill/eclipse window |
 
-Derivados sin estado: `getActiveEclipse()` y `contextFor(prefs, civilDate)` se recalculan en cada render (identidad estable por diseño). `eclipse = useMemo(computeLocalEclipse(lat, lon, …), [lat, lon, id, catalogEpoch])`.
+Stateless derivations: `getActiveEclipse()` and `contextFor(prefs, civilDate)` recompute on every render (stable identity by design). `eclipse = useMemo(computeLocalEclipse(lat, lon, …), [lat, lon, id, catalogEpoch])`.
 
-### Flujo de arranque
+### Startup flow
 
-1. Fuentes (Space Grotesk) + prefs; hasta que ambas cargan, spinner.
-2. `usePrefs` aplica `setLang()` y `setUserSelectedEclipseDay()` **antes** de exponer prefs (evita un primer render en idioma/eclipse incorrecto).
-3. Al montar y en cada vuelta a primer plano: `fetchRemoteExtras()` + relectura de permisos.
-4. Siembra de puesto: si el eclipse activo no tiene puesto y hay GPS, se fija el punto GPS como puesto.
-5. `useSpotData` resuelve en paralelo nubes, totalidad más cercana y proyección del GPS en el diagrama.
+1. Fonts (Space Grotesk) + prefs; until both load, spinner.
+2. `usePrefs` applies `setLang()` and `setUserSelectedEclipseDay()` **before** exposing prefs (avoids a first render in the wrong language/eclipse).
+3. On mount and on every return to foreground: `fetchRemoteExtras()` + permission re-read.
+4. Spot seeding: if the active eclipse has no spot and GPS is available, the GPS point becomes the spot.
+5. `useSpotData` resolves clouds, nearest totality and the GPS projection in parallel.
 
-### Modo eclipse
+### Eclipse mode
 
-Si hay eclipse activo y `demo || ventana [C1 − 30 min, C4 + 5 min]`, se renderiza `EclipseModeScreen` **en lugar de** tabs (return temprano). Prioridad de eclipse mostrado: `drill ?? demo ?? real`. El reloj fino (1 s) se arma con timers de entrada/salida de esa ventana.
+If there is an active eclipse and `demo || window [C1 − 30 min, C4 + 5 min]`, `EclipseModeScreen` renders **instead of** the tabs (early return). Displayed eclipse priority: `drill ?? demo ?? real`. The fine clock (1 s) is armed with entry/exit timers for that window.
 
-### Alertas (efecto)
+### Alerts (effect)
 
-Reprograma todas las notificaciones al cambiar puesto, toggles, sonido, idioma o permiso. **Se salta si hay drill activo** (la reprogramación hace `cancelAll` y mataría los avisos de prueba). Los textos se hornean en el idioma activo al programar — por eso `prefs.language` está en las deps.
+Reschedules all notifications when the spot, toggles, sound, language or permission change. **Skipped while a drill is active** (rescheduling does `cancelAll` and would kill the test notices). Texts are baked in the active language at scheduling time — that's why `prefs.language` is in the deps.
 
-### Simulacro (drill)
+### Drill
 
-- `startDrill`: exige puesto + ≥1 alerta activa. `buildDrillEclipse` (lib/drill.ts) construye un eclipse sintético que empieza en *ahora + 2 min* con duraciones configurables; `scheduleFakeEclipseAlerts` añade notificaciones reales `[PRUEBA]` sin tocar las del eclipse real.
-- `jumpDrill(hito)`: desplaza la serie para que el hito tocado caiga en 20 s (solo tocable desde el raíl de `EclipseModeScreen` en drill).
-- Salida: manual (`cancelAlertsByIds`) o automática 60 s después del último evento.
+- `startDrill`: requires a spot + ≥1 active alert. `buildDrillEclipse` (lib/drill.ts) builds a synthetic eclipse starting at *now + 2 min* with configurable durations; `scheduleFakeEclipseAlerts` adds real `[PRUEBA]` notifications without touching the real eclipse's.
+- `jumpDrill(milestone)`: shifts the series so the tapped milestone lands in 20 s (only tappable from the rail in `EclipseModeScreen` during a drill).
+- Exit: manual (`cancelAlertsByIds`) or automatic 60 s after the last event.
 
-## lib/ — módulos
+## lib/ — modules
 
-| Módulo | Propósito | Claves |
+| Module | Purpose | Key points |
 |---|---|---|
-| `eclipse.ts` | Circunstancias locales: C1–C4, máximo, obscuración, duración de totalidad, ocaso | Memo en RAM (`Map`, máx. 400 entradas). `nextEvent`, `currentPhase` |
-| `eclipseCatalog.ts` | Catálogo y eclipse activo | Fusión: empaquetado (`ECLIPSES`, hoy solo `2026-08-12-iberia`) + RC (`eclipse_catalog`) + autogenerado por el motor hasta 12 próximos. Dedupe por **día civil** (gana la entrada empaquetada). Prioridad de activo: selección de usuario → `active_eclipse_id` (RC) → el más próximo. La selección de usuario se persiste por día civil, no por id. Labels regenerados por idioma cuando la entrada tiene `kind` |
-| `totality.ts` | Totalidad más cercana | 8 rumbos × sondas `[25,50,100,200,400,700] km` + bisección a 2 km; duración medida 5 km dentro del borde. Caché RAM por `searchStart:lat,lon` |
-| `prefs.ts` | Preferencias + contexto por eclipse + migraciones | AsyncStorage `eclipsum:prefs`. `contextFor`/`withContext` dan puesto, alertas y recientes **por día civil de eclipse**. `ALERT_EARLY_SECONDS = 15`, `RECENT_CAP = 3` |
-| `weather.ts` | Nubes Open-Meteo | Modelo fijo `ecmwf_ifs025` (coincide con Windy). Caché AsyncStorage `eclipsum:clouds:v3:{día}:{lat},{lon}` (2 decimales) con poda de días/versiones viejas. Timeout 10 s |
-| `notifications.ts` | Alertas locales | Cola `opQueue` que serializa toda operación. Canales Android `eclipse-alerts-v4-{eclipse\|default}` (borra los v3 legacy). `scheduleEclipseAlerts` cancela todo y reprograma; `scheduleFakeEclipseAlerts` es aditiva y devuelve ids |
-| `firebase.ts` | RC + Analytics + Crashlytics | Todo best-effort (la app funciona sin Firebase). Fetch RC: 0 en dev, 1 h en release. `track`/`trackError` |
-| `i18n.ts` | Idiomas (hoy es/en, extensible) | `LANGS` + `LANG_META` (endónimo, tag BCP-47, separador decimal) + diccionarios JSON planos en `locales/<lang>.json` (meses = claves `month.0–11`, helper `monthShort`). `I18nKey = keyof typeof es` — completitud forzada por compilador y paridad verificada en selfcheck para cada idioma. `t(key, vars)` con `{var}`; clave desconocida → devuelve la clave. Sin dependencias; el idioma vive en `prefs.language` (`''` = auto: sistema español → es, resto → en, resuelto en `usePrefs`). Formato compatible con Crowdin/Weblate/Tolgee. Cómo añadir un idioma: [README](../README.md#añadir-un-idioma) |
-| `drill.ts` | Eclipse sintético del simulacro | Presets `DRILL_PARTIAL`, `DRILL_TOTALITY`; `clampDrill` valida rangos |
-| `bandGeo.ts` | Bandas empaquetadas (**generado** por `scripts/genBand.ts`, no editar a mano) | Hoy solo la banda de Iberia 2026 (66 cortes) |
-| `spots.ts` | Tipos `Spot`/`SpotOption` | Sin lógica |
-| `maps.ts`, `anim.ts`, `soundPreview.ts` | Utilidades RN (abrir Maps, LayoutAnimation, preview de sonido) | Importan react-native — fuera del motor |
-| `leafletVendor.ts` | Leaflet 1.9.4 embebido (JS+CSS como strings) | El mapa real no depende de CDN |
+| `eclipse.ts` | Local circumstances: C1–C4, maximum, obscuration, totality duration, sunset | In-RAM memo (`Map`, max 400 entries). `nextEvent`, `currentPhase` |
+| `eclipseCatalog.ts` | Catalog and active eclipse | Merge: bundled (`ECLIPSES`, today only `2026-08-12-iberia`) + RC (`eclipse_catalog`) + engine-generated up to 12 upcoming. Dedupe by **civil day** (bundled entry wins). Active priority: user selection → `active_eclipse_id` (RC) → the nearest. User selection persists by civil day, not id. Labels regenerated per language when the entry has `kind` |
+| `totality.ts` | Nearest totality | 8 bearings × probes `[25,50,100,200,400,700] km` + bisection to 2 km; duration measured 5 km inside the edge. RAM cache by `searchStart:lat,lon` |
+| `prefs.ts` | Preferences + per-eclipse context + migrations | AsyncStorage `eclipsum:prefs`. `contextFor`/`withContext` provide spot, alerts and recents **per eclipse civil day**. `ALERT_EARLY_SECONDS = 15`, `RECENT_CAP = 3` |
+| `weather.ts` | Open-Meteo clouds | Fixed model `ecmwf_ifs025` (matches Windy). AsyncStorage cache `eclipsum:clouds:v3:{day}:{lat},{lon}` (2 decimals) with pruning of old days/versions. 10 s timeout |
+| `notifications.ts` | Local alerts | `opQueue` serializes every operation. Android channels `eclipse-alerts-v4-{eclipse\|default}` (deletes legacy v3). `scheduleEclipseAlerts` cancels everything and reschedules; `scheduleFakeEclipseAlerts` is additive and returns ids |
+| `firebase.ts` | RC + Analytics + Crashlytics | Everything best-effort (the app works without Firebase). RC fetch: 0 in dev, 1 h in release. `track`/`trackError` |
+| `i18n.ts` | Languages (today es/en, extensible) | `LANGS` + `LANG_META` (endonym, BCP-47 tag, decimal separator) + flat JSON dictionaries in `locales/<lang>.json` (months = `month.0–11` keys, `monthShort` helper). `I18nKey = keyof typeof es` — completeness enforced by the compiler and parity verified in selfcheck for every language. `t(key, vars)` with `{var}`; unknown key → returns the key. No dependencies; the language lives in `prefs.language` (`''` = auto: Spanish system → es, everything else → en, resolved in `usePrefs`). Format directly compatible with Crowdin/Weblate/Tolgee. How to add a language: [README](../README.md#adding-a-language) |
+| `drill.ts` | Synthetic drill eclipse | Presets `DRILL_PARTIAL`, `DRILL_TOTALITY`; `clampDrill` validates ranges |
+| `bandGeo.ts` | Bundled paths (**generated** by `scripts/genBand.ts`, do not edit by hand) | Today only the Iberia 2026 path (66 slices) |
+| `spots.ts` | `Spot`/`SpotOption` types | No logic |
+| `maps.ts`, `anim.ts`, `soundPreview.ts` | RN utilities (open Maps, LayoutAnimation, sound preview) | Import react-native — outside the engine |
+| `leafletVendor.ts` | Vendored Leaflet 1.9.4 (JS+CSS as strings) | The real map does not depend on a CDN |
 
-## components/ y hooks/
+## components/ and hooks/
 
-**Pantallas** (`components/screens/`):
+**Screens** (`components/screens/`):
 
-- `MapScreen` — principal: diagrama SVG o mapa real, chips (lugar/vista/brújula), hoja inferior arrastrable con cuenta atrás, stats, chip de nubes → Windy, cronología, horizonte, patrocinador.
-- `AlertsScreen` — hitos C1–C4 con switch, aviso previo +15 s, recordatorios +1 h/+24 h (solo C1), marca «tras el ocaso», notificación de prueba, contador de programadas.
-- `SettingsScreen` — permisos, sonido, idioma, seguridad ocular (IGN + afiliado), simulacro, próximos 5 eclipses seleccionables, *Acerca de*.
-- `EclipseModeScreen` — pantalla de evento: reloj, banner GAFAS/SIN GAFAS, corona animada, cuenta atrás gigante, raíl de hitos, `useKeepAwake()`.
+- `MapScreen` — main: SVG diagram or real map, chips (place/view/compass), draggable bottom sheet with countdown, stats, clouds chip → Windy, timeline, horizon, sponsor.
+- `AlertsScreen` — C1–C4 milestones with switches, +15 s early warning, +1 h/+24 h reminders (C1 only), "after sunset" mark, test notification, scheduled counter.
+- `SettingsScreen` — permissions, sound, language, eye safety (IGN + affiliate), drill, 5 selectable upcoming eclipses, *About*.
+- `EclipseModeScreen` — event screen: clock, GLASSES ON/OFF banner, animated corona, giant countdown, milestone rail, `useKeepAwake()`.
 
-**Mapa** (`components/map/`): `CompassChip` (aguja al azimut del sol, relativa al rumbo del móvil si hay sensor), `Dots` (puesto + GPS), `HorizonDiagram` (altura del sol a escala, referencia «puños» ≈ 10°), `TotalPill` (distancia/rumbo a totalidad), `UmbraSweep` (barrido de la umbra).
+**Map** (`components/map/`): `CompassChip` (needle at the sun's azimuth, relative to device heading when a sensor exists), `Dots` (spot + GPS), `HorizonDiagram` (sun altitude to scale, "fists" reference ≈ 10°), `TotalPill` (distance/bearing to totality), `UmbraSweep` (umbra sweep).
 
-**Raíz**: `RealMap` (WebView Leaflet + tiles Carto dark; banda, marcadores, tap resuelto en RN), `SpotSelector` (buscador texto o `lat, lon`, secciones con nubes por lote), `TabBar`, `Countdown` (tick propio de 1 s, aislado del árbol), `theme.ts` (paleta `C` + fuentes `F`).
+**Root**: `RealMap` (Leaflet WebView + Carto dark tiles; path, markers, taps resolved in RN), `SpotSelector` (text or `lat, lon` search, sections with batched clouds), `TabBar`, `Countdown` (own 1 s tick, isolated from the tree), `theme.ts` (`C` palette + `F` fonts).
 
-**Hooks**: `useGeo` (GPS one-shot: última conocida → fix fresco, geocoder anti-carrera), `usePrefs` (carga/guarda + idioma + selección de eclipse), `useSheet` (hoja arrastrable con `Animated` + `PanResponder`), `useSpotData` (nubes + totalidad + GPS proyectado).
+**Hooks**: `useGeo` (one-shot GPS: last known → fresh fix, race-safe geocoder), `usePrefs` (load/save + language + eclipse selection), `useSheet` (draggable sheet with `Animated` + `PanResponder`), `useSpotData` (clouds + totality + projected GPS).
 
-## Persistencia
+## Persistence
 
-| Clave | Contenido |
+| Key | Contents |
 |---|---|
-| `eclipsum:prefs` (AsyncStorage) | idioma, sonido, drill config, y por día civil de eclipse: puesto, alertas activas, recientes |
-| `eclipsum:clouds:v3:{día}:{lat},{lon}` | nubosidad cacheada (se poda lo viejo) |
-| Caché nativa de Remote Config | últimos valores activados persisten offline |
+| `eclipsum:prefs` (AsyncStorage) | language, sound, drill config, and per eclipse civil day: spot, active alerts, recents |
+| `eclipsum:clouds:v3:{day}:{lat},{lon}` | cached cloud cover (old entries pruned) |
+| Remote Config native cache | last activated values persist offline |
 
-## Datos remotos (Remote Config)
+## Remote data (Remote Config)
 
-7 parámetros string — tabla completa y operativa en el [README](../README.md#remote-config-remoteconfigtemplatejson). El cliente lleva defaults horneados (`lib/firebase.ts`), así que la app es funcional sin haber contactado nunca con Firebase.
+7 string parameters — full table and operations in the [README](../README.md#remote-config-remoteconfigtemplatejson). The client ships baked-in defaults (`lib/firebase.ts`), so the app is functional without ever having contacted Firebase.

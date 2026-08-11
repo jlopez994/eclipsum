@@ -1,23 +1,23 @@
-name: 💡 Propuesta
-description: Una mejora o función nueva
+name: 💡 Proposal
+description: An improvement or new feature
 labels: [enhancement]
 body:
   - type: textarea
-    id: problema
+    id: problem
     attributes:
-      label: Qué problema resuelve
-      description: El caso real, no la solución. «Como usuario en X situación, me falta Y.»
+      label: What problem it solves
+      description: The real case, not the solution. "As a user in situation X, I'm missing Y." Spanish is welcome too.
     validations:
       required: true
   - type: textarea
-    id: propuesta
+    id: proposal
     attributes:
-      label: Propuesta
-      description: Cómo lo verías resuelto dentro de la app.
+      label: Proposal
+      description: How you'd see it solved inside the app.
     validations:
       required: true
   - type: textarea
-    id: alternativas
+    id: alternatives
     attributes:
-      label: Alternativas consideradas
-      description: Opcional. Otras formas de resolverlo y por qué no encajan.
+      label: Alternatives considered
+      description: Optional. Other ways to solve it and why they don't fit.

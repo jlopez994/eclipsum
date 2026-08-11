@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
-  - name: 📥 Descargar la app
+  - name: 📥 Download the app
     url: https://github.com/jlopez994/eclipsum/releases
-    about: APK estable en Releases — descarga directa: https://github.com/jlopez994/eclipsum/releases/latest/download/eclipsum.apk
+    about: Stable APK in Releases — direct download: https://github.com/jlopez994/eclipsum/releases/latest/download/eclipsum.apk
