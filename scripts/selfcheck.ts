@@ -37,8 +37,11 @@ import {
   bearingOf,
   cameraBasis,
   fovFor,
+  norm360,
   project,
   skyVector,
+  smoothBasis,
+  smoothBearing,
   withCompassBearing,
   type CameraBasis,
 } from '../lib/skyProjection';
@@ -350,6 +353,46 @@ async function main() {
   assert.ok(
     Math.abs(fixed.forward.z - drifted.forward.z) < 1e-9,
     'brújula: el reanclado no toca el cabeceo',
+  );
+
+  // --- Filtros del visor: sin ellos la marca nada con el ruido de los sensores ---
+  assert.equal(norm360(-10), 350, 'norm360: negativos al rango [0,360)');
+  assert.equal(norm360(370), 10, 'norm360: envuelve por arriba');
+
+  // El rumbo se promedia por el camino corto del círculo, no interpolando grados
+  assert.equal(smoothBearing(null, 42, 0.5), 42, 'rumbo: la primera muestra entra tal cual');
+  assert.equal(smoothBearing(0, 10, 0.5), 5, 'rumbo: media hacia la muestra nueva');
+  assert.equal(smoothBearing(350, 10, 0.5), 0, 'rumbo: cruzar el 0 va por el lado corto');
+  assert.equal(smoothBearing(10, 350, 0.5), 0, 'rumbo: y en sentido contrario también');
+  assert.ok(
+    Math.abs(smoothBearing(90, 91, 0.06) - 90.06) < 1e-9,
+    'rumbo: con factor bajo, una muestra ruidosa apenas mueve la marca',
+  );
+
+  // El filtro de la base debe seguir devolviendo una base ORTONORMAL: interpolar los tres
+  // vectores por separado los saca de ángulo recto y la proyección se deforma
+  const b0 = cameraBasis(0, 90, 0);
+  const b1 = cameraBasis(20, 85, 5);
+  const sm = smoothBasis(b0, b1, 0.2);
+  const dot3 = (u: typeof sm.forward, v: typeof sm.forward) => u.x * v.x + u.y * v.y + u.z * v.z;
+  const norm3 = (u: typeof sm.forward) => Math.hypot(u.x, u.y, u.z);
+  for (const [name, v] of [['forward', sm.forward], ['up', sm.up], ['right', sm.right]] as const) {
+    assert.ok(Math.abs(norm3(v) - 1) < 1e-9, `base filtrada: ${name} unitario`);
+  }
+  assert.ok(Math.abs(dot3(sm.forward, sm.up)) < 1e-9, 'base filtrada: forward ⟂ up');
+  assert.ok(Math.abs(dot3(sm.forward, sm.right)) < 1e-9, 'base filtrada: forward ⟂ right');
+  assert.ok(Math.abs(dot3(sm.up, sm.right)) < 1e-9, 'base filtrada: up ⟂ right');
+  // Y quedarse ENTRE las dos, más cerca de la vieja (factor 0.2 = 20% de la nueva)
+  assert.ok(
+    dot3(sm.forward, b0.forward) > dot3(sm.forward, b1.forward),
+    'base filtrada: con factor 0.2 pesa más la muestra previa',
+  );
+  assert.deepEqual(smoothBasis(null, b1, 0.2), b1, 'base filtrada: la primera muestra entra tal cual');
+  // Salto imposible en una muestra (>90°): se salta el filtro en vez de colapsar la base
+  assert.deepEqual(
+    smoothBasis(lookAt(0), lookAt(180), 0.2),
+    lookAt(180),
+    'base filtrada: un giro de 180° en una muestra no se interpola',
   );
 
   console.log('selfcheck OK — Zaragoza total', zgz.totalityDurationSec + 's, máximo', max.time.toISOString());

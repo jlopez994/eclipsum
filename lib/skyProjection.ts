@@ -52,6 +52,59 @@ function dot(a: Vec3, b: Vec3): number {
   return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
+function cross(a: Vec3, b: Vec3): Vec3 {
+  return { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x };
+}
+
+function normalize(v: Vec3): Vec3 {
+  const n = Math.hypot(v.x, v.y, v.z);
+  return n < 1e-9 ? v : { x: v.x / n, y: v.y / n, z: v.z / n };
+}
+
+/** Interpolación lineal componente a componente; `f` = peso de la muestra nueva. */
+function mix(a: Vec3, b: Vec3, f: number): Vec3 {
+  return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, z: a.z + (b.z - a.z) * f };
+}
+
+/** Componente de `v` perpendicular a `axis` (Gram-Schmidt). */
+function perpendicularTo(v: Vec3, axis: Vec3): Vec3 {
+  const k = dot(v, axis);
+  return { x: v.x - axis.x * k, y: v.y - axis.y * k, z: v.z - axis.z * k };
+}
+
+/** Grados normalizados a [0, 360). */
+export function norm360(deg: number): number {
+  return ((deg % 360) + 360) % 360;
+}
+
+/**
+ * Media exponencial de un RUMBO, por el camino corto del círculo: interpolando los grados
+ * a pelo, pasar de 359° a 1° daría un barrido de 358° en sentido contrario.
+ * `f` = peso de la muestra nueva (0 = congelado, 1 = sin filtrar).
+ */
+export function smoothBearing(prev: number | null, next: number, f: number): number {
+  if (prev === null) return norm360(next);
+  const delta = ((next - prev + 540) % 360) - 180;
+  return norm360(prev + delta * f);
+}
+
+/**
+ * Media exponencial de la orientación de la cámara, reortonormalizada para que siga siendo
+ * una base válida (interpolar los tres vectores por separado los saca de ángulo recto).
+ *
+ * Es lo que quita el temblor: los sensores llegan a 20 Hz y el magnetómetro ronda ±10-20°
+ * de ruido, así que sin filtro la escena nada aunque el móvil esté quieto. El retardo que
+ * introduce no se nota — el sol no se mueve.
+ */
+export function smoothBasis(prev: CameraBasis | null, next: CameraBasis, f: number): CameraBasis {
+  // Salto de más de 90° en una muestra: no es movimiento real (reanclado de brújula, giro
+  // de pantalla). Interpolar vectores casi opuestos colapsa la base, así que se salta el filtro.
+  if (!prev || dot(prev.forward, next.forward) <= 0) return next;
+  const forward = normalize(mix(prev.forward, next.forward, f));
+  const up = normalize(perpendicularTo(mix(prev.up, next.up, f), forward));
+  return { forward, up, right: cross(forward, up) };
+}
+
 /** Matriz por columnas: apply(m, v) = m·v */
 function apply(m: Mat3, v: Vec3): Vec3 {
   return {

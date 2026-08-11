@@ -6,7 +6,17 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { DeviceMotion } from 'expo-sensors';
 import * as Location from 'expo-location';
 import { useKeepAwake } from 'expo-keep-awake';
-import { cameraBasis, fovFor, project, skyVector, withCompassBearing } from '../../lib/skyProjection';
+import {
+  cameraBasis,
+  fovFor,
+  norm360,
+  project,
+  skyVector,
+  smoothBasis,
+  smoothBearing,
+  withCompassBearing,
+  type CameraBasis,
+} from '../../lib/skyProjection';
 import { track } from '../../lib/firebase';
 import { bearingLabel } from '../../lib/totality';
 import { t } from '../../lib/i18n';
@@ -14,6 +24,17 @@ import { C, F } from '../theme';
 
 /** Refresco de la orientación: 20 Hz va sobrado y no calienta el móvil. */
 const MOTION_INTERVAL_MS = 50;
+/**
+ * Peso de la muestra nueva en el filtro (media exponencial). Sin filtro la marca nada
+ * aunque el móvil esté quieto: los sensores llegan crudos a 20 Hz.
+ * 0,18 a 20 Hz ≈ 0,25 s de constante de tiempo — imperceptible para un sol que no se mueve.
+ */
+const MOTION_SMOOTHING = 0.18;
+/**
+ * La brújula es el sensor MÁS ruidoso (±10-20°, peor cerca de metal) y `withCompassBearing`
+ * mete su ruido en toda la escena, así que se filtra bastante más fuerte que la orientación.
+ */
+const HEADING_SMOOTHING = 0.06;
 /**
  * expo-sensors documenta `rotation` en GRADOS, pero algunas versiones han devuelto
  * radianes. En cuanto vemos una magnitud imposible en radianes (>2π) fijamos grados;
@@ -23,6 +44,13 @@ const MOTION_INTERVAL_MS = 50;
 const RADIAN_CEILING = 7;
 /** Por encima de este error declarado (grados) la brújula no es fiable y se avisa. */
 const COMPASS_NOISE_DEG = 25;
+/**
+ * Radio angular del círculo de puntería. No es estético: es el error que el visor NO puede
+ * evitar — magnetómetro (±10-20°) y FOV estimada, porque expo-camera no expone la real.
+ * Pintarlo a escala convierte «clava este punto» en «el sol está en esta zona», que es lo
+ * único que los sensores permiten prometer.
+ */
+const AIM_TOLERANCE_DEG = 12;
 
 interface SunFinderScreenProps {
   /** Azimut del sol en el instante buscado, grados horarios desde el norte */
@@ -64,8 +92,12 @@ export function SunFinderScreen({
   const [permission, requestPermission] = useCameraPermissions();
   const [accepted, setAccepted] = useState(false);
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [rotation, setRotation] = useState<{ alpha: number; beta: number; gamma: number } | null>(null);
+  // Base y rumbo YA filtrados: el filtro vive en el listener, no en el render, para que
+  // cada muestra se acumule sobre la anterior en vez de recalcularse desde cero
+  const [basis, setBasis] = useState<CameraBasis | null>(null);
+  const basisRef = useRef<CameraBasis | null>(null);
   const [heading, setHeading] = useState<number | null>(null);
+  const headingRef = useRef<number | null>(null);
   const [headingAccuracy, setHeadingAccuracy] = useState<number | null>(null);
   const [sensorsOff, setSensorsOff] = useState(false);
   const degreeUnits = useRef(false);
@@ -93,7 +125,10 @@ export function SunFinderScreen({
         if (Math.max(Math.abs(alpha), Math.abs(beta), Math.abs(gamma)) > RADIAN_CEILING) {
           degreeUnits.current = true;
         }
-        setRotation({ alpha, beta, gamma });
+        const k = degreeUnits.current ? 1 : 180 / Math.PI;
+        const next = smoothBasis(basisRef.current, cameraBasis(alpha * k, beta * k, gamma * k), MOTION_SMOOTHING);
+        basisRef.current = next;
+        setBasis(next);
       });
     })();
     return () => {
@@ -111,7 +146,9 @@ export function SunFinderScreen({
         sub = await Location.watchHeadingAsync((h) => {
           const d = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
           if (cancelled || !Number.isFinite(d)) return;
-          setHeading(((d % 360) + 360) % 360);
+          const next = smoothBearing(headingRef.current, norm360(d), HEADING_SMOOTHING);
+          headingRef.current = next;
+          setHeading(next);
           setHeadingAccuracy(typeof h.accuracy === 'number' ? h.accuracy : null);
         });
         // Cerrado durante el await: la limpieza vio sub=null y nadie soltaría la brújula
@@ -197,24 +234,27 @@ export function SunFinderScreen({
   }
 
   // --- Visor ---
-  const toDeg = degreeUnits.current ? 1 : 180 / Math.PI;
-  const basis =
-    rotation === null
-      ? null
-      : (() => {
-          const b = cameraBasis(rotation.alpha * toDeg, rotation.beta * toDeg, rotation.gamma * toDeg);
-          // El compás manda en el rumbo: en Android el alpha de DeviceMotion es relativo
-          return heading === null ? b : withCompassBearing(b, heading);
-        })();
+  // El compás manda en el rumbo: en Android el alpha de DeviceMotion es relativo
+  const aimed = basis === null ? null : heading === null ? basis : withCompassBearing(basis, heading);
 
+  const fov = fovFor(size.w, size.h);
   const shot =
-    basis !== null && size.w > 0
-      ? project(skyVector(azimuthDeg, altitudeDeg), basis, fovFor(size.w, size.h))
-      : null;
+    aimed !== null && size.w > 0 ? project(skyVector(azimuthDeg, altitudeDeg), aimed, fov) : null;
 
   // Normalizado (−1..1, y hacia arriba) → píxeles (y hacia abajo)
   const markerX = shot ? size.w / 2 + (shot.x * size.w) / 2 : 0;
   const markerY = shot ? size.h / 2 - (shot.y * size.h) / 2 : 0;
+  // El círculo mide la tolerancia REAL, no un tamaño bonito: proyectar AIM_TOLERANCE_DEG con
+  // la misma escala que la marca. Así crece en pantallas anchas y con FOV estrecha, y lo que
+  // se le pide al usuario es apuntar a una zona — no clavar un punto que los sensores no dan.
+  const markerR = Math.max(
+    44,
+    Math.min(
+      120,
+      ((size.w / 2) * Math.tan((AIM_TOLERANCE_DEG * Math.PI) / 180)) /
+        Math.tan((fov.horizontalDeg * Math.PI) / 360),
+    ),
+  );
   const noisyCompass = headingAccuracy !== null && headingAccuracy > COMPASS_NOISE_DEG;
 
   return (
@@ -224,23 +264,23 @@ export function SunFinderScreen({
       {shot?.inFrame && (
         <>
           <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
-            {/* Círculo amplio: la marca señala una zona, no un punto */}
-            <Circle cx={markerX} cy={markerY} r={54} stroke={C.corona} strokeWidth={2} fill="none" />
+            {/* El círculo ES la tolerancia (±AIM_TOLERANCE_DEG): señala una zona, no un punto */}
+            <Circle cx={markerX} cy={markerY} r={markerR} stroke={C.corona} strokeWidth={2} fill="none" />
             <Circle
               cx={markerX}
               cy={markerY}
-              r={54}
+              r={markerR}
               stroke={C.corona}
               strokeWidth={10}
               fill="none"
               opacity={0.14}
             />
-            <Line x1={markerX - 74} y1={markerY} x2={markerX - 60} y2={markerY} stroke={C.corona} strokeWidth={2} />
-            <Line x1={markerX + 60} y1={markerY} x2={markerX + 74} y2={markerY} stroke={C.corona} strokeWidth={2} />
-            <Line x1={markerX} y1={markerY - 74} x2={markerX} y2={markerY - 60} stroke={C.corona} strokeWidth={2} />
-            <Line x1={markerX} y1={markerY + 60} x2={markerX} y2={markerY + 74} stroke={C.corona} strokeWidth={2} />
+            <Line x1={markerX - markerR - 20} y1={markerY} x2={markerX - markerR - 6} y2={markerY} stroke={C.corona} strokeWidth={2} />
+            <Line x1={markerX + markerR + 6} y1={markerY} x2={markerX + markerR + 20} y2={markerY} stroke={C.corona} strokeWidth={2} />
+            <Line x1={markerX} y1={markerY - markerR - 20} x2={markerX} y2={markerY - markerR - 6} stroke={C.corona} strokeWidth={2} />
+            <Line x1={markerX} y1={markerY + markerR + 6} x2={markerX} y2={markerY + markerR + 20} stroke={C.corona} strokeWidth={2} />
           </Svg>
-          <View style={[s.markerLabel, { left: markerX - 60, top: markerY + 82 }]} pointerEvents="none">
+          <View style={[s.markerLabel, { left: markerX - 60, top: markerY + markerR + 28 }]} pointerEvents="none">
             <Text style={s.markerLabelText}>{t('sun.marker')}</Text>
             <Text style={s.markerApprox}>{t('sun.approx')}</Text>
           </View>
