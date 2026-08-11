@@ -61,6 +61,10 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # Caché de Gradle: recorta varios minutos en builds sucesivas
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.v.outputs.skip != 'true'
+
       - name: Dependencias
         if: steps.v.outputs.skip != 'true'
         run: npm ci
