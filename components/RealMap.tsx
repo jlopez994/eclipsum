@@ -142,6 +142,11 @@ export const RealMap = forwardRef<RealMapHandle, RealMapProps>(function RealMap(
       setSupportMultipleWindows={false}
       overScrollMode="never"
       onLoadEnd={() => setReady(true)}
+      // Al aparecer/ocultarse un banner el WebView cambia de alto: sin invalidateSize
+      // Leaflet conserva el tamaño viejo y deja la franja nueva en gris
+      onLayout={() => {
+        if (ready) webRef.current?.injectJavaScript('map.invalidateSize(); true;');
+      }}
       onMessage={onMessage}
     />
   );

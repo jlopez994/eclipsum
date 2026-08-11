@@ -132,20 +132,22 @@ function CoronaRing({ glow, border, inner }: { glow: string; border: string; inn
     <Animated.View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', opacity }]}>
       <Svg width={size} height={size} viewBox="0 0 320 320">
         <Defs>
+          {/* El resplandor vive FUERA del disco (r=118): antes quedaba tapado y solo
+              asomaba un filo, con el crono cruzándolo por encima */}
           <RadialGradient id="halo" cx="50%" cy="50%" r="50%">
-            <Stop offset="52%" stopColor="transparent" />
-            <Stop offset="60%" stopColor={glow} />
-            <Stop offset="78%" stopColor="transparent" />
+            <Stop offset="70%" stopColor="transparent" />
+            <Stop offset="79%" stopColor={glow} />
+            <Stop offset="94%" stopColor="transparent" />
           </RadialGradient>
           <RadialGradient id="ringGrad" cx="50%" cy="50%" r="50%">
-            <Stop offset="52%" stopColor="transparent" />
-            <Stop offset="56%" stopColor={inner} />
-            <Stop offset="68%" stopColor="transparent" />
+            <Stop offset="70%" stopColor="transparent" />
+            <Stop offset="75%" stopColor={inner} />
+            <Stop offset="86%" stopColor="transparent" />
           </RadialGradient>
         </Defs>
         <Circle cx={160} cy={160} r={158} fill="url(#halo)" />
         <Circle cx={160} cy={160} r={150} fill="url(#ringGrad)" />
-        <Circle cx={160} cy={160} r={98} fill="#000" stroke={border} strokeWidth={2} />
+        <Circle cx={160} cy={160} r={118} fill="#000" stroke={border} strokeWidth={2} />
       </Svg>
     </Animated.View>
   );
@@ -175,7 +177,7 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo, 
         { glow: 'rgba(139,136,152,0.16)', border: 'rgba(139,136,152,0.4)', inner: 'rgba(139,136,152,0.12)' };
   const railAccent = inTotality ? C.totality : phase || upcoming ? C.corona : C.dim;
   // El crono no puede desbordar en pantallas estrechas ni con formato «1d 01:23:42»
-  const chronoSize = Math.min(108, Math.round(width * 0.27));
+  const chronoSize = Math.min(100, Math.round(width * 0.25));
 
   const after = upcoming
     ? { label: t(`mode.after.${upcoming.key}` as I18nKey), color: AFTER_COLOR[upcoming.key] ?? C.corona }
@@ -204,7 +206,10 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo, 
       </View>
 
       <View style={[s.banner, { backgroundColor: banner.bg, shadowColor: banner.bg }]}>
-        <Text style={s.bannerFase}>{banner.fase}</Text>
+        {/* adjustsFontSizeToFit: «GAFAS PUESTAS» y otras traducciones largas no deben partirse */}
+        <Text style={s.bannerFase} numberOfLines={1} adjustsFontSizeToFit>
+          {banner.fase}
+        </Text>
         <Text style={s.bannerSub}>{banner.sub}</Text>
       </View>
 
@@ -300,7 +305,8 @@ const s = StyleSheet.create({
     borderColor: '#3A3A4C',
     backgroundColor: '#0B0B10',
   },
-  railKey: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 1, color: C.dim },
+  // Pantalla que se mira de noche y a distancia de brazo: sin miniaturas de 9 px
+  railKey: { fontFamily: F.semibold, fontSize: 11, letterSpacing: 1, color: C.dim },
   railHint: {
     textAlign: 'center',
     fontFamily: F.medium,
@@ -309,7 +315,7 @@ const s = StyleSheet.create({
     color: '#55525F',
     marginBottom: 12,
   },
-  railTime: { fontFamily: F.medium, fontSize: 9.5, color: C.dim, fontVariant: ['tabular-nums'] },
+  railTime: { fontFamily: F.medium, fontSize: 10.5, color: C.dim, fontVariant: ['tabular-nums'] },
   banner: {
     marginHorizontal: 16,
     marginTop: 6,
@@ -321,8 +327,16 @@ const s = StyleSheet.create({
     shadowRadius: 30,
     elevation: 12,
   },
-  bannerFase: { fontFamily: F.bold, fontSize: 40, letterSpacing: 2, color: '#FFFFFF' },
-  bannerSub: { fontFamily: F.bold, fontSize: 17, letterSpacing: 3, color: 'rgba(255,255,255,0.92)', marginTop: 10 },
+  bannerFase: { fontFamily: F.bold, fontSize: 40, letterSpacing: 2, color: '#FFFFFF', textAlign: 'center' },
+  bannerSub: {
+    fontFamily: F.bold,
+    fontSize: 15,
+    letterSpacing: 2,
+    lineHeight: 21,
+    color: 'rgba(255,255,255,0.92)',
+    marginTop: 10,
+    textAlign: 'center',
+  },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   cdLabel: { fontFamily: F.semibold, fontSize: 12, letterSpacing: 3, color: 'rgba(242,239,233,0.75)' },
   chrono: {
