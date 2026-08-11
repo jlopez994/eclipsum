@@ -129,6 +129,44 @@ export function SettingsScreen({
       <ScrollView style={s.body} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 22, paddingBottom: 36 }}>
         <Text style={s.hint}>{t('settings.hint')}</Text>
 
+        {!!donateUrl && (
+          <View>
+            <Text style={s.section}>{t('settings.support')}</Text>
+            <View style={[s.card, { padding: 18 }]}>
+              <Text style={s.aboutNote}>{t('settings.support.body')}</Text>
+              <Pressable
+                onPress={() => {
+                  track('donate_click');
+                  Linking.openURL(donateUrl);
+                }}
+              >
+                <Text style={s.safetyLink}>{t('settings.support.button')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        <View>
+          <Text style={s.section}>{t('settings.language')}</Text>
+          <View style={s.langWrap}>
+            {languageOptions().map((opt) => {
+              const on = language === opt.id;
+              return (
+                <Pressable
+                  key={opt.id || 'auto'}
+                  onPress={() => onLanguageChange(opt.id)}
+                  style={[s.langChip, on && s.langChipOn]}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={opt.a11y}
+                >
+                  <Text style={[s.langChipTxt, on && s.langChipTxtOn]}>{opt.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
         <View>
           <Text style={s.section}>{t('settings.permissions')}</Text>
           <View style={s.card}>
@@ -272,44 +310,6 @@ export function SettingsScreen({
             {t('settings.upcoming.note', { manual: isManualSelection ? t('settings.upcoming.noteManual') : '' })}
           </Text>
         </View>
-
-        <View>
-          <Text style={s.section}>{t('settings.language')}</Text>
-          <View style={s.langWrap}>
-            {languageOptions().map((opt) => {
-              const on = language === opt.id;
-              return (
-                <Pressable
-                  key={opt.id || 'auto'}
-                  onPress={() => onLanguageChange(opt.id)}
-                  style={[s.langChip, on && s.langChipOn]}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
-                  accessibilityLabel={opt.a11y}
-                >
-                  <Text style={[s.langChipTxt, on && s.langChipTxtOn]}>{opt.label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-
-        {!!donateUrl && (
-          <View>
-            <Text style={s.section}>{t('settings.support')}</Text>
-            <View style={[s.card, { padding: 18 }]}>
-              <Text style={s.aboutNote}>{t('settings.support.body')}</Text>
-              <Pressable
-                onPress={() => {
-                  track('donate_click');
-                  Linking.openURL(donateUrl);
-                }}
-              >
-                <Text style={s.safetyLink}>{t('settings.support.button')}</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
 
         <View>
           <Text style={s.section}>{t('settings.about')}</Text>
