@@ -146,6 +146,14 @@ function AppInner() {
   // Sin URL en Remote Config no hay aviso; DONATE_PROMPT_DONE (-1) nunca alcanza el umbral
   const showDonatePrompt = donateUrl !== '' && (prefs?.donateOpens ?? 0) >= DONATE_PROMPT_AFTER;
 
+  /**
+   * UN aviso cada vez: apilados taparían el tercio superior de la pantalla. Manda el
+   * mensaje remoto (lo envío yo y puede ser urgente), luego la actualización (accionable
+   * y se resuelve sola al instalar) y por último la propina, que puede esperar siempre.
+   * Al cerrar el de arriba aparece el siguiente.
+   */
+  const notice = showRemoteMsg ? 'info' : showUpdate ? 'update' : showDonatePrompt ? 'donate' : null;
+
   /** Cierra el aviso para siempre; `donated` abre Buy Me a Coffee */
   const resolveDonate = useCallback(
     (donated: boolean) => {
@@ -407,13 +415,13 @@ function AppInner() {
         style={[s.bannerStack, { top: insets.top + 8 }]}
         pointerEvents="box-none"
       >
-        {showRemoteMsg && (
+        {notice === 'info' && (
           <View style={[s.infoBanner, s.bannerShadow]}>
             <Text style={[s.infoBannerText, s.bannerTextInset]}>{remoteMsg}</Text>
             <CloseBanner onPress={() => setRemoteMsgHidden(true)} />
           </View>
         )}
-        {showUpdate && (
+        {notice === 'update' && (
           <View style={[s.updateBanner, s.bannerShadow]}>
             <Text style={[s.updateText, s.bannerTextInset]}>{t('app.updateBanner')}</Text>
             <Text style={s.updateLink} onPress={() => Linking.openURL(updateUrl).catch(() => {})}>
@@ -423,7 +431,7 @@ function AppInner() {
           </View>
         )}
         {/* Propina: solo tras varios usos, una vez en la vida y nunca en modo eclipse (return aparte) */}
-        {showDonatePrompt && (
+        {notice === 'donate' && (
           <View style={[s.donateBanner, s.bannerShadow]}>
             <Text style={s.donateText}>{t('app.donateBanner')}</Text>
             <View style={s.donateActions}>
