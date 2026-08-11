@@ -265,6 +265,9 @@ export function MapScreen({
             // El visor exige posición REAL: sin GPS no sabemos qué cielo hay sobre la cámara,
             // y con el sol bajo el horizonte no hay nada que señalar. Sin eso, chip inerte.
             onPress={canOpenFinder ? () => setFinderOpen(true) : undefined}
+            // El visor tapa el chip pero NO desmonta el mapa: sin esto quedan dos brújulas
+            // vivas y al cerrarlo el sensor se apaga para las dos (ver CompassChip)
+            paused={finderOpen}
           />
         </View>
         {divergenceKm !== null && (

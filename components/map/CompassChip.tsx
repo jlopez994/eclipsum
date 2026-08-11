@@ -10,6 +10,16 @@ interface CompassChipProps {
   targetAzimuthDeg: number;
   /** Abre el visor de cámara. Sin handler (sin GPS o sol bajo el horizonte) el chip es inerte. */
   onPress?: () => void;
+  /**
+   * Suelta el sensor mientras otra pantalla lo necesita.
+   *
+   * OBLIGATORIO, no una optimización: expo-location guarda UN solo `mHeadingId` para todo
+   * el módulo (LocationModule.kt). Con dos observadores vivos, el segundo se lleva los
+   * eventos y, al cerrarse, su `removeWatchAsync` entra por `watchId == mHeadingId` y
+   * ejecuta `destroyHeadingWatch()`: apaga el sensor y deja al primero suscrito pero mudo
+   * —la aguja congelada hasta remontar—. Nunca dos brújulas a la vez.
+   */
+  paused?: boolean;
 }
 
 /**
@@ -17,12 +27,13 @@ interface CompassChipProps {
  * Con sensor, gira respecto al rumbo del móvil — cuando miras bien, la aguja queda arriba.
  * Sin sensor (emulador): muestra el rumbo cardenal fijo (arriba = N del diagrama).
  */
-export function CompassChip({ targetAzimuthDeg, onPress }: CompassChipProps) {
+export function CompassChip({ targetAzimuthDeg, onPress, paused = false }: CompassChipProps) {
   const [heading, setHeading] = useState<number | null>(null);
   const target = ((targetAzimuthDeg % 360) + 360) % 360;
   const label = bearingLabel(target);
 
   useEffect(() => {
+    if (paused) return;
     let sub: Location.LocationSubscription | null = null;
     let cancelled = false;
     void (async () => {
@@ -42,7 +53,7 @@ export function CompassChip({ targetAzimuthDeg, onPress }: CompassChipProps) {
       cancelled = true;
       sub?.remove();
     };
-  }, []);
+  }, [paused]);
 
   // Con sensor: ángulo relativo (0° = ya miras al sol). Sin sensor: rumbo sobre el diagrama (N arriba).
   const rotateDeg = heading !== null ? target - heading : target;
