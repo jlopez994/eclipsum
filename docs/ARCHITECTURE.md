@@ -17,7 +17,7 @@ The only component with global state (~500 lines). No external store.
 | `prefs` | `usePrefs()` | persisted preferences; `null` = loading (spinner) |
 | `geo`, `locating` | `useGeo()` | one-shot GPS position |
 | `permissions` | re-read on launch and on every `AppState → active` | location + notifications, without re-prompting |
-| `remoteMsg`, `glassesUrl`, `sponsor`, `updateUrl` | `fetchRemoteExtras()` | Remote Config values |
+| `remoteMsg`, `glassesUrl`, `sponsor`, `updateUrl`, `suggestedSpots` | `fetchRemoteExtras()` | Remote Config values |
 | `catalogEpoch` | counter | invalidates the eclipse memo when RC changes the catalog |
 | `tab` | `'mapa' \| 'alertas' \| 'ajustes'` | active tab |
 | `demo` | bool | demo mode (1.5 s long-press on *About*, in Settings) |
@@ -44,7 +44,7 @@ Reschedules all notifications when the spot, toggles, sound, language or permiss
 
 ### Drill
 
-- `startDrill`: requires a spot + ≥1 active alert. `buildDrillEclipse` (lib/drill.ts) builds a synthetic eclipse starting at *now + 2 min* with configurable durations; `scheduleFakeEclipseAlerts` adds real `[PRUEBA]` notifications without touching the real eclipse's.
+- `startDrill`: requires a spot + ≥1 active alert. `buildDrillEclipse` (lib/drill.ts) builds a synthetic eclipse starting at *now + 1 min* with fixed minimum legs (30 s partial, 45 s totality — the whole run is ~2 min); `scheduleFakeEclipseAlerts` adds real `[PRUEBA]` notifications without touching the real eclipse's. No settings: a drill is a smoke test, not a scale rehearsal.
 - `jumpDrill(milestone)`: shifts the series so the tapped milestone lands in 20 s (only tappable from the rail in `EclipseModeScreen` during a drill).
 - Exit: manual (`cancelAlertsByIds`) or automatic 60 s after the last event.
 
@@ -60,7 +60,7 @@ Reschedules all notifications when the spot, toggles, sound, language or permiss
 | `notifications.ts` | Local alerts | `opQueue` serializes every operation. Android channels `eclipse-alerts-v4-{eclipse\|default}` (deletes legacy v3). `scheduleEclipseAlerts` cancels everything and reschedules; `scheduleFakeEclipseAlerts` is additive and returns ids |
 | `firebase.ts` | RC + Analytics + Crashlytics | Everything best-effort (the app works without Firebase). RC fetch: 0 in dev, 1 h in release. `track`/`trackError` |
 | `i18n.ts` | Languages (today es/en, extensible) | `LANGS` + `LANG_META` (endonym, BCP-47 tag, decimal separator) + flat JSON dictionaries in `locales/<lang>.json` (months = `month.0–11` keys, `monthShort` helper). `I18nKey = keyof typeof es` — completeness enforced by the compiler and parity verified in selfcheck for every language. `t(key, vars)` with `{var}`; unknown key → returns the key. No dependencies; the language lives in `prefs.language` (`''` = auto: Spanish system → es, everything else → en, resolved in `usePrefs`). Format directly compatible with Crowdin/Weblate/Tolgee. How to add a language: [README](../README.md#adding-a-language) |
-| `drill.ts` | Synthetic drill eclipse | Presets `DRILL_PARTIAL`, `DRILL_TOTALITY`; `clampDrill` validates ranges |
+| `drill.ts` | Synthetic drill eclipse | Fixed legs `DRILL_PARTIAL_SEC = 30`, `DRILL_TOTALITY_SEC = 45` — minimums that keep the 15 s early alerts in order (asserted in selfcheck) |
 | `bandGeo.ts` | Bundled paths (**generated** by `scripts/genBand.ts`, do not edit by hand) | Today only the Iberia 2026 path (66 slices) |
 | `spots.ts` | `Spot`/`SpotOption` types | No logic |
 | `maps.ts`, `anim.ts`, `soundPreview.ts` | RN utilities (open Maps, LayoutAnimation, sound preview) | Import react-native — outside the engine |
@@ -77,7 +77,7 @@ Reschedules all notifications when the spot, toggles, sound, language or permiss
 
 **Map** (`components/map/`): `CompassChip` (needle at the sun's azimuth, relative to device heading when a sensor exists), `HorizonDiagram` (sun altitude to scale, "fists" reference ≈ 10°).
 
-**Root**: `RealMap` (Leaflet WebView + Carto dark tiles; path, markers, taps resolved in RN; `forwardRef` handle `flyTo` for the GPS button; framing = path stretch within `BAND_LON_SPAN` degrees of longitude around the spot), `SpotSelector` (text or `lat, lon` search, sections with batched clouds), `TabBar`, `Countdown` (own 1 s tick, isolated from the tree), `theme.ts` (`C` palette + `F` fonts).
+**Root**: `RealMap` (Leaflet WebView + Carto dark tiles; path, markers, taps resolved in RN; `forwardRef` handle `flyTo` for the GPS button; framing = path stretch within `BAND_LON_SPAN` degrees of longitude around the spot), `SpotSelector` (text or `lat, lon` search, sections with batched clouds — including the curated `suggested_spots` from RC, filtered to those inside the active eclipse's band and hidden when none qualify), `TabBar`, `Countdown` (own 1 s tick, isolated from the tree), `theme.ts` (`C` palette + `F` fonts).
 
 **Hooks**: `useGeo` (one-shot GPS: last known → fresh fix, race-safe geocoder), `usePrefs` (load/save + language + eclipse selection), `useSheet` (draggable sheet with `Animated` + `PanResponder`), `useSpotData` (clouds + totality + projected GPS).
 
@@ -85,10 +85,10 @@ Reschedules all notifications when the spot, toggles, sound, language or permiss
 
 | Key | Contents |
 |---|---|
-| `eclipsum:prefs` (AsyncStorage) | language, sound, drill config, and per eclipse civil day: spot, active alerts, recents |
+| `eclipsum:prefs` (AsyncStorage) | language, sound, and per eclipse civil day: spot, active alerts, recents |
 | `eclipsum:clouds:v3:{day}:{lat},{lon}` | cached cloud cover (old entries pruned) |
 | Remote Config native cache | last activated values persist offline |
 
 ## Remote data (Remote Config)
 
-7 string parameters — full table and operations in the [README](../README.md#remote-config-remoteconfigtemplatejson). The client ships baked-in defaults (`lib/firebase.ts`), so the app is functional without ever having contacted Firebase.
+9 string parameters — full table and operations in the [README](../README.md#remote-config-remoteconfigtemplatejson). The client ships baked-in defaults (`lib/firebase.ts`), so the app is functional without ever having contacted Firebase.

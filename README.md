@@ -10,7 +10,7 @@ First target: the **total solar eclipse of August 12, 2026** (northern and centr
 - **Real map** (embedded Leaflet + Carto tiles) framed on the stretch of the path around your spot, with a button to recenter on your GPS position. Tapping a point shows its circumstances and lets you set it as your observation spot.
 - **Nearest totality**: if your spot is outside the path — distance, bearing and duration at the destination (bisection over 8 bearings, capped at 700 km).
 - **Local alerts** (`expo-notifications`, no network): exact notification per contact, optional early warning, 24 h/1 h reminders, and an "after sunset" mark on contacts with no sun. Custom or system sound.
-- **Eclipse mode**: automatic event screen during the eclipse window (countdown, phase, GLASSES ON/OFF banner, screen always on). Includes a configurable **drill** to rehearse with real notifications.
+- **Eclipse mode**: automatic event screen during the eclipse window (countdown, phase, GLASSES ON/OFF banner, screen always on). Includes a one-tap **drill** (~2 min, no settings) to rehearse with real notifications.
 - **Cloud cover** at maximum time via Open-Meteo (ECMWF model, the same one Windy paints — the chip links there), with offline cache per day and coordinate.
 - **Multi-eclipse**: the engine always auto-completes the list of upcoming global eclipses; the catalog (bundled + Remote Config) curates labels and paths on top, with no release needed. Each eclipse keeps its own spot and alerts.
 - **Bilingual es/en**: language follows the system (Spanish → es, everything else → en) or can be forced in Settings. Notification texts are baked in the active language when scheduled.
@@ -39,7 +39,7 @@ lib/
   weather.ts             Open-Meteo ECMWF + AsyncStorage cache
   prefs.ts               Persisted preferences, per-eclipse context
   firebase.ts            Remote Config + Analytics + Crashlytics (best-effort)
-  drill.ts               Synthetic eclipse for the drill
+  drill.ts               Synthetic eclipse for the drill (fixed minimum legs)
   i18n.ts                t(), LANGS/LANG_META; dictionaries in locales/*.json
   spots.ts               Spot/SpotOption types
   maps.ts / anim.ts / soundPreview.ts / leafletVendor.ts
@@ -54,7 +54,7 @@ components/
   screens/               MapScreen, AlertsScreen, SettingsScreen, EclipseModeScreen
   map/                   Visual map pieces (CompassChip, HorizonDiagram, …)
   RealMap.tsx            Leaflet WebView (vendored in lib/leafletVendor.ts, no CDN)
-  SpotSelector.tsx       Spot modal: search, frequent spots, batched clouds
+  SpotSelector.tsx       Spot modal: search, frequent spots, RC suggestions, batched clouds
   Countdown.tsx / TabBar.tsx / theme.ts
 scripts/
   selfcheck.ts           Engine and catalog asserts in Node (CI gate)
@@ -102,6 +102,7 @@ Deployment lives in **GitHub Actions** (`.github/workflows/release-apk.yml`): wh
 | `glasses_url` | ISO 12312-2 glasses affiliate; empty = button hidden |
 | `sponsor` | `{"name","url","tagline"?}` sponsor of the active eclipse |
 | `latest_version_code` / `latest_apk_url` | In-app update notice |
+| `suggested_spots` | `[{"name","lat","lon"}]` curated spots (max 6) for the picker; only those inside the active eclipse's band are shown, `[]` hides the section |
 
 Parameter descriptions: max 256 characters (RC limit).
 
