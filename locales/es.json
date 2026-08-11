@@ -161,7 +161,6 @@
   "settings.upcoming.noteManual": " — ahora tienes uno elegido a mano",
   "settings.about": "ACERCA DE",
   "settings.version": "Versión",
-  "settings.build": "build {n}",
   "settings.activeEclipse": "Eclipse activo",
   "settings.aboutNote": "Los horarios del eclipse se calculan en tu móvil y funcionan sin conexión. Solo el pronóstico de nubes y el buscador de lugares necesitan internet.",
   "map.kicker": "{label} · {key} EN",

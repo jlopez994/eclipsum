@@ -24,8 +24,8 @@ body:
     id: build
     attributes:
       label: Build
-      description: Settings → About → "build N".
-      placeholder: "build 23"
+      description: Settings → About → "Eclipsum bN".
+      placeholder: "b24"
     validations:
       required: true
   - type: input

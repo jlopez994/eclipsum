@@ -1,12 +1,13 @@
 #!/bin/bash
 # Publica una build vía GitHub Actions (release-apk.yml).
 #
-#   npm run release [-- <vc>]   ESTABLE: version sin sufijo → Release b<vc>
-#                               (asset fijo eclipsum.apk) + aviso de actualización en RC
-#   npm run beta    [-- <vc>]   BETA: version <base>-beta.<vc> → pre-release,
-#                               sin tocar releases/latest ni avisar a usuarios
+#   npm run release [-- <vc>]   ESTABLE: Release b<vc> (asset fijo eclipsum.apk)
+#                               + aviso de actualización en RC
+#   npm run beta    [-- <vc>]   BETA: pre-release b<vc>, sin tocar
+#                               releases/latest ni avisar a usuarios
 #
-# La identidad de build es siempre expo.android.versionCode (monótono).
+# Identidad única = expo.android.versionCode (monótono); expo.version se
+# deriva de él (b<vc> / b<vc>-beta), nunca se edita a mano.
 set -e
 MODE="${1:?uso: release.sh stable|beta [versionCode]}"
 [ "$MODE" = "stable" ] || [ "$MODE" = "beta" ] || { echo "ERROR: modo «$MODE» (stable|beta)"; exit 1; }
@@ -20,11 +21,12 @@ CUR=$(node -p "require('./app.json').expo.android.versionCode")
 VC=${2:-$((CUR + 1))}
 [ "$VC" -gt "$CUR" ] 2>/dev/null || { echo "ERROR: versionCode $VC no es mayor que el actual ($CUR)"; exit 1; }
 
+# La versión ES el build: b<vc> estable, b<vc>-beta en canal beta (el workflow
+# detecta «beta» para publicar pre-release). Nadie la edita a mano.
 node -e "
 const fs = require('fs');
 const a = JSON.parse(fs.readFileSync('app.json', 'utf8'));
-const base = a.expo.version.replace(/-(beta|rc)[^ ]*$/, '');
-a.expo.version = '$MODE' === 'beta' ? base + '-beta.' + $VC : base;
+a.expo.version = '$MODE' === 'beta' ? 'b' + $VC + '-beta' : 'b' + $VC;
 a.expo.android.versionCode = $VC;
 fs.writeFileSync('app.json', JSON.stringify(a, null, 2) + '\n');
 "

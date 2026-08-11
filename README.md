@@ -2,7 +2,7 @@
 
 Android app (Expo / React Native) for experiencing solar eclipses: exact contact times at your location, a map with the path of totality, local alerts, and a full-screen eclipse mode that tells you when to put your glasses on and take them off.
 
-First target: the **total solar eclipse of August 12, 2026** (northern and central Spain). Status: **1.0.0 stable**, distributed as a direct APK (no Play Store).
+First target: the **total solar eclipse of August 12, 2026** (northern and central Spain). Status: **stable**, distributed as a direct APK (no Play Store).
 
 ## What it does
 
@@ -84,8 +84,8 @@ Build requirements: `google-services.json` from the Firebase project in the repo
 Deployment lives in **GitHub Actions** (`.github/workflows/release-apk.yml`): when a new `expo.android.versionCode` lands on main, it builds the APK (gated by `selfcheck` + `typecheck`), creates the **GitHub Release** `b<versionCode>` and publishes `latest_version_code` to Remote Config so the app announces the update.
 
 - **Deploying = `npm run release`** (or `npm run release -- <vc>` for an explicit versionCode): bumps `expo.android.versionCode`, commits `chore(release): build N` and pushes to main. Pushing code without a bump publishes nothing (the guard sees the release already exists).
-- **Build identity = `android.versionCode`** (monotonic, never decreases). The version (`expo.version`) is the line: `1.0.0` stable, `*-beta` beta channel (published as pre-release: doesn't override stable or touch RC).
-- **Beta before stable**: `npm run beta` — same pipeline, but the version gets a `-beta.<vc>` suffix, the release is marked pre-release and regular users are not notified. Download it from the release page, test, then `npm run release` promotes a clean stable.
+- **Build identity = `android.versionCode`** (monotonic, never decreases). There is no separate semver: `expo.version` is derived from it by `release.sh` (`b<vc>` stable, `b<vc>-beta` beta) and never edited by hand.
+- **Beta before stable**: `npm run beta` — same pipeline, but the release is marked pre-release (the `-beta` suffix is what the workflow detects) and regular users are not notified. Download it from the release page, test, then `npm run release` promotes a stable.
 - **Local test APK** (nothing published): `npm run apk`, or `npm run dev` for the emulator + Metro loop.
 - **Stable download URL**: `https://github.com/jlopez994/eclipsum/releases/latest/download/eclipsum.apk` — the asset always has the same name, the URL never changes.
 - **Store-less updates**: the app compares its versionCode against RC `latest_version_code` and shows a download banner (`latest_apk_url`).

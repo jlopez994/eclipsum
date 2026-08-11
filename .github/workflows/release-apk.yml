@@ -95,12 +95,12 @@ jobs:
           VC="${{ steps.v.outputs.vc }}"
           APK="android/app/build/outputs/apk/release/app-release.apk"
           cp "$APK" eclipsum.apk
-          cp "$APK" "eclipsum-$V-b$VC.apk"
+          cp "$APK" "eclipsum-$V.apk"
           FLAGS=""
           [ "${{ steps.v.outputs.prerelease }}" = "true" ] && FLAGS="--prerelease"
-          gh release create "b$VC" eclipsum.apk "eclipsum-$V-b$VC.apk" $FLAGS \
-            --title "Eclipsum $V (build $VC)" \
-            --notes "APK $V · versionCode $VC · descarga estable: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/eclipsum.apk"
+          gh release create "b$VC" eclipsum.apk "eclipsum-$V.apk" $FLAGS \
+            --title "Eclipsum $V" \
+            --notes "APK $V · descarga estable: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/eclipsum.apk"
 
       # Solo estable: anuncia la actualización en la app vía Remote Config
       - name: Publicar Remote Config (latest_version_code)

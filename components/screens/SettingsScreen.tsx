@@ -296,11 +296,9 @@ export function SettingsScreen({
             <View style={s.card}>
               <View style={[s.rowItem, s.rowDivider]}>
                 <Text style={s.rowTitle}>{t('settings.version')}</Text>
+                {/* La versión ES el build (b<versionCode>, ver release.sh) */}
                 <Text style={s.aboutValue}>
-                  Eclipsum {Constants.expoConfig?.version ?? '1.0'}
-                  {Constants.expoConfig?.android?.versionCode
-                    ? ` (${t('settings.build', { n: Constants.expoConfig.android.versionCode })})`
-                    : ''}
+                  Eclipsum {Constants.expoConfig?.version ?? `b${Constants.expoConfig?.android?.versionCode ?? '?'}`}
                 </Text>
               </View>
               <View style={[s.rowItem, s.rowDivider]}>

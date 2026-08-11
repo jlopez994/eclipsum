@@ -1,6 +1,6 @@
 # Architecture
 
-> Faithful to the implementation on `main` (1.0.0, versionCode 23). Overview and release runbook in the [README](../README.md).
+> Faithful to the implementation on `main` (build identity = `android.versionCode`; `expo.version` mirrors it as `b<vc>`). Overview and release runbook in the [README](../README.md).
 
 ## Guiding principle
 

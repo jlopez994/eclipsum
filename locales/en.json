@@ -161,7 +161,6 @@
   "settings.upcoming.noteManual": " — you have one manually selected",
   "settings.about": "ABOUT",
   "settings.version": "Version",
-  "settings.build": "build {n}",
   "settings.activeEclipse": "Active eclipse",
   "settings.aboutNote": "Eclipse times are computed on your phone and work offline. Only the cloud forecast and the place search need internet.",
   "map.kicker": "{label} · {key} IN",
