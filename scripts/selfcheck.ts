@@ -14,7 +14,16 @@ import {
 import { cloudCoverAt } from '../lib/weather';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
 import type { Spot } from '../lib/spots';
-import { contextFor, DEFAULT_PREFS, pushRecent, RECENT_CAP, withContext, type RecentSpot } from '../lib/prefs';
+import {
+  contextFor,
+  DEFAULT_PREFS,
+  DONATE_PROMPT_AFTER,
+  DONATE_PROMPT_DONE,
+  pushRecent,
+  RECENT_CAP,
+  withContext,
+  type RecentSpot,
+} from '../lib/prefs';
 import { buildDrillEclipse, clampDrill, DEFAULT_DRILL } from '../lib/drill';
 
 async function main() {
@@ -95,6 +104,13 @@ async function main() {
   assert.equal(rec.length, RECENT_CAP, 'Tope de habituales');
   assert.deepEqual(rec.map((r) => r.name), ['A', 'D', 'C'], 'Más visitado primero; empate → más reciente');
   assert.equal(rec[0].visits, 2, 'Contador acumulado');
+
+  // Aviso de donación: silencioso hasta el umbral y definitivo tras resolverlo
+  const donateVisible = (opens: number) => opens >= DONATE_PROMPT_AFTER;
+  assert.ok(!donateVisible(DEFAULT_PREFS.donateOpens), 'Recién instalada: sin aviso de donación');
+  assert.ok(!donateVisible(DONATE_PROMPT_AFTER - 1), 'Bajo el umbral: sin aviso');
+  assert.ok(donateVisible(DONATE_PROMPT_AFTER), 'Alcanzado el umbral: aviso visible');
+  assert.ok(!donateVisible(DONATE_PROMPT_DONE), 'Resuelto (donó o descartó): nunca vuelve');
 
   // haversine: Madrid-Zaragoza ~256 km en línea recta
   const mzKm = haversineKm(40.42, -3.7, 41.65, -0.88);

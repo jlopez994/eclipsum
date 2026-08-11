@@ -56,7 +56,17 @@ export interface Prefs {
   drill: DrillConfig;
   /** Idioma de la app; '' = automático (el del sistema) */
   language: Lang | '';
+  /**
+   * Aperturas en frío contadas para el aviso de donación.
+   * DONATE_PROMPT_DONE = resuelto (donó o lo descartó): no se vuelve a mostrar.
+   */
+  donateOpens: number;
 }
+
+/** Centinela de `donateOpens`: el aviso ya no volverá a aparecer */
+export const DONATE_PROMPT_DONE = -1;
+/** Aperturas antes de sugerir la donación: primero utilidad, luego la petición */
+export const DONATE_PROMPT_AFTER = 8;
 
 const KEY = 'eclipsum:prefs';
 export const RECENT_CAP = 3;
@@ -90,6 +100,7 @@ export const DEFAULT_PREFS: Prefs = {
   alertSound: 'eclipse',
   drill: { ...DEFAULT_DRILL },
   language: '',
+  donateOpens: 0,
 };
 
 /** Contexto del eclipse con día civil `day`; defaults si aún no tiene nada guardado. */
@@ -213,6 +224,7 @@ export async function loadPrefs(migrationDay: string): Promise<Prefs> {
       alertSound: parsed.alertSound === 'default' ? 'default' : 'eclipse',
       drill: clampDrill(parsed.drill),
       language: parsed.language === 'es' || parsed.language === 'en' ? parsed.language : '',
+      donateOpens: typeof parsed.donateOpens === 'number' ? parsed.donateOpens : 0,
     };
   } catch {
     return DEFAULT_PREFS;

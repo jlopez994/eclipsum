@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Linking, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -20,7 +20,14 @@ import type { Spot } from './lib/spots';
 import { cancelAlertsByIds, scheduleEclipseAlerts, scheduleFakeEclipseAlerts } from './lib/notifications';
 import { buildDrillEclipse } from './lib/drill';
 import { fetchRemoteExtras, track, trackError, type Sponsor } from './lib/firebase';
-import { contextFor, DEFAULT_PREFS, pushRecent, withContext } from './lib/prefs';
+import {
+  contextFor,
+  DEFAULT_PREFS,
+  DONATE_PROMPT_AFTER,
+  DONATE_PROMPT_DONE,
+  pushRecent,
+  withContext,
+} from './lib/prefs';
 import { localeTag, t } from './lib/i18n';
 import { animateNextLayout } from './lib/anim';
 import { useGeo } from './hooks/useGeo';
@@ -103,6 +110,30 @@ function AppInner() {
   useEffect(() => {
     setPermissions((p) => ({ ...p, location: locationGranted }));
   }, [locationGranted]);
+
+  // Una apertura en frío por lanzamiento: el aviso de donación llega tras varios usos,
+  // nunca al primer contacto con la app
+  const openCounted = useRef(false);
+  useEffect(() => {
+    if (!prefs || openCounted.current) return;
+    openCounted.current = true;
+    if (prefs.donateOpens === DONATE_PROMPT_DONE || prefs.donateOpens >= DONATE_PROMPT_AFTER) return;
+    onPrefsChange({ ...prefs, donateOpens: prefs.donateOpens + 1 });
+  }, [prefs, onPrefsChange]);
+
+  // Sin URL en Remote Config no hay aviso; DONATE_PROMPT_DONE (-1) nunca alcanza el umbral
+  const showDonatePrompt = donateUrl !== '' && (prefs?.donateOpens ?? 0) >= DONATE_PROMPT_AFTER;
+
+  /** Cierra el aviso para siempre; `donated` abre Buy Me a Coffee */
+  const resolveDonate = useCallback(
+    (donated: boolean) => {
+      if (!prefs) return;
+      onPrefsChange({ ...prefs, donateOpens: DONATE_PROMPT_DONE });
+      track(donated ? 'donate_click' : 'donate_dismiss', { from: 'banner' });
+      if (donated) Linking.openURL(donateUrl).catch(() => {});
+    },
+    [prefs, onPrefsChange, donateUrl],
+  );
 
   useEffect(() => {
     // Relee permisos sin pedirlos: el usuario puede cambiarlos en Ajustes del sistema
@@ -357,6 +388,25 @@ function AppInner() {
           </Text>
         </View>
       )}
+      {/* Propina: solo tras varios usos, una vez en la vida y nunca en modo eclipse (return aparte) */}
+      {showDonatePrompt && (
+        <View
+          style={[
+            s.donateBanner,
+            { marginTop: remoteMsg !== '' || updateUrl !== '' ? 8 : insets.top + 8 },
+          ]}
+        >
+          <Text style={s.donateText}>{t('app.donateBanner')}</Text>
+          <View style={s.donateActions}>
+            <Text style={s.donateLater} onPress={() => resolveDonate(false)}>
+              {t('app.donateLater')}
+            </Text>
+            <Text style={s.donateCta} onPress={() => resolveDonate(true)}>
+              {t('app.donateCta')}
+            </Text>
+          </View>
+        </View>
+      )}
       <View style={{ flex: 1 }}>
         {tab === 'mapa' &&
           (eclipse && active ? (
@@ -480,6 +530,21 @@ const s = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
   },
+  /** Más apagado que remoteBanner a propósito: pide, no avisa */
+  donateBanner: {
+    marginHorizontal: 16,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  donateText: { fontFamily: F.regular, fontSize: 13, lineHeight: 18, color: C.dim },
+  donateActions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 18 },
+  donateLater: { fontFamily: F.semibold, fontSize: 11, letterSpacing: 1.2, color: C.dim, padding: 4 },
+  donateCta: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1.2, color: C.corona, padding: 4 },
   remoteBannerText: { color: C.corona, fontFamily: F.semibold, fontSize: 13, textAlign: 'center' },
   updateLink: {
     color: C.corona,

@@ -244,7 +244,7 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
   }
   var DEFAULT_ZOOM = 6;
   /** Grados de longitud de banda a cada lado del puesto en el encuadre (ancho ≈ Iberia) */
-  var BAND_LON_SPAN = 4;
+  var BAND_LON_SPAN = 3;
   draw(D, false);
   window.eclipsumUpdate = function (d) { draw(d, true); };
 
