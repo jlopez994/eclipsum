@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { useKeepAwake } from 'expo-keep-awake';
@@ -32,18 +32,27 @@ function EventRail({
   eclipse,
   now,
   onJump,
+  accent,
 }: {
   eclipse: LocalEclipse;
   now: Date;
   onJump: ((key: EclipseEvent['key']) => void) | null;
+  /** Color del avance recorrido (fase en curso) */
+  accent: string;
 }) {
   const nextKey = nextEvent(eclipse, now)?.key;
   const fmt = (d: Date) =>
     d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  // Avance entre el primer y el último contacto: da sensación de progreso en una serie que dura horas
+  const first = eclipse.events[0]?.time.getTime() ?? 0;
+  const last = eclipse.events[eclipse.events.length - 1]?.time.getTime() ?? 0;
+  const span = last - first;
+  const progress = span > 0 ? Math.min(1, Math.max(0, (now.getTime() - first) / span)) : 0;
   return (
     <View>
       <View style={s.rail}>
         <View style={s.railLine} />
+        <View style={[s.railLineFill, { width: `${progress * 80}%`, backgroundColor: accent }]} />
         {eclipse.events.map((e) => {
           const accent = EVENT_ACCENT[e.key] ?? C.dim;
           const passed = e.time.getTime() <= now.getTime();
@@ -106,6 +115,9 @@ function Clock() {
 }
 
 function CoronaRing({ glow, border, inner }: { glow: string; border: string; inner: string }) {
+  const { width, height } = useWindowDimensions();
+  // El anillo respira dentro de la zona libre: en móviles estrechos no se recorta
+  const size = Math.max(220, Math.min(340, width - 56, height * 0.42));
   const breath = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.loop(
@@ -118,7 +130,7 @@ function CoronaRing({ glow, border, inner }: { glow: string; border: string; inn
   const opacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0.95] });
   return (
     <Animated.View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', opacity }]}>
-      <Svg width={320} height={320} viewBox="0 0 320 320">
+      <Svg width={size} height={size} viewBox="0 0 320 320">
         <Defs>
           <RadialGradient id="halo" cx="50%" cy="50%" r="50%">
             <Stop offset="52%" stopColor="transparent" />
@@ -142,6 +154,7 @@ function CoronaRing({ glow, border, inner }: { glow: string; border: string; inn
 export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo, onJumpToEvent }: EclipseModeScreenProps) {
   useKeepAwake();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const phase = currentPhase(eclipse, now);
   const upcoming = nextEvent(eclipse, now);
   const inTotality = phase?.safeToLook === true;
@@ -156,7 +169,13 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo, 
 
   const ring = inTotality
     ? { glow: 'rgba(255,184,77,0.5)', border: 'rgba(255,216,160,0.85)', inner: 'rgba(255,184,77,0.28)' }
-    : { glow: 'rgba(255,107,94,0.32)', border: 'rgba(255,107,94,0.6)', inner: 'rgba(255,107,94,0.22)' };
+    : phase || upcoming
+      ? { glow: 'rgba(255,107,94,0.32)', border: 'rgba(255,107,94,0.6)', inner: 'rgba(255,107,94,0.22)' }
+      : // Terminado: sin alarma de color, el rojo ya no advierte de nada
+        { glow: 'rgba(139,136,152,0.16)', border: 'rgba(139,136,152,0.4)', inner: 'rgba(139,136,152,0.12)' };
+  const railAccent = inTotality ? C.totality : phase || upcoming ? C.corona : C.dim;
+  // El crono no puede desbordar en pantallas estrechas ni con formato «1d 01:23:42»
+  const chronoSize = Math.min(108, Math.round(width * 0.27));
 
   const after = upcoming
     ? { label: t(`mode.after.${upcoming.key}` as I18nKey), color: AFTER_COLOR[upcoming.key] ?? C.corona }
@@ -166,6 +185,8 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo, 
 
   return (
     <View style={s.root}>
+      {/* Ensayo: filo violeta permanente para no confundirlo con el eclipse real */}
+      {exitLabel && <View style={[s.drillEdge, { top: insets.top }]} pointerEvents="none" />}
       <View style={[s.topRow, { paddingTop: insets.top + 14 }]}>
         <Clock />
         {exitLabel ? (
@@ -195,7 +216,14 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo, 
             <Countdown
               target={upcoming.time}
               format={upcoming.time.getTime() - now.getTime() < 3_600_000 ? 'mmss' : 'auto'}
-              style={[s.chrono, { textShadowColor: inTotality ? 'rgba(124,108,255,0.5)' : 'rgba(255,107,94,0.45)' }]}
+              style={[
+                s.chrono,
+                {
+                  fontSize: chronoSize,
+                  lineHeight: Math.round(chronoSize * 1.04),
+                  textShadowColor: inTotality ? 'rgba(124,108,255,0.5)' : 'rgba(255,107,94,0.45)',
+                },
+              ]}
             />
           </>
         )}
@@ -203,7 +231,7 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo, 
       </View>
 
       <View style={s.footer}>
-        <EventRail eclipse={eclipse} now={now} onJump={onJumpToEvent} />
+        <EventRail eclipse={eclipse} now={now} onJump={onJumpToEvent} accent={railAccent} />
         {upcoming && after && (
           <View style={s.nextCard}>
             <View>
@@ -251,6 +279,17 @@ const s = StyleSheet.create({
     top: 5,
     height: 2,
     backgroundColor: '#26263A',
+  },
+  /** Avance recorrido sobre el raíl (mismo origen y grosor que railLine) */
+  railLineFill: { position: 'absolute', left: '10%', top: 5, height: 2, opacity: 0.55 },
+  drillEdge: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: C.violet,
+    opacity: 0.9,
+    zIndex: 5,
   },
   railItem: { flex: 1, alignItems: 'center', gap: 4 },
   railDot: {
