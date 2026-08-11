@@ -1,7 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Linking, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
@@ -76,6 +76,21 @@ function buildDemoEclipse(real: LocalEclipse, now: Date): LocalEclipse {
   };
 }
 
+/** ✕ de un aviso flotante: esquina superior derecha, área táctil generosa */
+function CloseBanner({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={12}
+      style={s.bannerClose}
+      accessibilityRole="button"
+      accessibilityLabel={t('app.bannerClose')}
+    >
+      <Text style={s.bannerCloseTxt}>✕</Text>
+    </Pressable>
+  );
+}
+
 function AppInner() {
   const insets = useSafeAreaInsets();
   const [fontsLoaded] = useFonts({
@@ -93,6 +108,11 @@ function AppInner() {
   const [donateUrl, setDonateUrl] = useState('');
   const [sponsor, setSponsor] = useState<Sponsor | null>(null);
   const [updateUrl, setUpdateUrl] = useState('');
+  /** Avisos ocultados con la ✕; en memoria a propósito: vuelven al reiniciar la app */
+  const [updateHidden, setUpdateHidden] = useState(false);
+  const [remoteMsgHidden, setRemoteMsgHidden] = useState(false);
+  /** Alto real de la pila de avisos: el mapa baja sus chips para que no queden tapados */
+  const [bannerH, setBannerH] = useState(0);
   const [catalogEpoch, setCatalogEpoch] = useState(0);
   const [tab, setTab] = useState<TabKey>('mapa');
   const [demo, setDemo] = useState(false);
@@ -120,6 +140,10 @@ function AppInner() {
     if (prefs.donateOpens === DONATE_PROMPT_DONE || prefs.donateOpens >= DONATE_PROMPT_AFTER) return;
     onPrefsChange({ ...prefs, donateOpens: prefs.donateOpens + 1 });
   }, [prefs, onPrefsChange]);
+
+  // Ocultar un aviso dura lo que dure la sesión: al reiniciar vuelve si sigue vigente
+  const showRemoteMsg = remoteMsg !== '' && !remoteMsgHidden;
+  const showUpdate = updateUrl !== '' && !updateHidden;
 
   // Sin URL en Remote Config no hay aviso; DONATE_PROMPT_DONE (-1) nunca alcanza el umbral
   const showDonatePrompt = donateUrl !== '' && (prefs?.donateOpens ?? 0) >= DONATE_PROMPT_AFTER;
@@ -375,38 +399,46 @@ function AppInner() {
   return (
     <View style={s.root}>
       <StatusBar style="light" />
-      {remoteMsg !== '' && (
-        <View style={[s.infoBanner, { marginTop: insets.top + 8 }]}>
-          <Text style={s.infoBannerText}>{remoteMsg}</Text>
-        </View>
-      )}
-      {updateUrl !== '' && (
-        <View style={[s.updateBanner, { marginTop: remoteMsg !== '' ? 8 : insets.top + 8 }]}>
-          <Text style={s.updateText}>{t('app.updateBanner')}</Text>
-          <Text style={s.updateLink} onPress={() => Linking.openURL(updateUrl).catch(() => {})}>
-            {t('app.updateCta')}
-          </Text>
-        </View>
-      )}
-      {/* Propina: solo tras varios usos, una vez en la vida y nunca en modo eclipse (return aparte) */}
-      {showDonatePrompt && (
-        <View
-          style={[
-            s.donateBanner,
-            { marginTop: remoteMsg !== '' || updateUrl !== '' ? 8 : insets.top + 8 },
-          ]}
-        >
-          <Text style={s.donateText}>{t('app.donateBanner')}</Text>
-          <View style={s.donateActions}>
-            <Text style={s.donateLater} onPress={() => resolveDonate(false)}>
-              {t('app.donateLater')}
-            </Text>
-            <Text style={s.donateCta} onPress={() => resolveDonate(true)}>
-              {t('app.donateCta')}
-            </Text>
+      {/*
+        Los avisos FLOTAN sobre el contenido: si empujaran el layout, el WebView del
+        mapa se redimensionaría en cada aparición. box-none = los toques pasan al mapa
+        salvo en los propios banners.
+      */}
+      <View
+        style={[s.bannerStack, { top: insets.top + 8 }]}
+        pointerEvents="box-none"
+        onLayout={(e) => setBannerH(Math.ceil(e.nativeEvent.layout.height))}
+      >
+        {showRemoteMsg && (
+          <View style={s.infoBanner}>
+            <Text style={[s.infoBannerText, s.bannerTextInset]}>{remoteMsg}</Text>
+            <CloseBanner onPress={() => setRemoteMsgHidden(true)} />
           </View>
-        </View>
-      )}
+        )}
+        {showUpdate && (
+          <View style={s.updateBanner}>
+            <Text style={[s.updateText, s.bannerTextInset]}>{t('app.updateBanner')}</Text>
+            <Text style={s.updateLink} onPress={() => Linking.openURL(updateUrl).catch(() => {})}>
+              {t('app.updateCta')}
+            </Text>
+            <CloseBanner onPress={() => setUpdateHidden(true)} />
+          </View>
+        )}
+        {/* Propina: solo tras varios usos, una vez en la vida y nunca en modo eclipse (return aparte) */}
+        {showDonatePrompt && (
+          <View style={s.donateBanner}>
+            <Text style={s.donateText}>{t('app.donateBanner')}</Text>
+            <View style={s.donateActions}>
+              <Text style={s.donateLater} onPress={() => resolveDonate(false)}>
+                {t('app.donateLater')}
+              </Text>
+              <Text style={s.donateCta} onPress={() => resolveDonate(true)}>
+                {t('app.donateCta')}
+              </Text>
+            </View>
+          </View>
+        )}
+      </View>
       <View style={{ flex: 1 }}>
         {tab === 'mapa' &&
           (eclipse && active ? (
@@ -429,6 +461,7 @@ function AppInner() {
               onRecalcHere={recalcHere}
               sponsor={sponsor}
               glassesUrl={glassesUrl}
+              topOffset={bannerH}
             />
           ) : (
             <View style={s.loading}>
@@ -527,6 +560,19 @@ const s = StyleSheet.create({
    * puedes hacer, rojo = atención (aviso de distancia del mapa), neutro = petición.
    * Mismo molde en todos: tinte del acento, borde translúcido, texto blanco y acción en color.
    */
+  bannerStack: { position: 'absolute', left: 0, right: 0, zIndex: 20, gap: 8 },
+  /** Hueco para que el texto no pase por debajo de la ✕ */
+  bannerTextInset: { paddingRight: 26 },
+  bannerClose: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bannerCloseTxt: { fontFamily: F.semibold, fontSize: 13, color: C.dim },
   infoBanner: {
     marginHorizontal: 16,
     backgroundColor: 'rgba(124,108,255,0.12)',

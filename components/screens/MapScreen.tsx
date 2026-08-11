@@ -72,6 +72,8 @@ interface MapScreenProps {
   sponsor?: Sponsor | null;
   /** URL de gafas certificadas (afiliado, vía Remote Config); vacío = solo el aviso, sin enlace */
   glassesUrl?: string;
+  /** Alto de los avisos flotantes de App: los chips bajan para no quedar debajo */
+  topOffset?: number;
 }
 
 const fmtHM = (d: Date) =>
@@ -96,6 +98,7 @@ export function MapScreen({
   onRecalcHere,
   sponsor,
   glassesUrl,
+  topOffset = 0,
 }: MapScreenProps) {
   const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
@@ -201,7 +204,7 @@ export function MapScreen({
       )}
 
       {/* Overlay superior: chips + lugares + aviso divergencia */}
-      <View style={[s.topOverlay, { top: insets.top + 8 }]} pointerEvents="box-none">
+      <View style={[s.topOverlay, { top: insets.top + 8 + topOffset }]} pointerEvents="box-none">
         <View style={s.chipsRow} pointerEvents="box-none">
           <View style={s.chipGroup}>
             <Pressable style={s.chipLocation} onPress={onOpenSelector}>
