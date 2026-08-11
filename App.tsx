@@ -11,6 +11,7 @@ import {
 } from '@expo-google-fonts/space-grotesk';
 import {
   computeLocalEclipse,
+  currentPhase,
   eclipseDayOf,
   eclipseSpan,
   eventAt,
@@ -110,6 +111,8 @@ function AppInner() {
   const [tourOpen, setTourOpen] = useState(false);
   /** Velo de fuera de zona descartado en memoria (solo cuando no hay datos previos detrás) */
   const [dismissedNotice, setDismissedNotice] = useState<string | null>(null);
+  /** Modo eclipse real cerrado a mano; la totalidad lo recupera (ver más abajo) */
+  const [modeExited, setModeExited] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const [fineClock, setFineClock] = useState(false);
 
@@ -334,6 +337,28 @@ function AppInner() {
     if (geo) selectSpot(gpsSpot(geo));
   }, [geo, selectSpot]);
 
+  const demoEclipse = demoAt && eclipse ? buildDemoEclipse(eclipse, demoAt) : null;
+  const activeEclipse = drill?.eclipse ?? demoEclipse ?? eclipse;
+
+  // Modo eclipse: automático en ventana del evento, o demo forzada
+  const inEclipseWindow = activeEclipse ? inFineClockWindow(activeEclipse, now.getTime()) : false;
+  /**
+   * La ventana empieza hora y media antes del primer contacto, y durante toda la parcial el
+   * usuario todavía quiere mirar nubes, cambiar de puesto o ver la cronología. Así que el
+   * modo real se puede cerrar… salvo en la TOTALIDAD, que lo recupera sí o sí: son los
+   * segundos en los que mirar el móvil en el instante justo decide si te quitas las gafas.
+   * Los ensayos (demo/simulacro) no pasan por aquí — tienen su propia salida explícita.
+   */
+  const inTotality = activeEclipse !== null && currentPhase(activeEclipse, now)?.safeToLook === true;
+  const showEclipseMode = demo || drill !== null || (inEclipseWindow && (!modeExited || inTotality));
+
+  // Recuperado por la totalidad, la salida previa caduca: tras C3 el aviso de volver a
+  // ponerse las gafas es lo más importante de la pantalla. Fuera de ventana también se
+  // limpia, para que un eclipse futuro no herede el cierre de este.
+  useEffect(() => {
+    if (inTotality || !inEclipseWindow) setModeExited(false);
+  }, [inTotality, inEclipseWindow]);
+
   if (!fontsLoaded || !prefs) {
     return (
       <View style={s.loading}>
@@ -384,12 +409,6 @@ function AppInner() {
       />
     ) : null;
 
-  const demoEclipse = demoAt && eclipse ? buildDemoEclipse(eclipse, demoAt) : null;
-  const activeEclipse = drill?.eclipse ?? demoEclipse ?? eclipse;
-
-  // Modo eclipse: automático en ventana del evento, o demo forzada
-  const inEclipseWindow = activeEclipse ? inFineClockWindow(activeEclipse, now.getTime()) : false;
-
   // Distancia GPS ↔ puesto PINTADO (no el elegido): el marcador «TÚ» y el aviso del día D
   // se miden contra lo que hay en pantalla, o dirían una cosa y el mapa otra
   const spotDistanceKm = geo && shown ? haversineKm(geo.lat, geo.lon, shown.spot.lat, shown.spot.lon) : null;
@@ -407,7 +426,7 @@ function AppInner() {
       ? cleanPlaceLabel(geo.place) || t('map.you')
       : null;
 
-  if (activeEclipse && active && (demo || inEclipseWindow)) {
+  if (activeEclipse && active && showEclipseMode) {
     return (
       <View style={s.root}>
         <StatusBar style="light" />
@@ -416,7 +435,7 @@ function AppInner() {
           place={cleanPlaceLabel(active.place)}
           now={now}
           exitLabel={drill ? t('settings.drill') : demo ? 'DEMO' : null}
-          onExitDemo={drill ? exitDrill : () => setDemoAt(null)}
+          onExit={drill ? exitDrill : demo ? () => setDemoAt(null) : () => setModeExited(true)}
           // El salto repinta la fase al instante, sin esperar al tick del reloj
           onJumpToEvent={
             drill
@@ -439,6 +458,8 @@ function AppInner() {
         updateUrl={remote.updateUrl}
         showDonate={showDonatePrompt}
         onDonateResolve={resolveDonate}
+        showBackToMode={inEclipseWindow && modeExited}
+        onBackToMode={() => setModeExited(false)}
         top={insets.top}
       />
       <View style={{ flex: 1 }}>

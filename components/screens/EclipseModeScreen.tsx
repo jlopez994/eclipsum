@@ -93,9 +93,10 @@ interface EclipseModeScreenProps {
   eclipse: LocalEclipse;
   place: string;
   now: Date;
-  /** Texto del modo de prueba (DEMO/SIMULACRO); null = eclipse real, sin salida */
+  /** Texto del modo de prueba (DEMO/SIMULACRO); null = eclipse real */
   exitLabel: string | null;
-  onExitDemo: () => void;
+  /** Cierra la pantalla: sale del ensayo, o deja el modo real hasta la totalidad */
+  onExit: () => void;
   /** Salto de fase tocando el raíl; null = deshabilitado (eclipse real/demo) */
   onJumpToEvent: ((key: EclipseEvent['key']) => void) | null;
 }
@@ -148,7 +149,7 @@ function CoronaRing({ glow, border, inner }: { glow: string; border: string; inn
   );
 }
 
-export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo, onJumpToEvent }: EclipseModeScreenProps) {
+export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExit, onJumpToEvent }: EclipseModeScreenProps) {
   useKeepAwake();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -186,7 +187,7 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo, 
         <Clock />
         {exitLabel ? (
           <Pressable
-            onPress={onExitDemo}
+            onPress={onExit}
             hitSlop={10}
             style={s.exitPill}
             accessibilityLabel={t('mode.exitA11y', { label: exitLabel.toLowerCase() })}
@@ -194,7 +195,19 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo, 
             <Text style={s.exitPillTxt}>{t('mode.exit', { label: exitLabel })}</Text>
           </Pressable>
         ) : (
-          <Text style={s.modeTag}>{t('mode.tag', { place: place.toUpperCase() })}</Text>
+          // El modo real también se puede cerrar: la ventana abarca hora y media de parcial
+          // antes del primer contacto, y ahí el usuario aún quiere mirar nubes o cambiar de
+          // puesto. La totalidad lo recupera sola (App), que es cuando de verdad importa.
+          <Pressable
+            onPress={onExit}
+            hitSlop={10}
+            style={s.exitTag}
+            accessibilityRole="button"
+            accessibilityLabel={t('mode.exitReal.a11y')}
+          >
+            <Text style={s.exitTagTxt}>{t('mode.tag', { place: place.toUpperCase() })}</Text>
+            <Text style={s.exitTagX}>✕</Text>
+          </Pressable>
         )}
       </View>
 
@@ -255,7 +268,19 @@ const s = StyleSheet.create({
     paddingVertical: 14,
   },
   clock: { fontFamily: F.medium, fontSize: 13, color: C.text, fontVariant: ['tabular-nums'] },
-  modeTag: { fontFamily: F.semibold, fontSize: 11, letterSpacing: 2, color: C.dim },
+  /** Mismo peso que el tag que sustituye: informa del puesto y además cierra */
+  exitTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  exitTagTxt: { fontFamily: F.semibold, fontSize: 11, letterSpacing: 2, color: C.dim },
+  exitTagX: { fontFamily: F.bold, fontSize: 12, color: C.dim },
   exitPill: {
     borderWidth: 1,
     borderColor: 'rgba(124,108,255,0.55)',

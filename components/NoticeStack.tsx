@@ -12,6 +12,9 @@ interface NoticeStackProps {
   showDonate: boolean;
   /** true = donó, false = «ahora no»; en ambos casos el aviso no vuelve nunca */
   onDonateResolve: (donated: boolean) => void;
+  /** El eclipse está en curso y el usuario cerró el modo: camino de vuelta */
+  showBackToMode: boolean;
+  onBackToMode: () => void;
   /** Desplazamiento superior (safe area) */
   top: number;
 }
@@ -29,17 +32,41 @@ interface NoticeStackProps {
  * redimensionaría en cada aparición. Tapan el cromo de la pantalla a propósito, y por eso
  * su fondo es opaco. box-none = los toques pasan al contenido salvo en los propios banners.
  */
-export function NoticeStack({ message, updateUrl, showDonate, onDonateResolve, top }: NoticeStackProps) {
+export function NoticeStack({
+  message,
+  updateUrl,
+  showDonate,
+  onDonateResolve,
+  showBackToMode,
+  onBackToMode,
+  top,
+}: NoticeStackProps) {
   const [messageHidden, setMessageHidden] = useState(false);
   const [updateHidden, setUpdateHidden] = useState(false);
 
   const showMessage = message !== '' && !messageHidden;
   const showUpdate = updateUrl !== '' && !updateHidden;
-  const notice = showMessage ? 'info' : showUpdate ? 'update' : showDonate ? 'donate' : null;
+  // El de volver al modo eclipse manda sobre todos: mientras el evento ocurre no hay nada
+  // más urgente en pantalla, y solo dura la ventana del eclipse
+  const notice = showBackToMode
+    ? 'mode'
+    : showMessage
+      ? 'info'
+      : showUpdate
+        ? 'update'
+        : showDonate
+          ? 'donate'
+          : null;
   if (notice === null) return null;
 
   return (
     <View style={[s.stack, { top: top + 8 }]} pointerEvents="box-none">
+      {/* Sin ✕: cerrarlo ya se hizo al salir del modo, y el evento sigue ocurriendo */}
+      {notice === 'mode' && (
+        <Notice tone="action" text={t('app.eclipseRunning')}>
+          <NoticeLink label={t('app.backToMode')} onPress={onBackToMode} />
+        </Notice>
+      )}
       {notice === 'info' && <Notice tone="info" text={message} onClose={() => setMessageHidden(true)} />}
       {notice === 'update' && (
         <Notice tone="action" text={t('app.updateBanner')} onClose={() => setUpdateHidden(true)}>
