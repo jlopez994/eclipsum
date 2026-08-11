@@ -376,13 +376,13 @@ function AppInner() {
     <View style={s.root}>
       <StatusBar style="light" />
       {remoteMsg !== '' && (
-        <View style={[s.remoteBanner, { marginTop: insets.top + 8 }]}>
-          <Text style={s.remoteBannerText}>{remoteMsg}</Text>
+        <View style={[s.infoBanner, { marginTop: insets.top + 8 }]}>
+          <Text style={s.infoBannerText}>{remoteMsg}</Text>
         </View>
       )}
       {updateUrl !== '' && (
-        <View style={[s.remoteBanner, { marginTop: remoteMsg !== '' ? 8 : insets.top + 8 }]}>
-          <Text style={s.remoteBannerText}>{t('app.updateBanner')}</Text>
+        <View style={[s.updateBanner, { marginTop: remoteMsg !== '' ? 8 : insets.top + 8 }]}>
+          <Text style={s.updateText}>{t('app.updateBanner')}</Text>
           <Text style={s.updateLink} onPress={() => Linking.openURL(updateUrl).catch(() => {})}>
             {t('app.updateCta')}
           </Text>
@@ -522,15 +522,30 @@ const s = StyleSheet.create({
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: C.bg },
   loadingText: { color: C.dim, fontSize: 14, fontFamily: F.medium },
   chooseLink: { color: C.corona, fontSize: 14, fontFamily: F.bold, letterSpacing: 1 },
-  remoteBanner: {
+  /**
+   * Escala de intensidad de los avisos: violeta = informativo, corona = hay algo que
+   * puedes hacer, rojo = atención (aviso de distancia del mapa), neutro = petición.
+   * Mismo molde en todos: tinte del acento, borde translúcido, texto blanco y acción en color.
+   */
+  infoBanner: {
     marginHorizontal: 16,
-    backgroundColor: C.surface,
+    backgroundColor: 'rgba(124,108,255,0.12)',
     borderWidth: 1,
-    borderColor: C.corona,
+    borderColor: 'rgba(124,108,255,0.45)',
     borderRadius: 12,
     padding: 12,
   },
-  /** Más apagado que remoteBanner a propósito: pide, no avisa */
+  infoBannerText: { fontFamily: F.semibold, fontSize: 13, lineHeight: 18, color: C.text },
+  updateBanner: {
+    marginHorizontal: 16,
+    backgroundColor: 'rgba(255,184,77,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,184,77,0.5)',
+    borderRadius: 12,
+    padding: 12,
+    gap: 4,
+  },
+  /** El más apagado de la escala a propósito: pide, no avisa */
   donateBanner: {
     marginHorizontal: 16,
     backgroundColor: C.surface,
@@ -545,13 +560,7 @@ const s = StyleSheet.create({
   donateActions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 18 },
   donateLater: { fontFamily: F.semibold, fontSize: 11, letterSpacing: 1.2, color: C.dim, padding: 4 },
   donateCta: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1.2, color: C.corona, padding: 4 },
-  remoteBannerText: { color: C.corona, fontFamily: F.semibold, fontSize: 13, textAlign: 'center' },
-  updateLink: {
-    color: C.corona,
-    fontFamily: F.bold,
-    fontSize: 12,
-    letterSpacing: 1,
-    textAlign: 'center',
-    marginTop: 6,
-  },
+  // El texto explica qué pasa (blanco) y el color queda para lo que puedes pulsar
+  updateText: { fontFamily: F.semibold, fontSize: 13, lineHeight: 18, color: C.text },
+  updateLink: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1, color: C.corona },
 });
