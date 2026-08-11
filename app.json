@@ -25,9 +25,6 @@
         "android.permission.USE_EXACT_ALARM"
       ]
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
     "plugins": [
       "@react-native-firebase/app",
       "@react-native-firebase/analytics",
