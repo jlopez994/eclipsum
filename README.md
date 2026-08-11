@@ -7,7 +7,7 @@ First target: the **total solar eclipse of August 12, 2026** (northern and centr
 ## What it does
 
 - **100% local computation** with [astronomy-engine](https://github.com/cosinekitty/astronomy): C1–C4 contacts, maximum, obscuration, totality duration and sunset for any coordinate. No backend.
-- **Map** with two views: schematic diagram and real map (embedded Leaflet + Carto tiles). Tapping a point shows its circumstances and lets you set it as your observation spot.
+- **Real map** (embedded Leaflet + Carto tiles) framed on the stretch of the path around your spot, with a button to recenter on your GPS position. Tapping a point shows its circumstances and lets you set it as your observation spot.
 - **Nearest totality**: if your spot is outside the path — distance, bearing and duration at the destination (bisection over 8 bearings, capped at 700 km).
 - **Local alerts** (`expo-notifications`, no network): exact notification per contact, optional early warning, 24 h/1 h reminders, and an "after sunset" mark on contacts with no sun. Custom or system sound.
 - **Eclipse mode**: automatic event screen during the eclipse window (countdown, phase, GLASSES ON/OFF banner, screen always on). Includes a configurable **drill** to rehearse with real notifications.
@@ -19,7 +19,7 @@ First target: the **total solar eclipse of August 12, 2026** (northern and centr
 
 | Feature | Offline |
 |---|---|
-| Times, phases, alerts, diagram, drill | ✅ fully local |
+| Times, phases, alerts, drill | ✅ fully local |
 | Path on the real map (data) | ✅ bundled or previously activated RC |
 | Real map tiles | ❌ (gray background; path and markers still render) |
 | Clouds | ✅ last download cached (`· Xh` mark) |

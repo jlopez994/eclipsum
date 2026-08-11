@@ -70,14 +70,14 @@ Reschedules all notifications when the spot, toggles, sound, language or permiss
 
 **Screens** (`components/screens/`):
 
-- `MapScreen` — main: SVG diagram or real map, chips (place/view/compass), draggable bottom sheet with countdown, stats, clouds chip → Windy, timeline, horizon, sponsor.
+- `MapScreen` — main: real map, chips (place/compass), GPS recenter button, draggable bottom sheet with countdown, stats, clouds chip → Windy, timeline, horizon, sponsor.
 - `AlertsScreen` — C1–C4 milestones with switches, +15 s early warning, +1 h/+24 h reminders (C1 only), "after sunset" mark, test notification, scheduled counter.
-- `SettingsScreen` — permissions, sound, language, eye safety (IGN + affiliate), drill, 5 selectable upcoming eclipses, *About*.
+- `SettingsScreen` — eye safety (IGN + affiliate), permissions, 5 selectable upcoming eclipses, sound, drill, language, support (Buy Me a Coffee via RC `donate_url`), *About*.
 - `EclipseModeScreen` — event screen: clock, GLASSES ON/OFF banner, animated corona, giant countdown, milestone rail, `useKeepAwake()`.
 
-**Map** (`components/map/`): `CompassChip` (needle at the sun's azimuth, relative to device heading when a sensor exists), `Dots` (spot + GPS), `HorizonDiagram` (sun altitude to scale, "fists" reference ≈ 10°), `TotalPill` (distance/bearing to totality), `UmbraSweep` (umbra sweep).
+**Map** (`components/map/`): `CompassChip` (needle at the sun's azimuth, relative to device heading when a sensor exists), `HorizonDiagram` (sun altitude to scale, "fists" reference ≈ 10°).
 
-**Root**: `RealMap` (Leaflet WebView + Carto dark tiles; path, markers, taps resolved in RN), `SpotSelector` (text or `lat, lon` search, sections with batched clouds), `TabBar`, `Countdown` (own 1 s tick, isolated from the tree), `theme.ts` (`C` palette + `F` fonts).
+**Root**: `RealMap` (Leaflet WebView + Carto dark tiles; path, markers, taps resolved in RN; `forwardRef` handle `flyTo` for the GPS button; framing = path stretch within `BAND_LON_SPAN` degrees of longitude around the spot), `SpotSelector` (text or `lat, lon` search, sections with batched clouds), `TabBar`, `Countdown` (own 1 s tick, isolated from the tree), `theme.ts` (`C` palette + `F` fonts).
 
 **Hooks**: `useGeo` (one-shot GPS: last known → fresh fix, race-safe geocoder), `usePrefs` (load/save + language + eclipse selection), `useSheet` (draggable sheet with `Animated` + `PanResponder`), `useSpotData` (clouds + totality + projected GPS).
 
