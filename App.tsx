@@ -111,8 +111,6 @@ function AppInner() {
   /** Avisos ocultados con la ✕; en memoria a propósito: vuelven al reiniciar la app */
   const [updateHidden, setUpdateHidden] = useState(false);
   const [remoteMsgHidden, setRemoteMsgHidden] = useState(false);
-  /** Alto real de la pila de avisos: el mapa baja sus chips para que no queden tapados */
-  const [bannerH, setBannerH] = useState(0);
   const [catalogEpoch, setCatalogEpoch] = useState(0);
   const [tab, setTab] = useState<TabKey>('mapa');
   const [demo, setDemo] = useState(false);
@@ -140,6 +138,12 @@ function AppInner() {
     if (prefs.donateOpens === DONATE_PROMPT_DONE || prefs.donateOpens >= DONATE_PROMPT_AFTER) return;
     onPrefsChange({ ...prefs, donateOpens: prefs.donateOpens + 1 });
   }, [prefs, onPrefsChange]);
+
+  /**
+   * Los avisos flotan BAJO el cromo propio de cada pestaña —chips en el mapa, título en
+   * el resto—: así no tapan nada ni empujan nada. Alturas fijas porque ese cromo lo es.
+   */
+  const bannerTop = insets.top + (tab === 'mapa' ? 52 : 64);
 
   // Ocultar un aviso dura lo que dure la sesión: al reiniciar vuelve si sigue vigente
   const showRemoteMsg = remoteMsg !== '' && !remoteMsgHidden;
@@ -405,18 +409,17 @@ function AppInner() {
         salvo en los propios banners.
       */}
       <View
-        style={[s.bannerStack, { top: insets.top + 8 }]}
+        style={[s.bannerStack, { top: bannerTop }]}
         pointerEvents="box-none"
-        onLayout={(e) => setBannerH(Math.ceil(e.nativeEvent.layout.height))}
       >
         {showRemoteMsg && (
-          <View style={s.infoBanner}>
+          <View style={[s.infoBanner, s.bannerShadow]}>
             <Text style={[s.infoBannerText, s.bannerTextInset]}>{remoteMsg}</Text>
             <CloseBanner onPress={() => setRemoteMsgHidden(true)} />
           </View>
         )}
         {showUpdate && (
-          <View style={s.updateBanner}>
+          <View style={[s.updateBanner, s.bannerShadow]}>
             <Text style={[s.updateText, s.bannerTextInset]}>{t('app.updateBanner')}</Text>
             <Text style={s.updateLink} onPress={() => Linking.openURL(updateUrl).catch(() => {})}>
               {t('app.updateCta')}
@@ -426,7 +429,7 @@ function AppInner() {
         )}
         {/* Propina: solo tras varios usos, una vez en la vida y nunca en modo eclipse (return aparte) */}
         {showDonatePrompt && (
-          <View style={s.donateBanner}>
+          <View style={[s.donateBanner, s.bannerShadow]}>
             <Text style={s.donateText}>{t('app.donateBanner')}</Text>
             <View style={s.donateActions}>
               <Text style={s.donateLater} onPress={() => resolveDonate(false)}>
@@ -461,7 +464,6 @@ function AppInner() {
               onRecalcHere={recalcHere}
               sponsor={sponsor}
               glassesUrl={glassesUrl}
-              topOffset={bannerH}
             />
           ) : (
             <View style={s.loading}>
@@ -573,9 +575,21 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   bannerCloseTxt: { fontFamily: F.semibold, fontSize: 13, color: C.dim },
+  /**
+   * Fondos OPACOS: flotan sobre el mapa, y un tinte translúcido dejaba pasar las
+   * teselas y volvía ilegible el texto. Cada color es su tinte ya fundido sobre el
+   * fondo de la app, más sombra para despegarlo del contenido.
+   */
+  bannerShadow: {
+    shadowColor: '#000',
+    shadowOpacity: 0.55,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 10,
+  },
   infoBanner: {
     marginHorizontal: 16,
-    backgroundColor: 'rgba(124,108,255,0.12)',
+    backgroundColor: '#1D1A33',
     borderWidth: 1,
     borderColor: 'rgba(124,108,255,0.45)',
     borderRadius: 12,
@@ -584,7 +598,7 @@ const s = StyleSheet.create({
   infoBannerText: { fontFamily: F.semibold, fontSize: 13, lineHeight: 18, color: C.text },
   updateBanner: {
     marginHorizontal: 16,
-    backgroundColor: 'rgba(255,184,77,0.12)',
+    backgroundColor: '#2B2116',
     borderWidth: 1,
     borderColor: 'rgba(255,184,77,0.5)',
     borderRadius: 12,
