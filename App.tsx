@@ -193,6 +193,9 @@ function AppInner() {
     if (eclipse && chosenSpot) {
       lastValidRef.current = { spot: chosenSpot, eclipse, day: activeCatalog.civilDate };
     }
+    // chosenSpot se lista por campos, no como objeto: se reconstruye en cada render, así que
+    // depender de él relanzaría el efecto sin que el puesto haya cambiado
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eclipse, chosenSpot?.lat, chosenSpot?.lon, chosenSpot?.name, activeCatalog.civilDate]);
 
   // El respaldo caduca al cambiar de eclipse: enseñar cifras de 2026 con el activo en 2028

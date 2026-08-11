@@ -117,6 +117,9 @@ export const RealMap = forwardRef<RealMapHandle, RealMapProps>(function RealMap(
     if (!ready) return;
     const data = toJs({ spot, here });
     webRef.current?.injectJavaScript(`window.eclipsumUpdate && window.eclipsumUpdate(${data}); true;`);
+    // spot/here por campos: son literales creados en el render del padre, y como objetos
+    // reinyectarían el mapa continuamente
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, spot.lat, spot.lon, spot.label, here?.lat, here?.lon, here?.label]);
 
   const onMessage = (e: WebViewMessageEvent) => {

@@ -223,6 +223,9 @@ export function SpotSelector({
     return () => {
       cancelled = true;
     };
+    // userGeo por coordenadas: como objeto relanzaría toda la lista (motor + red) en cada
+    // render del padre
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, userGeo?.lat, userGeo?.lon, gpsPlace, recentSpots, suggestedSpots]);
 
   const applySearch = async () => {
