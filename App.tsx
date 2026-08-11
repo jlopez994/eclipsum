@@ -42,6 +42,13 @@ import { SettingsScreen } from './components/screens/SettingsScreen';
 import { EclipseModeScreen } from './components/screens/EclipseModeScreen';
 import { C, F } from './components/theme';
 
+/**
+ * En desarrollo la app se hace pasar por una build antigua para que el aviso de
+ * actualización sea visible sin publicar nada. Inerte en release (`__DEV__` = false);
+ * si estorba mientras trabajas, la ✕ lo quita hasta el siguiente arranque.
+ */
+const PREVIEW_UPDATE_IN_DEV = __DEV__;
+
 const ECLIPSE_MODE_LEAD_MS = 30 * 60_000;
 /** Espera hasta el C1 del simulacro: da tiempo a bloquear el móvil y esperar el aviso */
 const DRILL_LEAD_MS = 2 * 60_000;
@@ -168,7 +175,7 @@ function AppInner() {
         setDonateUrl(r.donateUrl);
         setSponsor(r.sponsor);
         // Aviso de actualización sin tienda: RC anuncia versionCode y URL de la APK
-        const ownVc = Constants.expoConfig?.android?.versionCode ?? 0;
+        const ownVc = PREVIEW_UPDATE_IN_DEV ? 0 : Constants.expoConfig?.android?.versionCode ?? 0;
         setUpdateUrl(r.latestVersionCode > ownVc && r.latestApkUrl ? r.latestApkUrl : '');
         // RC puede cambiar el eclipse activo → recalcular circunstancias
         setCatalogEpoch((n) => n + 1);
