@@ -5,7 +5,6 @@ import {
   Linking,
   type LayoutChangeEvent,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -22,21 +21,19 @@ import {
   type LocalEclipse,
 } from '../../lib/eclipse';
 import { bandOf, getActiveEclipse } from '../../lib/eclipseCatalog';
-import { fmtDur, fmtHM, fmtHMS } from '../../lib/format';
+import { fmtDur, fmtHM } from '../../lib/format';
 import { fmtFixed1, t, type I18nKey } from '../../lib/i18n';
 import { bearingLabel, haversineKm, type TotalityDirection } from '../../lib/totality';
-import { track, type Sponsor } from '../../lib/firebase';
+import type { Sponsor } from '../../lib/firebase';
 import { cloudLevel, windyEclipseCloudsUrl } from '../../lib/weather';
 import { animateNextLayout } from '../../lib/anim';
 import { useSheet } from '../../hooks/useSheet';
 import { Countdown } from '../Countdown';
 import { RealMap, type RealMapHandle } from '../RealMap';
 import { CompassChip } from '../map/CompassChip';
-import { HorizonDiagram } from '../map/HorizonDiagram';
+import { SheetDetail } from '../map/SheetDetail';
 import { SunFinderScreen } from './SunFinderScreen';
-import { C, CLOUD_COLOR, EVENT_ACCENT, F } from '../theme';
-
-const IGN_URL = 'https://eclipses.ign.es/como-observar-eclipses.html';
+import { C, CLOUD_COLOR, F } from '../theme';
 
 /** Fallback bajo: mejor recortar un instante que asomar la cronología. */
 const SHEET_MIN_FALLBACK = 140;
@@ -167,18 +164,6 @@ export function MapScreen({
     const km = Math.round(haversineKm(gpsCoords.lat, gpsCoords.lon, spotCoords.lat, spotCoords.lon));
     return km >= FINDER_AWAY_KM ? { km, place } : null;
   })();
-  // Cronología con el ocaso intercalado; los contactos bajo el horizonte no se ven
-  const cronoRows = [
-    ...eclipse.events.map((e) => ({
-      key: e.key as string,
-      label: t(`event.${e.key}` as I18nKey),
-      time: e.time,
-      belowHorizon: e.altitude < 0,
-    })),
-    ...(eclipse.sunset
-      ? [{ key: 'OC', label: t('event.OC'), time: eclipse.sunset, belowHorizon: false }]
-      : []),
-  ].sort((a, b) => a.time.getTime() - b.time.getTime());
 
   /**
    * Dentro de la banda: cuánto dura TU totalidad. Fuera: cuánto te falta para llegar.
@@ -362,81 +347,15 @@ export function MapScreen({
             </View>
           </View>
         </View>
-        <ScrollView
-          style={s.sheetBody}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={s.sheetBodyContent}
-        >
-          <View style={s.divider} />
-          <View style={s.cronoHeader}>
-            <Text style={[s.cronoTitle, { flex: 1 }]} numberOfLines={1}>
-              {t('map.crono', { place: place.toUpperCase(), date: activeEclipseMeta.shortDateLabel })}
-            </Text>
-            <Pressable onPress={onOpenMaps} hitSlop={8}>
-              <Text style={s.mapsLink}>{t('map.directions')}</Text>
-            </Pressable>
-          </View>
-          {cronoRows.map((e) => (
-            <View key={e.key} style={s.cronoRow}>
-              <Text style={[s.cronoLabel, (e.time <= now || e.belowHorizon) && { color: C.dim }]}>
-                <Text style={{ color: EVENT_ACCENT[e.key] ?? C.dim }}>{eventShortLabel(e.key)}</Text>
-                {'  '}
-                {e.label}
-                {e.belowHorizon ? t('map.belowHorizon') : ''}
-              </Text>
-              <Text style={[s.cronoTime, e.belowHorizon && { color: C.dim }]}>{fmtHMS(e.time)}</Text>
-            </View>
-          ))}
-          {maxEvent && maxEvent.altitude > 0 && (
-            <>
-              <View style={s.divider} />
-              <Text style={s.cronoTitle}>{t('map.sunAtMax')}</Text>
-              {/* El aviso de sol bajo lo da el propio diagrama (horizon.noteLow) */}
-              <HorizonDiagram altitudeDeg={maxEvent.altitude} azimuthDeg={maxEvent.azimuth} />
-            </>
-          )}
-          {/* Cierre de la cronología: cuándo mirar ya está resuelto arriba; aquí, cómo mirar */}
-          <View style={s.safetyCard}>
-            <Text style={s.safetyTitle}>
-              {t('map.safety.title')}
-              <Text style={{ color: C.danger }}>ISO 12312-2</Text>
-            </Text>
-            <Text style={s.safetyBody}>{t('map.safety.body')}</Text>
-            <Pressable onPress={() => Linking.openURL(IGN_URL).catch(() => {})} accessibilityRole="link">
-              <Text style={s.safetyLink}>{t('map.safety.guide')}</Text>
-            </Pressable>
-            {!!glassesUrl && (
-              <>
-                <Pressable
-                  onPress={() => {
-                    track('glasses_click', { from: 'map' });
-                    Linking.openURL(glassesUrl).catch(() => {});
-                  }}
-                  accessibilityRole="link"
-                >
-                  <Text style={s.safetyLink}>{t('map.safety.buy')}</Text>
-                </Pressable>
-                <Text style={s.affiliateNote}>{t('map.safety.affiliate')}</Text>
-              </>
-            )}
-          </View>
-          {sponsor && (
-            <Pressable
-              style={s.sponsorCard}
-              onPress={() => {
-                track('sponsor_click', { name: sponsor.name });
-                Linking.openURL(sponsor.url).catch(() => {});
-              }}
-              accessibilityRole="link"
-              accessibilityLabel={t('map.sponsor.a11y', { name: sponsor.name })}
-            >
-              <Text style={s.sponsorKicker}>{t('map.sponsor.kicker')}</Text>
-              <Text style={s.sponsorName}>{sponsor.name}</Text>
-              {!!sponsor.tagline && <Text style={s.sponsorTagline}>{sponsor.tagline}</Text>}
-              <Text style={s.sponsorCta}>{t('map.sponsor.cta')}</Text>
-            </Pressable>
-          )}
-        </ScrollView>
+        <SheetDetail
+          eclipse={eclipse}
+          place={place}
+          dateLabel={activeEclipseMeta.shortDateLabel}
+          now={now}
+          onOpenMaps={onOpenMaps}
+          sponsor={sponsor}
+          glassesUrl={glassesUrl}
+        />
       </Animated.View>
       </Animated.View>
       {/* Encima de todo, incluida la hoja: el visor es pantalla completa */}
@@ -519,14 +438,6 @@ const s = StyleSheet.create({
   compassPanelText: { fontFamily: F.semibold, fontSize: 11.5, color: C.text },
   compassPanelLink: { fontFamily: F.bold, fontSize: 10, letterSpacing: 1, color: C.corona, marginTop: 6 },
   chipChevron: { fontFamily: F.semibold, fontSize: 12, color: C.dim, marginLeft: 2 },
-  cronoHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  mapsLink: {
-    fontFamily: F.bold,
-    fontSize: 10,
-    letterSpacing: 1,
-    color: C.corona,
-    paddingBottom: 4,
-  },
   sheet: {
     position: 'absolute',
     left: 0,
@@ -563,9 +474,6 @@ const s = StyleSheet.create({
     textShadowRadius: 24,
   },
   sheetPeekBody: { paddingHorizontal: 24, paddingBottom: 14 },
-  sheetBody: { paddingHorizontal: 24 },
-  /** Aire final: las tarjetas no deben morir pegadas al borde de la hoja */
-  sheetBodyContent: { paddingBottom: 32 },
   statsRow: { flexDirection: 'row', gap: 10, marginTop: 4, alignItems: 'center' },
   stat: { flex: 1, gap: 2 },
   statValue: { fontFamily: F.bold, fontSize: 22, color: C.text, fontVariant: ['tabular-nums'] },
@@ -582,47 +490,4 @@ const s = StyleSheet.create({
   },
   cloudDot: { width: 9, height: 9, borderRadius: 5, shadowOpacity: 1, shadowRadius: 4, elevation: 4 },
   cloudText: { fontFamily: F.semibold, fontSize: 12, color: C.text },
-  divider: { height: 1, backgroundColor: C.border, marginBottom: 20 },
-  cronoTitle: {
-    fontFamily: F.semibold,
-    fontSize: 11,
-    letterSpacing: 2.5,
-    color: C.dim,
-    paddingBottom: 4,
-  },
-  cronoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    paddingVertical: 9,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(38,38,58,0.5)',
-  },
-  cronoLabel: { fontFamily: F.semibold, fontSize: 14, color: C.text },
-  safetyCard: {
-    marginTop: 18,
-    padding: 18,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(255,107,94,0.4)',
-    backgroundColor: 'rgba(255,107,94,0.06)',
-  },
-  safetyTitle: { fontFamily: F.bold, fontSize: 15, lineHeight: 20, color: C.text },
-  safetyBody: { fontFamily: F.regular, fontSize: 12.5, lineHeight: 18, color: C.dim, marginTop: 8 },
-  safetyLink: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1, color: C.corona, marginTop: 12 },
-  affiliateNote: { fontFamily: F.regular, fontSize: 10.5, color: C.dim, marginTop: 4 },
-  sponsorCard: {
-    marginTop: 18,
-    padding: 18,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.surface,
-    gap: 4,
-  },
-  sponsorKicker: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 2.5, color: C.dim },
-  sponsorName: { fontFamily: F.bold, fontSize: 18, letterSpacing: -0.3, color: C.text },
-  sponsorTagline: { fontFamily: F.regular, fontSize: 13, lineHeight: 19, color: C.dim },
-  sponsorCta: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1.5, color: C.corona, marginTop: 8 },
-  cronoTime: { fontFamily: F.medium, fontSize: 14, color: C.dim, fontVariant: ['tabular-nums'] },
 });

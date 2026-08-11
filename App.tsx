@@ -98,7 +98,7 @@ function AppInner() {
 
   const { prefs, update: onPrefsChange } = usePrefs();
   const { geo, locating, granted: locationGranted } = useGeo();
-  const permissions = usePermissions(locationGranted);
+  const { permissions, request: requestPermission } = usePermissions(locationGranted);
   const remote = useRemoteExtras();
   const [tab, setTab] = useState<TabKey>('mapa');
   /** Instante en que se lanzó la demo; null = demo apagada. Ancla fija de la serie sintética */
@@ -534,6 +534,7 @@ function AppInner() {
         {tab === 'ajustes' && (
           <SettingsScreen
             permissions={permissions}
+            onRequestPermission={(kind) => void requestPermission(kind)}
             alertSound={prefs.alertSound}
             activeEclipse={activeCatalog}
             donateUrl={remote.donateUrl}

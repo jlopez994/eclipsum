@@ -6,12 +6,22 @@ import { bandOf, upcomingEclipses, type EclipseEntry } from '../../lib/eclipseCa
 import { alertSoundOptions, sendTestNotification } from '../../lib/notifications';
 import { previewAlertSound } from '../../lib/soundPreview';
 import { track } from '../../lib/firebase';
-import { LANG_META, LANGS, t, type Lang } from '../../lib/i18n';
+import { LANG_META, LANGS, t, type I18nKey, type Lang } from '../../lib/i18n';
+import type { PermissionKind, Permissions } from '../../hooks/usePermissions';
 import type { AlertSound } from '../../lib/prefs';
 import { C, F } from '../theme';
 
+/** Filas de la sección PERMISOS: qué es y para qué lo usa la app. */
+const PERMISSION_ROWS: { kind: PermissionKind; label: I18nKey; why: I18nKey }[] = [
+  { kind: 'location', label: 'settings.location', why: 'settings.location.why' },
+  { kind: 'notifications', label: 'settings.notifications', why: 'settings.notifications.why' },
+  { kind: 'camera', label: 'settings.camera', why: 'settings.camera.why' },
+];
+
 interface SettingsScreenProps {
-  permissions: { location: boolean; notifications: boolean };
+  permissions: Permissions;
+  /** Pide un permiso desde aquí; cada pantalla que lo use sigue pidiéndolo por su cuenta */
+  onRequestPermission: (kind: PermissionKind) => void;
   alertSound: AlertSound;
   /** Entrada activa resuelta por App (única fuente de verdad; no leer el catálogo aquí) */
   activeEclipse: EclipseEntry;
@@ -55,6 +65,7 @@ function languageOptions(): { id: Lang | ''; label: string; a11y: string }[] {
 
 export function SettingsScreen({
   permissions,
+  onRequestPermission,
   alertSound,
   donateUrl,
   onSoundChange,
@@ -105,19 +116,31 @@ export function SettingsScreen({
         <View>
           <Text style={s.section}>{t('settings.permissions')}</Text>
           <View style={s.card}>
-            <View style={[s.rowItem, s.rowDivider]}>
-              <Text style={s.rowTitle}>{t('settings.location')}</Text>
-              <Text style={permissions.location ? s.activeTag : s.deniedTag}>
-                {permissions.location ? t('settings.granted') : t('settings.denied')}
-              </Text>
-            </View>
-            <View style={s.rowItem}>
-              <Text style={s.rowTitle}>{t('settings.notifications')}</Text>
-              <Text style={permissions.notifications ? s.activeTag : s.deniedTag}>
-                {permissions.notifications ? t('settings.granted') : t('settings.denied')}
-              </Text>
-            </View>
+            {PERMISSION_ROWS.map((row, i) => {
+              const on = permissions[row.kind];
+              return (
+                // Concedido: solo estado, nada que tocar. Sin conceder: la fila ES la acción,
+                // así no hay que ir a buscar la pantalla que lo usa (ni a los ajustes del sistema)
+                <Pressable
+                  key={row.kind}
+                  style={[s.rowItem, i < PERMISSION_ROWS.length - 1 && s.rowDivider]}
+                  onPress={on ? undefined : () => onRequestPermission(row.kind)}
+                  disabled={on}
+                  accessibilityRole={on ? undefined : 'button'}
+                  accessibilityLabel={`${t(row.label)}. ${on ? t('settings.granted') : t('settings.permissions.grant')}`}
+                >
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={s.rowTitle}>{t(row.label)}</Text>
+                    <Text style={s.soundHint}>{t(row.why)}</Text>
+                  </View>
+                  <Text style={on ? s.activeTag : s.grantTag}>
+                    {on ? t('settings.granted') : t('settings.permissions.grant')}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
+          <Text style={s.upcomingNote}>{t('settings.permissions.hint')}</Text>
         </View>
 
         <View>
@@ -361,7 +384,8 @@ const s = StyleSheet.create({
   langChipTxt: { fontFamily: F.semibold, fontSize: 13, color: C.dim },
   langChipTxtOn: { color: C.corona },
   activeTag: { fontFamily: F.medium, fontSize: 12, color: C.ok },
-  deniedTag: { fontFamily: F.medium, fontSize: 12, color: C.danger },
+  /** Sin conceder la fila es accionable: se pinta como llamada, no como estado de error */
+  grantTag: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1.5, color: C.corona },
   linkCta: { fontFamily: F.bold, fontSize: 13, letterSpacing: 1, color: C.corona, marginTop: 12 },
   aboutValue: { fontFamily: F.medium, fontSize: 13, color: C.dim },
   tourAction: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1.5, color: C.corona },
