@@ -83,7 +83,7 @@ Build requirements: `google-services.json` from the Firebase project in the repo
 
 Deployment lives in **GitHub Actions** (`.github/workflows/release-apk.yml`): when a new `expo.android.versionCode` lands on main, it builds the APK (gated by `selfcheck` + `typecheck`), creates the **GitHub Release** `b<versionCode>` and publishes `latest_version_code` to Remote Config so the app announces the update.
 
-- **Deploying = bumping versionCode** in `app.json` and pushing to main (`chore(release): build N`). Pushing code without a bump publishes nothing (the guard sees the release already exists).
+- **Deploying = `npm run release`** (or `npm run release -- <vc>` for an explicit versionCode): bumps `expo.android.versionCode`, commits `chore(release): build N` and pushes to main. Pushing code without a bump publishes nothing (the guard sees the release already exists).
 - **Build identity = `android.versionCode`** (monotonic, never decreases). The version (`expo.version`) is the line: `1.0.0` stable, `*-beta` beta channel (published as pre-release: doesn't override stable or touch RC).
 - **Stable download URL**: `https://github.com/jlopez994/eclipsum/releases/latest/download/eclipsum.apk` — the asset always has the same name, the URL never changes.
 - **Store-less updates**: the app compares its versionCode against RC `latest_version_code` and shows a download banner (`latest_apk_url`).
