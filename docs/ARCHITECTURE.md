@@ -59,7 +59,7 @@ Reprograma todas las notificaciones al cambiar puesto, toggles, sonido, idioma o
 | `weather.ts` | Nubes Open-Meteo | Modelo fijo `ecmwf_ifs025` (coincide con Windy). Caché AsyncStorage `eclipsum:clouds:v3:{día}:{lat},{lon}` (2 decimales) con poda de días/versiones viejas. Timeout 10 s |
 | `notifications.ts` | Alertas locales | Cola `opQueue` que serializa toda operación. Canales Android `eclipse-alerts-v4-{eclipse\|default}` (borra los v3 legacy). `scheduleEclipseAlerts` cancela todo y reprograma; `scheduleFakeEclipseAlerts` es aditiva y devuelve ids |
 | `firebase.ts` | RC + Analytics + Crashlytics | Todo best-effort (la app funciona sin Firebase). Fetch RC: 0 en dev, 1 h en release. `track`/`trackError` |
-| `i18n.ts` | Bilingüe es/en | Diccionario plano, 189 claves × 2. `I18nKey = keyof typeof es` — paridad forzada por compilador y verificada en selfcheck. `t(key, vars)` con `{var}`; clave desconocida → devuelve la clave. Sin dependencias; el idioma vive en `prefs.language` (`''` = auto: sistema español → es, resto → en, resuelto en `usePrefs`) |
+| `i18n.ts` | Idiomas (hoy es/en, extensible) | `LANGS` + `LANG_META` (endónimo, tag BCP-47, separador decimal, meses) + diccionarios planos en `DICTS`. `I18nKey = keyof typeof es` — paridad forzada por compilador y verificada en selfcheck para cada idioma. `t(key, vars)` con `{var}`; clave desconocida → devuelve la clave. Sin dependencias; el idioma vive en `prefs.language` (`''` = auto: sistema español → es, resto → en, resuelto en `usePrefs`). Cómo añadir un idioma: [README](../README.md#añadir-un-idioma) |
 | `drill.ts` | Eclipse sintético del simulacro | Presets `DRILL_PARTIAL`, `DRILL_TOTALITY`; `clampDrill` valida rangos |
 | `bandGeo.ts` | Bandas empaquetadas (**generado** por `scripts/genBand.ts`, no editar a mano) | Hoy solo la banda de Iberia 2026 (66 cortes) |
 | `spots.ts` | Tipos `Spot`/`SpotOption` | Sin lógica |
@@ -91,4 +91,4 @@ Reprograma todas las notificaciones al cambiar puesto, toggles, sonido, idioma o
 
 ## Datos remotos (Remote Config)
 
-7 parámetros string — tabla completa y operativa en [OPERATIONS.md](OPERATIONS.md). El cliente lleva defaults horneados (`lib/firebase.ts`), así que la app es funcional sin haber contactado nunca con Firebase.
+7 parámetros string — tabla completa y operativa en el [README](../README.md#remote-config-remoteconfigtemplatejson). El cliente lleva defaults horneados (`lib/firebase.ts`), así que la app es funcional sin haber contactado nunca con Firebase.

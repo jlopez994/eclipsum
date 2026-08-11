@@ -105,6 +105,8 @@ Descripciones de parámetros: máx. 256 caracteres (límite de RC).
 
 `.github/workflows/sync-remote-config.yml` (mensual + manual): `genEclipse --write` → `syncBands` → `selfcheck` como puerta → publica RC con la service account (`FIREBASE_SERVICE_ACCOUNT`, rol Firebase Remote Config Admin = `roles/cloudconfig.admin`) → auto-commitea el template. Los eclipses nuevos llegan a la app sin tocar código ni publicar APK.
 
+Curación manual (opcional, el workflow hace lo mismo solo): `npx tsx scripts/genEclipse.ts --kind total --write` fusiona entradas en el template (dedupe por día civil), `npx tsx scripts/syncBands.ts` completa bandas RC que falten, y `npx firebase-tools deploy --only remoteconfig` publica. Banda **empaquetada** (visible sin red la primera vez): entrada en `ECLIPSES` (`lib/eclipseCatalog.ts`) + `npx tsx scripts/genBand.ts --id <id>` — esta vía sí requiere release.
+
 ## Añadir un idioma
 
 Los idiomas viven en un único fichero, `lib/i18n.ts`, y las contribuciones son bienvenidas:
