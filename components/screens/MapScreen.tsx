@@ -68,6 +68,8 @@ interface MapScreenProps {
   onRecalcHere: () => void;
   /** Patrocinador del eclipse (Remote Config); null = sin tarjeta de patrocinio */
   sponsor?: Sponsor | null;
+  /** URL de gafas certificadas (afiliado, vía Remote Config); vacío = solo el aviso, sin enlace */
+  glassesUrl?: string;
 }
 
 const fmtHM = (d: Date) =>
@@ -91,6 +93,7 @@ export function MapScreen({
   divergenceKm,
   onRecalcHere,
   sponsor,
+  glassesUrl,
 }: MapScreenProps) {
   const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
@@ -293,6 +296,28 @@ export function MapScreen({
               <HorizonDiagram altitudeDeg={maxEvent.altitude} azimuthDeg={maxEvent.azimuth} />
             </>
           )}
+          {/* Cierre de la cronología: cuándo mirar ya está resuelto arriba; aquí, cómo mirar */}
+          <View style={s.safetyCard}>
+            <Text style={s.safetyTitle}>
+              {t('settings.safety.title')}
+              <Text style={{ color: C.danger }}>ISO 12312-2</Text>
+            </Text>
+            <Text style={s.safetyBody}>{t('settings.safety.body')}</Text>
+            {!!glassesUrl && (
+              <>
+                <Pressable
+                  onPress={() => {
+                    track('glasses_click', { from: 'map' });
+                    Linking.openURL(glassesUrl).catch(() => {});
+                  }}
+                  accessibilityRole="link"
+                >
+                  <Text style={s.safetyLink}>{t('settings.safety.buy')}</Text>
+                </Pressable>
+                <Text style={s.affiliateNote}>{t('settings.safety.affiliate')}</Text>
+              </>
+            )}
+          </View>
           {sponsor && (
             <Pressable
               style={s.sponsorCard}
@@ -445,6 +470,18 @@ const s = StyleSheet.create({
     borderBottomColor: 'rgba(38,38,58,0.5)',
   },
   cronoLabel: { fontFamily: F.semibold, fontSize: 14, color: C.text },
+  safetyCard: {
+    marginTop: 18,
+    padding: 18,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,107,94,0.4)',
+    backgroundColor: 'rgba(255,107,94,0.06)',
+  },
+  safetyTitle: { fontFamily: F.bold, fontSize: 15, lineHeight: 20, color: C.text },
+  safetyBody: { fontFamily: F.regular, fontSize: 12.5, lineHeight: 18, color: C.dim, marginTop: 8 },
+  safetyLink: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1, color: C.corona, marginTop: 12 },
+  affiliateNote: { fontFamily: F.regular, fontSize: 10.5, color: C.dim, marginTop: 4 },
   sponsorCard: {
     marginTop: 18,
     padding: 18,

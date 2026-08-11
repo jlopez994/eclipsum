@@ -162,8 +162,12 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
 <style>
   html, body, #map { margin: 0; height: 100%; background: ${C.bg}; -webkit-tap-highlight-color: transparent; }
   .leaflet-container path, .leaflet-interactive { outline: none; }
-  .lbl { background: rgba(11,11,18,0.85); color: ${C.text}; border: 1px solid ${C.border};
-         border-radius: 6px; padding: 2px 7px; font: 600 11px system-ui; white-space: nowrap; }
+  .lbl { background: rgba(11,11,18,0.92); color: ${C.text}; border: 1px solid rgba(38,38,58,0.9);
+         border-radius: 8px; padding: 3px 9px; font: 600 11px/1.4 system-ui; letter-spacing: 0.3px;
+         white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,0.55); }
+  /* Puesto de observación: destacado. GPS: presente pero secundario */
+  .lbl-spot { border-color: rgba(255,184,77,0.5); }
+  .lbl-here { color: ${C.dim}; font-weight: 500; padding: 2px 8px; }
   .leaflet-tooltip-top:before { display: none; }
   .leaflet-control-attribution { background: rgba(11,11,18,0.7); color: #666; font-size: 9px; }
   .leaflet-control-attribution a { color: #888; }
@@ -171,10 +175,14 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
     border: 1px solid ${C.border}; border-radius: 10px; box-shadow: 0 6px 22px rgba(0,0,0,0.55); }
   .leaflet-popup-content { margin: 10px 12px; line-height: 1.5; }
   .leaflet-popup-tip { background: rgba(21,21,30,0.96); }
-  .pop-title { font: 700 12px system-ui; letter-spacing: 1px; }
-  .pop-line { font: 500 11px system-ui; color: ${C.dim}; margin-top: 2px; }
-  .pop-warn { font: 600 11px system-ui; color: ${C.danger}; margin-top: 2px; }
-  .pop-btn { font: 700 11px system-ui; letter-spacing: 1px; color: ${C.corona}; margin-top: 8px; padding: 2px 0; }
+  .pop-title { font: 700 12px system-ui; letter-spacing: 1.2px; text-transform: uppercase; }
+  .pop-line { font: 500 11.5px system-ui; color: ${C.dim}; margin-top: 3px; }
+  .pop-warn { font: 600 11.5px system-ui; color: ${C.danger}; margin-top: 3px; }
+  /* CTA con forma de botón: en un popup pequeño el texto suelto no se lee como pulsable */
+  .pop-btn { font: 700 11px system-ui; letter-spacing: 1.2px; color: ${C.corona}; margin-top: 10px;
+    padding: 7px 0; text-align: center; border: 1px solid rgba(255,184,77,0.45);
+    background: rgba(255,184,77,0.10); border-radius: 9px; }
+  .pop-btn:active { background: rgba(255,184,77,0.2); }
 </style>
 </head><body>
 <div id="map"></div>
@@ -215,7 +223,10 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
         interactive: false, radius: 8, color: '${C.corona}', weight: 2.5,
         fillColor: fill ? '${C.text}' : 'transparent', fillOpacity: fill ? 1 : 0,
       }).addTo(ptLayer);
-      m.bindTooltip(esc(p.label), { permanent: true, direction: 'top', offset: [0, -10], className: 'lbl' });
+      m.bindTooltip(esc(p.label), {
+        permanent: true, direction: 'top', offset: [0, -10],
+        className: fill ? 'lbl lbl-spot' : 'lbl lbl-here',
+      });
       pts.push([p.lat, p.lon]);
     }
     dot(d.spot, true);

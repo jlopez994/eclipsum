@@ -428,6 +428,7 @@ function AppInner() {
               divergenceKm={divergenceKm}
               onRecalcHere={recalcHere}
               sponsor={sponsor}
+              glassesUrl={glassesUrl}
             />
           ) : (
             <View style={s.loading}>
