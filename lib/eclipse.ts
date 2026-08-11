@@ -1,5 +1,5 @@
 import { Body, Equator, Horizon, Observer, SearchLocalSolarEclipse, SearchRiseSet } from 'astronomy-engine';
-import { activeSearchStart } from './eclipseCatalog';
+import { activeSearchStart, getActiveEclipse } from './eclipseCatalog';
 // alias: este módulo ya usa `t` como variable de tiempo en currentPhase
 import { t as i18n } from './i18n';
 
@@ -80,6 +80,36 @@ function computeLocalEclipseUncached(
   }
 
   return { kind: ec.kind as LocalEclipse['kind'], obscuration: ec.obscuration, events, totalityDurationSec, sunset };
+}
+
+/**
+ * ¿La serie calculada es la del eclipse activo?
+ *
+ * `SearchLocalSolarEclipse` devuelve el PRIMER eclipse local posterior a `searchStart`:
+ * desde un punto fuera de la zona de visibilidad del activo contesta con otro distinto
+ * (Sídney → total de 2028) y sus circunstancias no tienen nada que ver con el nuestro.
+ * Todo lo que pinte datos de un puesto debe filtrar por aquí primero.
+ */
+export function isActiveEclipse(eclipse: LocalEclipse): boolean {
+  const day = eclipseDayOf(eclipse);
+  return day !== null && day === getActiveEclipse().civilDate;
+}
+
+/** Día civil UTC (AAAA-MM-DD) de la serie calculada, por su máximo; null si no tiene. */
+export function eclipseDayOf(eclipse: LocalEclipse): string | null {
+  const max = eclipse.events.find((e) => e.key === 'MAX');
+  return max ? max.time.toISOString().slice(0, 10) : null;
+}
+
+/**
+ * Copia del eclipse con TODA la serie desplazada `ms` milisegundos.
+ * Base de los eclipses sintéticos: demo, simulacro y salto de fase.
+ */
+export function shiftEclipse(eclipse: LocalEclipse, ms: number): LocalEclipse {
+  return {
+    ...eclipse,
+    events: eclipse.events.map((e) => ({ ...e, time: new Date(e.time.getTime() + ms) })),
+  };
 }
 
 export function nextEvent(eclipse: LocalEclipse, now: Date): EclipseEvent | null {

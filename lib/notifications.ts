@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { t, type I18nKey } from './i18n';
-import type { LocalEclipse } from './eclipse';
+import { shiftEclipse, type LocalEclipse } from './eclipse';
 import type { AlertEarly, AlertSound, AlertToggles, C1PlanAlerts } from './prefs';
 import { ALERT_EARLY_SECONDS, DEFAULT_ALERT_EARLY, DEFAULT_C1_PLAN_ALERTS } from './prefs';
 
@@ -137,6 +137,32 @@ async function ensurePermissionAndChannel(sound: AlertSound): Promise<string> {
   return id;
 }
 
+/**
+ * Agenda la tanda y devuelve sus ids. `prefix` antepone [PRUEBA] en el simulacro.
+ * En serie a propósito: expo-notifications no garantiza orden con llamadas en paralelo.
+ */
+async function scheduleAll(
+  alerts: Alert[],
+  sound: AlertSound,
+  channelId: string,
+  prefix = '',
+): Promise<string[]> {
+  const ids: string[] = [];
+  for (const a of alerts) {
+    ids.push(
+      await Notifications.scheduleNotificationAsync({
+        content: { title: prefix ? `${prefix} ${a.title}` : a.title, body: a.body, sound: soundFile(sound) },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: a.time,
+          channelId,
+        },
+      }),
+    );
+  }
+  return ids;
+}
+
 /** Notificación de prueba inmediata — valida canal/permisos. */
 export async function sendTestNotification(sound: AlertSound = 'eclipse'): Promise<void> {
   const channelId = await ensurePermissionAndChannel(sound);
@@ -186,27 +212,10 @@ async function doScheduleFake(
   const channelId = await ensurePermissionAndChannel(sound);
   const c1 = eclipse.events.find((e) => e.key === 'C1');
   if (!c1) return [];
-  const shift = c1At.getTime() - c1.time.getTime();
-  const shifted: LocalEclipse = {
-    ...eclipse,
-    events: eclipse.events.map((e) => ({ ...e, time: new Date(e.time.getTime() + shift) })),
-  };
+  const shifted = shiftEclipse(eclipse, c1At.getTime() - c1.time.getTime());
   // Sin avisos de planificación (24h/1h): el simulacro es la serie del día
   const alerts = buildAlerts(shifted, enabled, early, { before24h: false, before1h: false });
-  const ids: string[] = [];
-  for (const a of alerts) {
-    ids.push(
-      await Notifications.scheduleNotificationAsync({
-        content: { title: `${t('notif.drillPrefix')} ${a.title}`, body: a.body, sound: soundFile(sound) },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: a.time,
-          channelId,
-        },
-      }),
-    );
-  }
-  return ids;
+  return scheduleAll(alerts, sound, channelId, t('notif.drillPrefix'));
 }
 
 /** Cancela solo los avisos indicados (p. ej. al salir del simulacro). */
@@ -239,16 +248,6 @@ async function doScheduleEclipse(
   // Reprogramar desde cero para evitar duplicados al cambiar toggles
   await Notifications.cancelAllScheduledNotificationsAsync();
 
-  const alerts = buildAlerts(eclipse, enabled, early, c1Plan);
-  for (const a of alerts) {
-    await Notifications.scheduleNotificationAsync({
-      content: { title: a.title, body: a.body, sound: soundFile(sound) },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: a.time,
-        channelId,
-      },
-    });
-  }
-  return alerts.length;
+  const ids = await scheduleAll(buildAlerts(eclipse, enabled, early, c1Plan), sound, channelId);
+  return ids.length;
 }

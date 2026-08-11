@@ -10,8 +10,6 @@ const FETCH_INTERVAL_MS = __DEV__ ? 0 : 3_600_000;
 export interface RemoteExtras {
   /** Banner superior; vacío = oculto */
   message: string;
-  /** Id de catálogo forzado; vacío = resolución local */
-  activeEclipseId: string;
   /** URL de gafas certificadas (afiliado); vacío = botón oculto */
   glassesUrl: string;
   /** URL de donaciones (Buy Me a Coffee); vacío = sección oculta */
@@ -123,7 +121,6 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       // seguimos y los leemos igual (arranque en frío offline conserva catálogo y banner)
     }
     const message = getString(rc, 'eclipse_message');
-    const activeEclipseId = getString(rc, 'active_eclipse_id');
     const glassesUrl = getString(rc, 'glasses_url');
     const donateUrl = getString(rc, 'donate_url');
     const sponsor = parseSponsor(getString(rc, 'sponsor'));
@@ -132,10 +129,9 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
     const suggestedSpots = parseSuggestedSpots(getString(rc, 'suggested_spots'));
     // Orden: primero el catálogo extra, luego el id activo (puede apuntar a una entrada remota)
     setRemoteCatalog(getString(rc, 'eclipse_catalog'));
-    setRemoteActiveEclipseId(activeEclipseId);
+    setRemoteActiveEclipseId(getString(rc, 'active_eclipse_id'));
     return {
       message,
-      activeEclipseId,
       glassesUrl,
       donateUrl,
       sponsor,
@@ -148,7 +144,6 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
     trackError('remote_config', e);
     return {
       message: '',
-      activeEclipseId: '',
       glassesUrl: '',
       donateUrl: '',
       sponsor: null,

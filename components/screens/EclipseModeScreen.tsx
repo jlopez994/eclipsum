@@ -4,20 +4,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { useKeepAwake } from 'expo-keep-awake';
 import { currentPhase, nextEvent, type EclipseEvent, type LocalEclipse } from '../../lib/eclipse';
-import { localeTag, t, type I18nKey } from '../../lib/i18n';
+import { fmtHMS } from '../../lib/format';
+import { t, type I18nKey } from '../../lib/i18n';
 import { Countdown } from '../Countdown';
-import { C, F } from '../theme';
+import { C, EVENT_ACCENT, F } from '../theme';
 
+/** Color de lo que pasa DESPUÉS del hito; no coincide con EVENT_ACCENT (tras C1 hay peligro). */
 const AFTER_COLOR: Record<string, string> = {
   C1: C.danger,
-  C2: C.totality,
-  MAX: C.totality,
-  C3: C.danger,
-  C4: C.corona,
-};
-
-const EVENT_ACCENT: Record<string, string> = {
-  C1: C.corona,
   C2: C.totality,
   MAX: C.totality,
   C3: C.danger,
@@ -41,8 +35,6 @@ function EventRail({
   accent: string;
 }) {
   const nextKey = nextEvent(eclipse, now)?.key;
-  const fmt = (d: Date) =>
-    d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   // Avance entre el primer y el último contacto: da sensación de progreso en una serie que dura horas
   const first = eclipse.events[0]?.time.getTime() ?? 0;
   const last = eclipse.events[eclipse.events.length - 1]?.time.getTime() ?? 0;
@@ -80,7 +72,7 @@ function EventRail({
               <Text style={[s.railKey, (passed || isNext) && { color: accent }]}>
                 {e.key === 'MAX' ? t('event.maxShort') : e.key}
               </Text>
-              <Text style={[s.railTime, isNext && { color: C.text }]}>{fmt(e.time)}</Text>
+              <Text style={[s.railTime, isNext && { color: C.text }]}>{fmtHMS(e.time)}</Text>
             </Pressable>
           );
         })}
@@ -107,11 +99,7 @@ function Clock() {
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
   }, []);
-  return (
-    <Text style={s.clock}>
-      {now.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-    </Text>
-  );
+  return <Text style={s.clock}>{fmtHMS(now)}</Text>;
 }
 
 function CoronaRing({ glow, border, inner }: { glow: string; border: string; inner: string }) {
@@ -182,8 +170,6 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExitDemo, 
   const after = upcoming
     ? { label: t(`mode.after.${upcoming.key}` as I18nKey), color: AFTER_COLOR[upcoming.key] ?? C.corona }
     : null;
-  const fmtHMS = (d: Date) =>
-    d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   return (
     <View style={s.root}>

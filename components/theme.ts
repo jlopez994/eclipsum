@@ -14,6 +14,26 @@ export const C = {
   knobTrack: '#3A3A50',
 } as const;
 
+/**
+ * Color por hito de la serie: mismo código en cronología, raíl del modo eclipse
+ * y pantalla de alertas. OC (ocaso) solo aparece en la cronología del mapa.
+ */
+export const EVENT_ACCENT: Record<string, string> = {
+  C1: C.corona,
+  C2: C.totality,
+  MAX: C.totality,
+  C3: C.danger,
+  C4: C.corona,
+  OC: C.danger,
+};
+
+/** Color del semáforo de nubes por nivel (los umbrales viven en lib/weather cloudLevel). */
+export const CLOUD_COLOR: Record<'few' | 'mid' | 'many', string> = {
+  few: C.ok,
+  mid: C.corona,
+  many: C.danger,
+};
+
 /** Familias Space Grotesk cargadas en App vía expo-font */
 export const F = {
   regular: 'SpaceGrotesk_400Regular',

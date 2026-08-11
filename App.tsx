@@ -1,10 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
-import Constants from 'expo-constants';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Linking, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Location from 'expo-location';
-import * as Notifications from 'expo-notifications';
 import {
   useFonts,
   SpaceGrotesk_400Regular,
@@ -12,14 +9,19 @@ import {
   SpaceGrotesk_600SemiBold,
   SpaceGrotesk_700Bold,
 } from '@expo-google-fonts/space-grotesk';
-import { computeLocalEclipse, type EclipseEvent, type LocalEclipse } from './lib/eclipse';
-import { getActiveEclipse } from './lib/eclipseCatalog';
+import {
+  computeLocalEclipse,
+  eclipseDayOf,
+  isActiveEclipse,
+  shiftEclipse,
+  type LocalEclipse,
+} from './lib/eclipse';
+import { eclipseForDay, getActiveEclipse } from './lib/eclipseCatalog';
 import { haversineKm } from './lib/totality';
 import { openInMaps } from './lib/maps';
-import type { Spot } from './lib/spots';
-import { cancelAlertsByIds, scheduleEclipseAlerts, scheduleFakeEclipseAlerts } from './lib/notifications';
-import { buildDrillEclipse } from './lib/drill';
-import { fetchRemoteExtras, track, trackError, type Sponsor, type SuggestedSpot } from './lib/firebase';
+import { cleanPlaceLabel, REAL_PLACE_KM, type Spot } from './lib/spots';
+import { scheduleEclipseAlerts } from './lib/notifications';
+import { track, trackError } from './lib/firebase';
 import {
   contextFor,
   DEFAULT_PREFS,
@@ -28,12 +30,16 @@ import {
   pushRecent,
   withContext,
 } from './lib/prefs';
-import { localeTag, t } from './lib/i18n';
+import { t } from './lib/i18n';
 import { animateNextLayout } from './lib/anim';
 import { useGeo } from './hooks/useGeo';
 import { usePrefs } from './hooks/usePrefs';
-import { REAL_PLACE_KM, useSpotData } from './hooks/useSpotData';
-import { Notice, NoticeActions, NoticeLink } from './components/Notice';
+import { usePermissions } from './hooks/usePermissions';
+import { useRemoteExtras } from './hooks/useRemoteExtras';
+import { useDrill } from './hooks/useDrill';
+import { useSpotData } from './hooks/useSpotData';
+import { NoticeStack } from './components/NoticeStack';
+import { OutOfZoneNotice } from './components/OutOfZoneNotice';
 import { TabBar, type TabKey } from './components/TabBar';
 import { SpotSelector, localityName } from './components/SpotSelector';
 import { MapScreen } from './components/screens/MapScreen';
@@ -42,31 +48,26 @@ import { SettingsScreen } from './components/screens/SettingsScreen';
 import { EclipseModeScreen } from './components/screens/EclipseModeScreen';
 import { C, F } from './components/theme';
 
-/**
- * En desarrollo la app se hace pasar por una build antigua para que el aviso de
- * actualización sea visible sin publicar nada. Inerte en release (`__DEV__` = false);
- * si estorba mientras trabajas, la ✕ lo quita hasta el siguiente arranque.
- */
-const PREVIEW_UPDATE_IN_DEV = __DEV__;
-
 const ECLIPSE_MODE_LEAD_MS = 30 * 60_000;
-/** Espera hasta el C1 del simulacro: lo justo para bloquear el móvil y esperar el aviso */
-const DRILL_LEAD_MS = 60_000;
-/** Al saltar de fase, el hito cae en 20 s: los avisos con antelación (15 s) aún suenan */
-const DRILL_JUMP_LEAD_MS = 20_000;
 const ECLIPSE_MODE_TAIL_MS = 5 * 60_000;
 const COARSE_TICK_MS = 30_000;
 const FINE_TICK_MS = 1_000;
+/** Aviso día D: GPS lejos del puesto elegido → las horas de contacto ya no valen */
+const DIVERGENCE_KM = 20;
+
+/** Puesto que se está pintando, con sus circunstancias ya calculadas. */
+interface ShownSpot {
+  place: string;
+  lat: number;
+  lon: number;
+  eclipse: LocalEclipse;
+}
 
 function inFineClockWindow(eclipse: LocalEclipse, t: number): boolean {
   const first = eclipse.events[0];
   const last = eclipse.events[eclipse.events.length - 1];
   if (!first || !last) return false;
   return t >= first.time.getTime() - ECLIPSE_MODE_LEAD_MS && t <= last.time.getTime() + ECLIPSE_MODE_TAIL_MS;
-}
-
-function cleanPlaceLabel(name: string): string {
-  return name.replace(/\s·\sGPS$/, '').replace(/\s·\sManual$/, '').trim();
 }
 
 function gpsSpot(geo: { place: string; lat: number; lon: number }): Spot {
@@ -77,11 +78,7 @@ function gpsSpot(geo: { place: string; lat: number; lon: number }): Spot {
 function buildDemoEclipse(real: LocalEclipse, now: Date): LocalEclipse {
   const anchor = real.events.find((e) => e.key === 'C2') ?? real.events.find((e) => e.key === 'MAX');
   if (!anchor) return real;
-  const shift = now.getTime() + 2 * 60_000 - anchor.time.getTime();
-  return {
-    ...real,
-    events: real.events.map((e) => ({ ...e, time: new Date(e.time.getTime() + shift) })),
-  };
+  return shiftEclipse(real, now.getTime() + 2 * 60_000 - anchor.time.getTime());
 }
 
 function AppInner() {
@@ -95,22 +92,10 @@ function AppInner() {
 
   const { prefs, update: onPrefsChange } = usePrefs();
   const { geo, locating, granted: locationGranted } = useGeo();
-  const [permissions, setPermissions] = useState({ location: false, notifications: false });
-  const [remoteMsg, setRemoteMsg] = useState('');
-  const [glassesUrl, setGlassesUrl] = useState('');
-  const [donateUrl, setDonateUrl] = useState('');
-  const [sponsor, setSponsor] = useState<Sponsor | null>(null);
-  /** Puestos recomendados (RC); vacío = el selector no enseña la sección */
-  const [suggestedSpots, setSuggestedSpots] = useState<SuggestedSpot[]>([]);
-  const [updateUrl, setUpdateUrl] = useState('');
-  /** Avisos ocultados con la ✕; en memoria a propósito: vuelven al reiniciar la app */
-  const [updateHidden, setUpdateHidden] = useState(false);
-  const [remoteMsgHidden, setRemoteMsgHidden] = useState(false);
-  const [catalogEpoch, setCatalogEpoch] = useState(0);
+  const permissions = usePermissions(locationGranted);
+  const remote = useRemoteExtras();
   const [tab, setTab] = useState<TabKey>('mapa');
   const [demo, setDemo] = useState(false);
-  /** Simulacro activo: eclipse sintético + ids de sus avisos [PRUEBA] (para cancelarlos al salir) */
-  const [drill, setDrill] = useState<{ eclipse: LocalEclipse; ids: string[] } | null>(null);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const [fineClock, setFineClock] = useState(false);
@@ -119,10 +104,6 @@ function AppInner() {
   const activeCatalog = getActiveEclipse();
   // Contexto per-eclipse (puesto + alertas), clave = día civil; identidad estable sin memo
   const ctx = contextFor(prefs ?? DEFAULT_PREFS, activeCatalog.civilDate);
-
-  useEffect(() => {
-    setPermissions((p) => ({ ...p, location: locationGranted }));
-  }, [locationGranted]);
 
   // Una apertura en frío por lanzamiento: el aviso de donación llega tras varios usos,
   // nunca al primer contacto con la app
@@ -134,20 +115,8 @@ function AppInner() {
     onPrefsChange({ ...prefs, donateOpens: prefs.donateOpens + 1 });
   }, [prefs, onPrefsChange]);
 
-  // Ocultar un aviso dura lo que dure la sesión: al reiniciar vuelve si sigue vigente
-  const showRemoteMsg = remoteMsg !== '' && !remoteMsgHidden;
-  const showUpdate = updateUrl !== '' && !updateHidden;
-
   // Sin URL en Remote Config no hay aviso; DONATE_PROMPT_DONE (-1) nunca alcanza el umbral
-  const showDonatePrompt = donateUrl !== '' && (prefs?.donateOpens ?? 0) >= DONATE_PROMPT_AFTER;
-
-  /**
-   * UN aviso cada vez: apilados taparían el tercio superior de la pantalla. Manda el
-   * mensaje remoto (lo envío yo y puede ser urgente), luego la actualización (accionable
-   * y se resuelve sola al instalar) y por último la propina, que puede esperar siempre.
-   * Al cerrar el de arriba aparece el siguiente.
-   */
-  const notice = showRemoteMsg ? 'info' : showUpdate ? 'update' : showDonatePrompt ? 'donate' : null;
+  const showDonatePrompt = remote.donateUrl !== '' && (prefs?.donateOpens ?? 0) >= DONATE_PROMPT_AFTER;
 
   /** Cierra el aviso para siempre; `donated` abre Buy Me a Coffee */
   const resolveDonate = useCallback(
@@ -155,52 +124,10 @@ function AppInner() {
       if (!prefs) return;
       onPrefsChange({ ...prefs, donateOpens: DONATE_PROMPT_DONE });
       track(donated ? 'donate_click' : 'donate_dismiss', { from: 'banner' });
-      if (donated) Linking.openURL(donateUrl).catch(() => {});
+      if (donated) Linking.openURL(remote.donateUrl).catch(() => {});
     },
-    [prefs, onPrefsChange, donateUrl],
+    [prefs, onPrefsChange, remote.donateUrl],
   );
-
-  useEffect(() => {
-    // Relee permisos sin pedirlos: el usuario puede cambiarlos en Ajustes del sistema
-    const refreshPermissions = () => {
-      void Notifications.getPermissionsAsync().then(({ status }) =>
-        setPermissions((p) => ({ ...p, notifications: status === 'granted' })),
-      );
-      void Location.getForegroundPermissionsAsync().then(({ status }) =>
-        setPermissions((p) => ({ ...p, location: status === 'granted' })),
-      );
-    };
-    const pullRemote = () =>
-      void fetchRemoteExtras().then((r) => {
-        setRemoteMsg(r.message);
-        setGlassesUrl(r.glassesUrl);
-        setDonateUrl(r.donateUrl);
-        setSponsor(r.sponsor);
-        setSuggestedSpots(r.suggestedSpots);
-        // Aviso de actualización sin tienda: RC anuncia versionCode y URL de la APK
-        const ownVc = PREVIEW_UPDATE_IN_DEV ? 0 : Constants.expoConfig?.android?.versionCode ?? 0;
-        setUpdateUrl(r.latestVersionCode > ownVc && r.latestApkUrl ? r.latestApkUrl : '');
-        // RC puede cambiar el eclipse activo → recalcular circunstancias
-        setCatalogEpoch((n) => n + 1);
-      });
-    pullRemote();
-    refreshPermissions();
-    // Al volver a primer plano: Remote Config (respeta caché) y permisos actualizados
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        pullRemote();
-        refreshPermissions();
-      }
-    });
-    return () => sub.remove();
-  }, []);
-
-  useEffect(() => {
-    // Simulacro incluido: su ventana no coincide con la del eclipse real que vigila fineClock
-    const ms = demo || drill !== null || fineClock ? FINE_TICK_MS : COARSE_TICK_MS;
-    const id = setInterval(() => setNow(new Date()), ms);
-    return () => clearInterval(id);
-  }, [demo, drill, fineClock]);
 
   // Sembrar puesto deseado con GPS si el eclipse activo aún no tiene ninguno
   useEffect(() => {
@@ -216,12 +143,52 @@ function AppInner() {
       ? { lat: geo.lat, lon: geo.lon, place: cleanPlaceLabel(geo.place), origin: 'gps' as const }
       : null;
 
-  const eclipse = useMemo(
+  const localEclipse = useMemo(
     () => (active ? computeLocalEclipse(active.lat, active.lon) : null),
     // activeCatalog.id: selección de usuario o rollover; catalogEpoch: RC puede cambiar la entrada
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [active?.lat, active?.lon, activeCatalog.id, catalogEpoch],
+    [active?.lat, active?.lon, activeCatalog.id, remote.catalogEpoch],
   );
+
+  /**
+   * Puesto fuera de la zona de visibilidad: el motor ha contestado con OTRO eclipse
+   * (el siguiente visible desde ahí). Se anula para que nada aguas abajo —cronología,
+   * nubes, alertas, modo eclipse— pinte ni programe datos que no son de este evento.
+   */
+  const outOfZone = localEclipse !== null && !isActiveEclipse(localEclipse);
+  const eclipse = outOfZone ? null : localEclipse;
+
+  // Último puesto con circunstancias reales: es lo que sigue pintándose detrás del aviso
+  // cuando el nuevo cae fuera de zona. Se guarda en un ref (y no en estado) porque solo
+  // se lee al renderizar el caso raro: mantenerlo en estado provocaría un render de más.
+  const lastValidRef = useRef<ShownSpot | null>(null);
+  useEffect(() => {
+    if (eclipse && active) {
+      lastValidRef.current = { place: active.place, lat: active.lat, lon: active.lon, eclipse };
+    }
+  }, [eclipse, active?.lat, active?.lon, active?.place]);
+
+  /** Lo que se pinta: el puesto elegido si sus datos valen, o el último que valió. */
+  const shown: ShownSpot | null =
+    eclipse && active
+      ? { place: active.place, lat: active.lat, lon: active.lon, eclipse }
+      : outOfZone
+        ? lastValidRef.current
+        : null;
+
+  // Eclipse que SÍ se ve desde el puesto elegido: es justo el que devuelve el motor cuando
+  // el activo no es visible. Sin entrada en el catálogo no hay adónde llevar al usuario.
+  const otherDay = outOfZone && localEclipse ? eclipseDayOf(localEclipse) : null;
+  const otherEclipse = otherDay !== null ? eclipseForDay(otherDay) : null;
+
+  const { drill, startDrill, exitDrill, jumpDrill } = useDrill(eclipse, prefs, ctx, now);
+
+  useEffect(() => {
+    // Simulacro incluido: su ventana no coincide con la del eclipse real que vigila fineClock
+    const ms = demo || drill !== null || fineClock ? FINE_TICK_MS : COARSE_TICK_MS;
+    const id = setInterval(() => setNow(new Date()), ms);
+    return () => clearInterval(id);
+  }, [demo, drill, fineClock]);
 
   // Reloj fino en la ventana del modo eclipse (fase/seguridad a 1 s)
   useEffect(() => {
@@ -259,7 +226,7 @@ function AppInner() {
     };
   }, [eclipse]);
 
-  const { cloud, totality, hereOnMap } = useSpotData(active, eclipse, geo);
+  const { cloud, totality } = useSpotData(active, eclipse);
 
   // Reprogramar alertas al cambiar puesto, toggles, eclipse activo o permiso.
   // Sin toggles activos también entra: cancela avisos huérfanos del contexto anterior.
@@ -288,55 +255,6 @@ function AppInner() {
     [prefs, activeCatalog.civilDate, onPrefsChange],
   );
 
-  // Simulacro: eclipse sintético de tramos mínimos, C1 en 1 min.
-  // La app entra en modo eclipse (ventana de 30 min) y los avisos [PRUEBA] son aditivos.
-  const startDrill = useCallback(async () => {
-    if (!eclipse || !prefs) return t('app.drill.needSpot');
-    if (!Object.values(ctx.alertsOn).some(Boolean)) return t('app.drill.needAlert');
-    const c1At = new Date(Date.now() + DRILL_LEAD_MS);
-    const fake = buildDrillEclipse(eclipse, c1At);
-    const ids = await scheduleFakeEclipseAlerts(fake, c1At, ctx.alertsOn, prefs.alertSound, ctx.alertEarly);
-    setDrill({ eclipse: fake, ids });
-    track('drill_started');
-    return t('app.drill.running', {
-      time: c1At.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' }),
-    });
-  }, [eclipse, prefs, ctx]);
-
-  const exitDrill = useCallback(() => {
-    if (drill) void cancelAlertsByIds(drill.ids);
-    setDrill(null);
-  }, [drill]);
-
-  // Salto de fase: desplaza la serie para que el hito tocado caiga en 20 s
-  // (los avisos con antelación de 15 s siguen entrando) y reprograma los [PRUEBA] restantes.
-  const jumpDrill = useCallback(
-    (key: EclipseEvent['key']) => {
-      if (!drill || !prefs) return;
-      const target = drill.eclipse.events.find((e) => e.key === key);
-      if (!target) return;
-      const shift = Date.now() + DRILL_JUMP_LEAD_MS - target.time.getTime();
-      const shifted: LocalEclipse = {
-        ...drill.eclipse,
-        events: drill.eclipse.events.map((e) => ({ ...e, time: new Date(e.time.getTime() + shift) })),
-      };
-      void cancelAlertsByIds(drill.ids);
-      const c1 = shifted.events[0];
-      scheduleFakeEclipseAlerts(shifted, c1.time, ctx.alertsOn, prefs.alertSound, ctx.alertEarly)
-        .then((ids) => setDrill({ eclipse: shifted, ids }))
-        .catch(() => setDrill({ eclipse: shifted, ids: [] }));
-      setNow(new Date()); // repintar fase al instante, sin esperar al tick
-    },
-    [drill, prefs, ctx],
-  );
-
-  // Fin natural del simulacro: pasado C4 + margen, la app vuelve sola al modo normal
-  useEffect(() => {
-    if (!drill) return;
-    const last = drill.eclipse.events[drill.eclipse.events.length - 1];
-    if (now.getTime() > last.time.getTime() + 60_000) setDrill(null);
-  }, [now, drill]);
-
   // Punto tocado en el mapa real: nombre vía geocoder inverso (fallback coordenadas)
   const selectMapPoint = useCallback(
     ({ lat, lon }: { lat: number; lon: number }) => {
@@ -360,27 +278,47 @@ function AppInner() {
     );
   }
 
+  // Velo con la explicación; `key` por puesto para que un puesto nuevo vuelva a avisar
+  // aunque cerraras el anterior. Solo se ofrece saltar si el otro eclipse está en catálogo.
+  const outOfZoneNotice =
+    outOfZone && active ? (
+      <OutOfZoneNotice
+        key={`${active.lat},${active.lon}`}
+        place={cleanPlaceLabel(active.place)}
+        date={activeCatalog.shortDateLabel}
+        keepingPlace={shown ? cleanPlaceLabel(shown.place) : null}
+        otherLabel={otherEclipse?.label ?? null}
+        onGoToOther={() => {
+          if (!otherEclipse) return;
+          track('eclipse_selected', { day: otherEclipse.civilDate, from: 'out_of_zone' });
+          onPrefsChange({ ...prefs, selectedEclipseDay: otherEclipse.civilDate });
+        }}
+        top={insets.top + 12}
+      />
+    ) : null;
+
   const demoEclipse = demo && eclipse ? buildDemoEclipse(eclipse, now) : null;
   const activeEclipse = drill?.eclipse ?? demoEclipse ?? eclipse;
 
   // Modo eclipse: automático en ventana del evento, o demo forzada
   const inEclipseWindow = activeEclipse ? inFineClockWindow(activeEclipse, now.getTime()) : false;
 
-  // Aviso día D: GPS lejos del puesto elegido (>20 km) → las horas de contacto ya no valen
+  // Distancia GPS ↔ puesto PINTADO (no el elegido): el marcador «TÚ» y el aviso del día D
+  // se miden contra lo que hay en pantalla, o dirían una cosa y el mapa otra
+  const spotDistanceKm = geo && shown ? haversineKm(geo.lat, geo.lon, shown.lat, shown.lon) : null;
+
   const divergenceKm = (() => {
-    if (!geo || !activeSpot || !eclipse) return null;
+    if (spotDistanceKm === null || !activeSpot || !eclipse) return null;
     const c1 = eclipse.events[0];
     if (!c1 || now.getTime() < c1.time.getTime() - 24 * 3_600_000) return null;
-    const km = haversineKm(geo.lat, geo.lon, activeSpot.lat, activeSpot.lon);
-    return km > 20 ? km : null;
+    return spotDistanceKm > DIVERGENCE_KM ? spotDistanceKm : null;
   })();
 
-  const hereLabel = (() => {
-    if (!geo || !active) return null;
-    const km = haversineKm(geo.lat, geo.lon, active.lat, active.lon);
-    if (km < REAL_PLACE_KM) return null;
-    return cleanPlaceLabel(geo.place) || t('map.you');
-  })();
+  // Nombre corto del GPS cuando está lo bastante lejos del puesto; null = un solo punto
+  const hereLabel =
+    spotDistanceKm !== null && spotDistanceKm >= REAL_PLACE_KM && geo
+      ? cleanPlaceLabel(geo.place) || t('map.you')
+      : null;
 
   if (activeEclipse && active && (demo || inEclipseWindow)) {
     return (
@@ -392,7 +330,15 @@ function AppInner() {
           now={now}
           exitLabel={drill ? t('settings.drill') : demo ? 'DEMO' : null}
           onExitDemo={drill ? exitDrill : () => setDemo(false)}
-          onJumpToEvent={drill ? jumpDrill : null}
+          // El salto repinta la fase al instante, sin esperar al tick del reloj
+          onJumpToEvent={
+            drill
+              ? (key) => {
+                  jumpDrill(key);
+                  setNow(new Date());
+                }
+              : null
+          }
         />
       </View>
     );
@@ -401,64 +347,35 @@ function AppInner() {
   return (
     <View style={s.root}>
       <StatusBar style="light" />
-      {/*
-        Los avisos FLOTAN arriba, sobre el contenido: si empujaran el layout, el WebView
-        del mapa se redimensionaría en cada aparición. Tapan el cromo de la pantalla a
-        propósito —la ✕ los quita—, y por eso su fondo es opaco. box-none = los toques
-        pasan al contenido salvo en los propios banners.
-      */}
-      <View
-        style={[s.bannerStack, { top: insets.top + 8 }]}
-        pointerEvents="box-none"
-      >
-        {notice === 'info' && (
-          <Notice tone="info" text={remoteMsg} onClose={() => setRemoteMsgHidden(true)} />
-        )}
-        {notice === 'update' && (
-          <Notice
-            tone="action"
-            text={t('app.updateBanner')}
-            onClose={() => setUpdateHidden(true)}
-          >
-            <NoticeLink
-              label={t('app.updateCta')}
-              onPress={() => Linking.openURL(updateUrl).catch(() => {})}
-            />
-          </Notice>
-        )}
-        {/* Propina: solo tras varios usos, una vez en la vida y nunca en modo eclipse (return aparte).
-            Sin ✕: su «ahora no» es definitivo, y un icono ambiguo aquí haría dudar si vuelve. */}
-        {notice === 'donate' && (
-          <Notice tone="quiet" text={t('app.donateBanner')}>
-            <NoticeActions>
-              <NoticeLink label={t('app.donateLater')} onPress={() => resolveDonate(false)} soft />
-              <NoticeLink label={t('app.donateCta')} onPress={() => resolveDonate(true)} />
-            </NoticeActions>
-          </Notice>
-        )}
-      </View>
+      <NoticeStack
+        message={remote.message}
+        updateUrl={remote.updateUrl}
+        showDonate={showDonatePrompt}
+        onDonateResolve={resolveDonate}
+        top={insets.top}
+      />
       <View style={{ flex: 1 }}>
         {tab === 'mapa' &&
-          (eclipse && active ? (
+          (shown ? (
             <MapScreen
-              eclipse={eclipse}
-              place={cleanPlaceLabel(active.place)}
+              eclipse={shown.eclipse}
+              place={cleanPlaceLabel(shown.place)}
               hereLabel={hereLabel}
               cloudPct={cloud.pct}
               cloudAgeHours={cloud.ageH}
               cloudLoading={cloud.loading}
               totality={totality}
               now={now}
-              spotCoords={{ lat: active.lat, lon: active.lon }}
-              hereCoords={hereOnMap && geo ? { lat: geo.lat, lon: geo.lon } : null}
+              spotCoords={{ lat: shown.lat, lon: shown.lon }}
+              hereCoords={hereLabel !== null && geo ? { lat: geo.lat, lon: geo.lon } : null}
               gpsCoords={geo ? { lat: geo.lat, lon: geo.lon } : null}
               onOpenSelector={() => setSelectorOpen(true)}
-              onOpenMaps={() => openInMaps(active.lat, active.lon, active.place)}
+              onOpenMaps={() => openInMaps(shown.lat, shown.lon, shown.place)}
               onSelectMapPoint={selectMapPoint}
               divergenceKm={divergenceKm}
               onRecalcHere={recalcHere}
-              sponsor={sponsor}
-              glassesUrl={glassesUrl}
+              sponsor={remote.sponsor}
+              glassesUrl={remote.glassesUrl}
             />
           ) : (
             <View style={s.loading}>
@@ -501,15 +418,24 @@ function AppInner() {
             />
           ) : (
             <View style={s.loading}>
-              <Text style={s.loadingText}>{t('app.chooseSpotFirst')}</Text>
+              <Text style={s.loadingText}>
+                {outOfZone && active
+                  ? t('app.outOfZone', {
+                      place: cleanPlaceLabel(active.place),
+                      date: activeCatalog.shortDateLabel,
+                    })
+                  : t('app.chooseSpotFirst')}
+              </Text>
             </View>
           ))}
+        {/* Encima del contenido y bajo la barra de pestañas: deja ver el mapa al cerrarse */}
+        {tab === 'mapa' && outOfZoneNotice}
         {tab === 'ajustes' && (
           <SettingsScreen
             permissions={permissions}
             alertSound={prefs.alertSound}
             activeEclipse={activeCatalog}
-            donateUrl={donateUrl}
+            donateUrl={remote.donateUrl}
             // El efecto de alertas reprograma solo al cambiar alertSound
             onSoundChange={(sound) => onPrefsChange({ ...prefs, alertSound: sound })}
             onDemoEclipse={() => setDemo(true)}
@@ -531,7 +457,7 @@ function AppInner() {
         gpsPlace={geo?.place ?? t('spot.yourPosition')}
         activeSpot={activeSpot}
         recentSpots={prefs.recentSpots}
-        suggestedSpots={suggestedSpots}
+        suggestedSpots={remote.suggestedSpots}
         onSelect={selectSpot}
       />
     </View>
@@ -548,13 +474,15 @@ export default function App() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: C.bg },
-  loadingText: { color: C.dim, fontSize: 14, fontFamily: F.medium },
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    // El aviso de fuera de zona lleva nombre de lugar y fecha: sin aire moriría en los bordes
+    paddingHorizontal: 32,
+    backgroundColor: C.bg,
+  },
+  loadingText: { color: C.dim, fontSize: 14, fontFamily: F.medium, textAlign: 'center' },
   chooseLink: { color: C.corona, fontSize: 14, fontFamily: F.bold, letterSpacing: 1 },
-  /**
-   * Escala de intensidad de los avisos: violeta = informativo, corona = hay algo que
-   * puedes hacer, rojo = atención (aviso de distancia del mapa), neutro = petición.
-   * Mismo molde en todos: tinte del acento, borde translúcido, texto blanco y acción en color.
-   */
-  bannerStack: { position: 'absolute', left: 0, right: 0, zIndex: 20, gap: 8 },
 });

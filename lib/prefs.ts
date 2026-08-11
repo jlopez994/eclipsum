@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { EclipseEvent } from './eclipse';
 import type { Lang } from './i18n';
-import type { Spot } from './spots';
+import { sameCoords, type Spot } from './spots';
 
 export type AlertToggles = Record<EclipseEvent['key'], boolean>;
 
@@ -168,10 +168,6 @@ function parseContext(raw: unknown, legacyLeads?: unknown): EclipseContext {
     alertEarly: parseAlertEarly(src.alertEarly, legacyLeads),
     c1PlanAlerts: parseC1PlanAlerts(src.c1PlanAlerts),
   };
-}
-
-function sameCoords(a: Spot, b: Spot): boolean {
-  return Math.abs(a.lat - b.lat) < 0.01 && Math.abs(a.lon - b.lon) < 0.01;
 }
 
 /**

@@ -163,6 +163,15 @@ export async function fetchCloudCoverCached(lat: number, lon: number): Promise<C
   }
 }
 
+/**
+ * Semáforo de nubosidad, único sitio con los umbrales: pocas <25%, medias <60%,
+ * muchas el resto. null = sin dato. El color de cada nivel vive en theme (CLOUD_COLOR).
+ */
+export function cloudLevel(pct: number | null): 'few' | 'mid' | 'many' | null {
+  if (pct === null) return null;
+  return pct < 25 ? 'few' : pct < 60 ? 'mid' : 'many';
+}
+
 /** Nubosidad interpolada a la hora dada, o la hora más cercana del día del eclipse. */
 export function cloudCoverAt(forecast: CloudForecast, when: Date): number | null {
   const h = forecast.hours;

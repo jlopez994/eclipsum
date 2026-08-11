@@ -12,12 +12,13 @@ import * as Location from 'expo-location';
 import { computeLocalEclipse } from '../lib/eclipse';
 import { openInMaps } from '../lib/maps';
 import type { SuggestedSpot } from '../lib/firebase';
-import type { Spot, SpotOption } from '../lib/spots';
-import { cloudCoverAt, fetchCloudCoverBatch } from '../lib/weather';
-import { localeTag, t } from '../lib/i18n';
+import { cleanPlaceLabel, sameCoords, type Spot, type SpotOption } from '../lib/spots';
+import { cloudCoverAt, cloudLevel, fetchCloudCoverBatch } from '../lib/weather';
+import { fmtDur, fmtHM } from '../lib/format';
+import { t } from '../lib/i18n';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
 import { animateNextLayout, yieldUI } from '../lib/anim';
-import { C, F } from './theme';
+import { C, CLOUD_COLOR, F } from './theme';
 
 // Referencia peninsular si no hay GPS: distancias aproximadas mejor que nada
 const FALLBACK_REF = { lat: 40.42, lon: -3.7 };
@@ -40,13 +41,6 @@ interface Row extends SpotOption {
 }
 
 type Section = { title: string; rows: Row[] };
-
-const fmtHM = (d: Date) => d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' });
-
-function isActive(row: Row, activeSpot: Spot | null): boolean {
-  if (activeSpot === null) return false;
-  return Math.abs(activeSpot.lat - row.lat) < 0.01 && Math.abs(activeSpot.lon - row.lon) < 0.01;
-}
 
 function toRow(spot: Spot, ref: { lat: number; lon: number }, selectValue?: Spot): Row {
   const ec = computeLocalEclipse(spot.lat, spot.lon);
@@ -73,7 +67,7 @@ export async function localityName(lat: number, lon: number): Promise<string | n
 }
 
 function displayGpsName(gpsPlace: string): string {
-  return gpsPlace.replace(/\s·\sGPS$/, '') || t('spot.yourPosition');
+  return cleanPlaceLabel(gpsPlace) || t('spot.yourPosition');
 }
 
 export function SpotSelector({
@@ -283,9 +277,9 @@ export function SpotSelector({
             <View key={sec.title}>
               <Text style={s.sectionTitle}>{sec.title}</Text>
               {sec.rows.map((row) => {
-                const active = isActive(row, activeSpot);
-                const cloudColor =
-                  row.cloudPct === null ? C.dim : row.cloudPct < 25 ? C.ok : row.cloudPct < 60 ? C.corona : C.danger;
+                const active = activeSpot !== null && sameCoords(activeSpot, row);
+                const level = cloudLevel(row.cloudPct);
+                const cloudColor = level ? CLOUD_COLOR[level] : C.dim;
                 return (
                   <View key={`${sec.title}-${row.origin}-${row.name}-${row.lat}`} style={[s.row, active && s.rowActive]}>
                     <Pressable style={s.rowMain} onPress={() => pick(row)}>
@@ -302,9 +296,7 @@ export function SpotSelector({
                       {row.kind === 'total' ? (
                         <Text style={s.rowTotal}>
                           {t('spot.total')}
-                          {row.totalityDurationSec != null
-                            ? ` ${Math.floor(row.totalityDurationSec / 60)}m${String(row.totalityDurationSec % 60).padStart(2, '0')}s`
-                            : ''}
+                          {row.totalityDurationSec != null ? ` ${fmtDur(row.totalityDurationSec)}` : ''}
                         </Text>
                       ) : (
                         <Text style={s.rowPartial}>{(row.obscuration * 100).toFixed(0)}%</Text>

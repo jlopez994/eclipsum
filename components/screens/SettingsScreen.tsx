@@ -24,7 +24,6 @@ interface SettingsScreenProps {
   onLanguageChange: (lang: Lang | '') => void;
   /** Recibe el día civil elegido; '' = automático */
   onSelectEclipse: (day: string) => void;
-  /** Tramos del simulacro (persisten en prefs) */
   /** Arranca el simulacro (modo eclipse + avisos [PRUEBA]); devuelve mensaje de resultado */
   onStartDrill: () => Promise<string>;
 }

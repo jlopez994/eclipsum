@@ -15,16 +15,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { nextEvent, type LocalEclipse } from '../../lib/eclipse';
 import { bandOf, getActiveEclipse } from '../../lib/eclipseCatalog';
-import { fmtFixed1, localeTag, t, type I18nKey } from '../../lib/i18n';
-import { type TotalityDirection } from '../../lib/totality';
+import { fmtDur, fmtHM, fmtHMS } from '../../lib/format';
+import { fmtFixed1, t, type I18nKey } from '../../lib/i18n';
+import { bearingLabel, type TotalityDirection } from '../../lib/totality';
 import { track, type Sponsor } from '../../lib/firebase';
-import { windyEclipseCloudsUrl } from '../../lib/weather';
+import { cloudLevel, windyEclipseCloudsUrl } from '../../lib/weather';
 import { useSheet } from '../../hooks/useSheet';
 import { Countdown } from '../Countdown';
 import { RealMap, type RealMapHandle } from '../RealMap';
 import { CompassChip } from '../map/CompassChip';
 import { HorizonDiagram } from '../map/HorizonDiagram';
-import { C, F } from '../theme';
+import { SunFinderScreen } from './SunFinderScreen';
+import { C, CLOUD_COLOR, EVENT_ACCENT, F } from '../theme';
 
 const IGN_URL = 'https://eclipses.ign.es/como-observar-eclipses.html';
 
@@ -32,15 +34,6 @@ const IGN_URL = 'https://eclipses.ign.es/como-observar-eclipses.html';
 const SHEET_MIN_FALLBACK = 140;
 /** Mínimo de mapa visible con la hoja estirada */
 const SHEET_TOP_GAP = 150;
-
-const EVENT_ACCENT: Record<string, string> = {
-  C1: C.corona,
-  C2: C.totality,
-  MAX: C.totality,
-  C3: C.danger,
-  C4: C.corona,
-  OC: C.danger,
-};
 
 interface MapScreenProps {
   eclipse: LocalEclipse;
@@ -74,9 +67,6 @@ interface MapScreenProps {
   glassesUrl?: string;
 }
 
-const fmtHM = (d: Date) =>
-  d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
 export function MapScreen({
   eclipse,
   place,
@@ -100,6 +90,7 @@ export function MapScreen({
   const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
   const [sheetMin, setSheetMin] = useState(SHEET_MIN_FALLBACK);
+  const [finderOpen, setFinderOpen] = useState(false);
   const mapRef = useRef<RealMapHandle>(null);
 
   // Fundido al cambiar de puesto: los datos nuevos entran suaves en vez de saltar
@@ -141,28 +132,40 @@ export function MapScreen({
       : []),
   ].sort((a, b) => a.time.getTime() - b.time.getTime());
 
-  const bandDuration = isTotal
-    ? eclipse.totalityDurationSec
-    : totality !== null && totality !== 'none'
-      ? totality.durationSec
-      : null;
+  /**
+   * Dentro de la banda: cuánto dura TU totalidad. Fuera: cuánto te falta para llegar.
+   * La duración del punto de banda más cercano no vale aquí — ese punto cae en el borde,
+   * donde la totalidad dura ~0, así que siempre daría segundos sueltos sin decir de dónde.
+   */
+  const bandStat =
+    isTotal && eclipse.totalityDurationSec != null
+      ? { value: fmtDur(eclipse.totalityDurationSec), label: t('map.inBand') }
+      : !isTotal && totality !== null && totality !== 'none'
+        ? {
+            value: t('map.toBand.value', {
+              km: totality.distanceKm,
+              dir: bearingLabel(totality.bearingDeg),
+            }),
+            label: t('map.toBand'),
+          }
+        : { value: '—', label: t('map.inBand') };
 
   // Dato de caché sin red: se marca la antigüedad para no fiarse de nubes viejas
   const activeEclipseMeta = getActiveEclipse();
   const cloudStale = cloudAgeHours !== null ? ` · ${cloudAgeHours}h` : '';
-  const cloudLevel = cloudPct === null ? null : cloudPct < 25 ? 'few' : cloudPct < 60 ? 'mid' : 'many';
+  const level = cloudLevel(cloudPct);
   const cloud =
-    cloudLevel === null || cloudPct === null
+    level === null || cloudPct === null
       ? {
           color: C.dim,
           label: cloudLoading ? t('map.clouds.loading') : t('map.clouds.none'),
           a11y: t('map.clouds.noneA11y'),
         }
       : {
-          color: cloudLevel === 'few' ? C.ok : cloudLevel === 'mid' ? C.corona : C.danger,
-          label: t(`map.clouds.${cloudLevel}` as I18nKey, { pct: cloudPct, stale: cloudStale }),
+          color: CLOUD_COLOR[level],
+          label: t(`map.clouds.${level}` as I18nKey, { pct: cloudPct, stale: cloudStale }),
           a11y: t('map.clouds.a11y', {
-            level: t(`map.clouds.${cloudLevel}.word` as I18nKey),
+            level: t(`map.clouds.${level}.word` as I18nKey),
             pct: cloudPct,
             date: activeEclipseMeta.shortDateLabel.toLowerCase(),
           }),
@@ -214,7 +217,11 @@ export function MapScreen({
               <Text style={s.chipChevron}>▾</Text>
             </Pressable>
           </View>
-          <CompassChip targetAzimuthDeg={maxEvent?.azimuth ?? 270} />
+          <CompassChip
+            targetAzimuthDeg={maxEvent?.azimuth ?? 270}
+            targetAltitudeDeg={maxEvent?.altitude}
+            onOpenFinder={maxEvent ? () => setFinderOpen(true) : undefined}
+          />
         </View>
         {divergenceKm !== null && (
           <View style={s.divergence}>
@@ -248,10 +255,15 @@ export function MapScreen({
                 <Text style={s.statLabel}>{t('map.hiddenHere')}</Text>
               </View>
               <View style={s.stat}>
-                <Text style={[s.statValue, { color: C.violet }]}>
-                  {bandDuration != null ? `${Math.floor(bandDuration / 60)}m ${bandDuration % 60}s` : '—'}
+                {/* «463 km NO» es más ancho que «1m 47s»: encoge antes que partirse */}
+                <Text
+                  style={[s.statValue, { color: C.violet }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  {bandStat.value}
                 </Text>
-                <Text style={s.statLabel}>{t('map.inBand')}</Text>
+                <Text style={s.statLabel}>{bandStat.label}</Text>
               </View>
               <Pressable
                 style={[s.cloudChip, { borderColor: cloud.color + '66' }]}
@@ -292,7 +304,7 @@ export function MapScreen({
                 {e.label}
                 {e.belowHorizon ? t('map.belowHorizon') : ''}
               </Text>
-              <Text style={[s.cronoTime, e.belowHorizon && { color: C.dim }]}>{fmtHM(e.time)}</Text>
+              <Text style={[s.cronoTime, e.belowHorizon && { color: C.dim }]}>{fmtHMS(e.time)}</Text>
             </View>
           ))}
           {maxEvent && maxEvent.altitude > 0 && (
@@ -346,6 +358,16 @@ export function MapScreen({
         </ScrollView>
       </Animated.View>
       </Animated.View>
+      {/* Encima de todo, incluida la hoja: el visor es pantalla completa */}
+      {finderOpen && maxEvent && (
+        <SunFinderScreen
+          azimuthDeg={maxEvent.azimuth}
+          altitudeDeg={maxEvent.altitude}
+          momentLabel={t('event.MAX').toUpperCase()}
+          momentTime={fmtHM(maxEvent.time)}
+          onClose={() => setFinderOpen(false)}
+        />
+      )}
     </View>
   );
 }

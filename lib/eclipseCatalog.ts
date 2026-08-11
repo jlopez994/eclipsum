@@ -77,6 +77,14 @@ function resolveByDay(day: string): EclipseEntry | null {
   );
 }
 
+/**
+ * Entrada conocida para ese día civil, o null si cae fuera del horizonte del catálogo.
+ * null significa «no podemos llevar al usuario a ese eclipse»: la UI oculta la acción.
+ */
+export function eclipseForDay(day: string): EclipseEntry | null {
+  return resolveByDay(day);
+}
+
 /** Resuelve una vez por cambio real de selección; llamadas repetidas con el mismo día son no-op. */
 export function setUserSelectedEclipseDay(day: string): void {
   const trimmed = day.trim();

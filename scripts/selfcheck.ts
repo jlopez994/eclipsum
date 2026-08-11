@@ -26,6 +26,15 @@ import {
   type RecentSpot,
 } from '../lib/prefs';
 import { buildDrillEclipse, DRILL_PARTIAL_SEC, DRILL_TOTALITY_SEC } from '../lib/drill';
+import {
+  bearingOf,
+  cameraBasis,
+  fovFor,
+  project,
+  skyVector,
+  withCompassBearing,
+  type CameraBasis,
+} from '../lib/skyProjection';
 
 async function main() {
   // Nota: la caché del automático es monótona en el tiempo — los asserts van en fechas crecientes
@@ -260,6 +269,54 @@ async function main() {
     'i18n: selección de usuario re-resuelta al cambiar de idioma',
   );
   setUserSelectedEclipseDay('');
+
+  // --- Proyección del cielo (visor de cámara) ---
+  // Base sintética: cámara mirando al horizonte hacia el rumbo `b`, pantalla vertical.
+  const lookAt = (b: number): CameraBasis => ({
+    forward: skyVector(b, 0),
+    right: skyVector(b + 90, 0),
+    up: { x: 0, y: 0, z: 1 },
+  });
+  const fov = fovFor(1080, 1920); // vertical > horizontal en retrato
+  assert.ok(fov.verticalDeg > fov.horizontalDeg, 'fov: en retrato el vertical es el mayor');
+
+  assert.equal(Math.round(bearingOf(skyVector(90, 0))), 90, 'rumbo: azimut 90 apunta al este');
+  assert.equal(Math.round(bearingOf(skyVector(180, 30))), 180, 'rumbo: la altura no altera el rumbo');
+
+  // Sol justo en el eje de la cámara → centro del encuadre
+  const centered = project(skyVector(200, 0), lookAt(200), fov);
+  assert.ok(centered.inFrame, 'proyección: sol en el eje cae dentro del encuadre');
+  assert.ok(Math.abs(centered.x) < 1e-9 && Math.abs(centered.y) < 1e-9, 'proyección: y en el centro');
+  assert.ok(centered.offAxisDeg < 1e-6, 'proyección: separación nula en el eje');
+
+  // Sol a la derecha del rumbo de la cámara → x positivo (misma mano que la pantalla)
+  const right = project(skyVector(220, 0), lookAt(200), fov);
+  assert.ok(right.x > 0, 'proyección: sol 20° a la derecha cae a la derecha del encuadre');
+  assert.ok(Math.abs(right.y) < 1e-9, 'proyección: sin altura no se desplaza en vertical');
+  assert.equal(Math.round(right.offAxisDeg), 20, 'proyección: separación angular = 20°');
+
+  // Sol alto → y positivo
+  const high = project(skyVector(200, 20), lookAt(200), fov);
+  assert.ok(high.y > 0, 'proyección: sol elevado cae arriba del encuadre');
+
+  // A la espalda: nunca dentro de encuadre, y manda girar hacia un lado
+  const behind = project(skyVector(20, 10), lookAt(200), fov);
+  assert.ok(!behind.inFrame, 'proyección: sol a la espalda queda fuera de encuadre');
+  assert.ok(behind.offAxisDeg > 90, 'proyección: separación mayor de 90° a la espalda');
+
+  // Fuera del encuadre por poco: turnDeg apunta al lado correcto (90 = derecha)
+  const farRight = project(skyVector(280, 0), lookAt(200), fov);
+  assert.ok(!farRight.inFrame, 'proyección: 80° a la derecha se sale del encuadre');
+  assert.equal(Math.round(farRight.turnDeg), 90, 'proyección: manda girar a la derecha');
+
+  // Reanclado con brújula: el guiñado pasa a ser el del compás, el cabeceo se conserva
+  const drifted = cameraBasis(0, 90, 0); // móvil vertical, guiñado sin calibrar
+  const fixed = withCompassBearing(drifted, 135);
+  assert.equal(Math.round(bearingOf(fixed.forward)), 135, 'brújula: el rumbo se reancla al compás');
+  assert.ok(
+    Math.abs(fixed.forward.z - drifted.forward.z) < 1e-9,
+    'brújula: el reanclado no toca el cabeceo',
+  );
 
   console.log('selfcheck OK — Zaragoza total', zgz.totalityDurationSec + 's, máximo', max.time.toISOString());
   console.log(

@@ -11,16 +11,9 @@ import {
 import type { AlertEarly, AlertSound, AlertToggles, C1PlanAlerts } from '../../lib/prefs';
 import { ALERT_EARLY_SECONDS } from '../../lib/prefs';
 import { track } from '../../lib/firebase';
-import { localeTag, t, type I18nKey } from '../../lib/i18n';
-import { C, F } from '../theme';
-
-const ALERT_ACCENT: Record<string, string> = {
-  C1: C.corona,
-  C2: C.totality,
-  MAX: C.totality,
-  C3: C.danger,
-  C4: C.corona,
-};
+import { fmtHMS } from '../../lib/format';
+import { t, type I18nKey } from '../../lib/i18n';
+import { C, EVENT_ACCENT, F } from '../theme';
 
 interface AlertsScreenProps {
   eclipse: LocalEclipse;
@@ -32,9 +25,6 @@ interface AlertsScreenProps {
   onEarlyChange: (key: keyof AlertEarly, value: boolean) => void;
   onC1PlanChange: (next: C1PlanAlerts) => void;
 }
-
-const fmtHM = (d: Date) =>
-  d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 export function AlertsScreen({
   eclipse,
@@ -138,7 +128,7 @@ export function AlertsScreen({
         showsVerticalScrollIndicator={false}
       >
         {eclipse.events.map((e, i) => {
-          const accent = ALERT_ACCENT[e.key] ?? C.dim;
+          const accent = EVENT_ACCENT[e.key] ?? C.dim;
           const on = toggles[e.key];
           const isEarly = early[e.key];
           // Contacto bajo el horizonte: el sol ya se habrá puesto — se marca, pero el
@@ -165,7 +155,7 @@ export function AlertsScreen({
                   <Text style={s.rowTitle}>
                     {e.key === 'MAX' ? t('event.maxShort') : e.key} · {t(`event.${e.key}` as I18nKey)}
                   </Text>
-                  <Text style={[s.rowTime, { color: belowHorizon ? C.dim : accent }]}>{fmtHM(e.time)}</Text>
+                  <Text style={[s.rowTime, { color: belowHorizon ? C.dim : accent }]}>{fmtHMS(e.time)}</Text>
                 </View>
                 <Text style={s.rowDesc}>{t(`alerts.desc.${e.key}` as I18nKey)}</Text>
                 {belowHorizon && <Text style={s.rowBelowHorizon}>{t('alerts.belowHorizon')}</Text>}

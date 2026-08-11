@@ -47,7 +47,21 @@
           "enableBackgroundRecording": false
         }
       ],
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Eclipsum usa la cámara para dibujar sobre lo que ves dónde estará el sol durante el eclipse.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Eclipsum usa los sensores de movimiento para saber hacia dónde apuntas el móvil."
+        }
+      ]
     ]
   }
 }

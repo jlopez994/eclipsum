@@ -2,9 +2,10 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import { StyleSheet } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { type BandSlice } from '../lib/bandGeo';
-import { computeLocalEclipse } from '../lib/eclipse';
+import { computeLocalEclipse, isActiveEclipse } from '../lib/eclipse';
 import { bandOf, getActiveEclipse } from '../lib/eclipseCatalog';
-import { fmtFixed1, localeTag, t } from '../lib/i18n';
+import { fmtDur, fmtHM } from '../lib/format';
+import { fmtFixed1, t } from '../lib/i18n';
 import { LEAFLET_CSS, LEAFLET_JS } from '../lib/leafletVendor';
 import { C } from './theme';
 
@@ -39,11 +40,8 @@ interface TapInfo {
   cta: string;
 }
 
-const fmtHM = (d: Date) => d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' });
-
 /** JSON seguro para incrustar en <script>/injectJavaScript: un nombre de lugar con «</script>» no rompe el HTML. */
 const toJs = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c');
-const fmtDur = (sec: number) => `${Math.floor(sec / 60)}m ${sec % 60}s`;
 
 function tapInfo(lat: number, lon: number): TapInfo {
   const active = getActiveEclipse();
@@ -51,15 +49,14 @@ function tapInfo(lat: number, lon: number): TapInfo {
   try {
     const ec = computeLocalEclipse(lat, lon);
     const max = ec.events.find((e) => e.key === 'MAX');
-    // El motor devuelve el primer eclipse local tras searchStart: si no cae el día
-    // del eclipse activo, desde este punto no se ve el evento.
-    if (!max || max.time.toISOString().slice(0, 10) !== active.civilDate) {
+    // Desde este punto no se ve el eclipse activo. Se puede elegir igual (la pantalla
+    // del mapa lo explica): así se puede explorar «¿y desde aquí?» sin pelearse con el mapa.
+    if (!max || !isActiveEclipse(ec)) {
       return {
         ...base,
         title: t('real.noEclipse'),
         color: C.dim,
         lines: [t('real.nothingVisible', { date: active.shortDateLabel })],
-        canSelect: false,
       };
     }
     const lines = [t('real.maxAt', { time: fmtHM(max.time) })];
