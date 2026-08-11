@@ -6,8 +6,29 @@
  * cambiar de idioma, App reprograma (prefs.language en las deps del efecto).
  */
 
-export type Lang = 'es' | 'en';
-export const LANGS: Lang[] = ['es', 'en'];
+export const LANGS = ['es', 'en'] as const;
+export type Lang = (typeof LANGS)[number];
+
+/**
+ * Metadatos por idioma. Para añadir un idioma: súmalo a LANGS, rellena su entrada
+ * aquí y su diccionario en DICTS — el compilador obliga a completar los tres.
+ * name: endónimo para el selector · tag: BCP-47 para toLocaleTimeString
+ * decimalComma: separador decimal · monthsShort: meses de los labels del catálogo
+ */
+export const LANG_META: Record<Lang, { name: string; tag: string; decimalComma: boolean; monthsShort: string[] }> = {
+  es: {
+    name: 'Español',
+    tag: 'es-ES',
+    decimalComma: true,
+    monthsShort: ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'],
+  },
+  en: {
+    name: 'English',
+    tag: 'en-GB', // 24 h, como es-ES
+    decimalComma: false,
+    monthsShort: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+  },
+};
 
 let lang: Lang = 'es';
 
@@ -19,15 +40,15 @@ export function getLang(): Lang {
   return lang;
 }
 
-/** Etiqueta BCP-47 para toLocaleTimeString y similares (en-GB: 24 h, como es-ES). */
+/** Etiqueta BCP-47 para toLocaleTimeString y similares. */
 export function localeTag(): string {
-  return lang === 'es' ? 'es-ES' : 'en-GB';
+  return LANG_META[lang].tag;
 }
 
-/** toFixed(1) con el separador decimal del idioma activo (es: coma). */
+/** toFixed(1) con el separador decimal del idioma activo. */
 export function fmtFixed1(n: number): string {
   const s = n.toFixed(1);
-  return lang === 'es' ? s.replace('.', ',') : s;
+  return LANG_META[lang].decimalComma ? s.replace('.', ',') : s;
 }
 
 const es = {

@@ -5,7 +5,7 @@
  */
 import { NextGlobalSolarEclipse, SearchGlobalSolarEclipse, type GlobalSolarEclipseInfo } from 'astronomy-engine';
 import { bandForEclipse, type BandSlice } from './bandGeo';
-import { getLang, t, type I18nKey, type Lang } from './i18n';
+import { getLang, LANG_META, t, type I18nKey } from './i18n';
 
 export interface EclipseEntry {
   id: string;
@@ -170,10 +170,6 @@ function eclipseEndMs(entry: EclipseEntry): number {
   return new Date(`${entry.civilDate}T23:59:59Z`).getTime() + 6 * 3_600_000;
 }
 
-const MES: Record<Lang, string[]> = {
-  es: ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'],
-  en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-};
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
 /** Margen del ancla searchStart: SearchLocalSolarEclipse busca el primer eclipse local tras ella. */
@@ -185,7 +181,7 @@ function labelFields(
   peak: Date,
 ): Pick<EclipseEntry, 'label' | 'bandLabel' | 'bandTooltip' | 'shortDateLabel'> {
   const d = peak.getUTCDate();
-  const mes = MES[getLang()][peak.getUTCMonth()];
+  const mes = LANG_META[getLang()].monthsShort[peak.getUTCMonth()];
   const year = peak.getUTCFullYear();
   const fecha = `${d} ${mes} ${year}`;
   const fechaMayus = `${d} ${mes.toUpperCase()} ${year}`;

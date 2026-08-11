@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bandOf, upcomingEclipses, type EclipseEntry } from '../../lib/eclipseCatalog';
 import { alertSoundOptions, sendTestNotification } from '../../lib/notifications';
 import { previewAlertSound } from '../../lib/soundPreview';
-import { t, type Lang } from '../../lib/i18n';
+import { LANG_META, LANGS, t, type Lang } from '../../lib/i18n';
 import type { AlertSound } from '../../lib/prefs';
 import { DRILL_PARTIAL, DRILL_TOTALITY, type DrillConfig } from '../../lib/drill';
 import { C, F } from '../theme';
@@ -69,12 +69,11 @@ function Stepper({ onLess, onMore, a11y }: { onLess: () => void; onMore: () => v
   );
 }
 
-/** Opciones del selector de idioma: nombre nativo fijo, «Automático» localizado. */
-function languageOptions(): { id: Lang | ''; label: string; hint: string }[] {
+/** Chips del selector de idioma: «Automático» localizado + endónimo de cada idioma (LANG_META). */
+function languageOptions(): { id: Lang | ''; label: string; a11y: string }[] {
   return [
-    { id: '', label: t('settings.language.auto'), hint: t('settings.language.autoHint') },
-    { id: 'es', label: 'Español', hint: '' },
-    { id: 'en', label: 'English', hint: '' },
+    { id: '', label: t('settings.language.auto'), a11y: `${t('settings.language.auto')}. ${t('settings.language.autoHint')}` },
+    ...LANGS.map((l) => ({ id: l, label: LANG_META[l].name, a11y: LANG_META[l].name })),
   ];
 }
 
@@ -182,31 +181,6 @@ export function SettingsScreen({
         </View>
 
         <View>
-          <Text style={s.section}>{t('settings.language')}</Text>
-          <View style={s.card}>
-            {languageOptions().map((opt, i, arr) => {
-              const on = language === opt.id;
-              return (
-                <Pressable
-                  key={opt.id || 'auto'}
-                  onPress={() => onLanguageChange(opt.id)}
-                  style={[s.rowItem, i < arr.length - 1 && s.rowDivider]}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
-                  accessibilityLabel={opt.hint ? `${opt.label}. ${opt.hint}` : opt.label}
-                >
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={s.rowTitle}>{opt.label}</Text>
-                    {!!opt.hint && <Text style={s.soundHint}>{opt.hint}</Text>}
-                  </View>
-                  <View style={[s.radio, on && s.radioOn]}>{on && <View style={s.radioDot} />}</View>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-
-        <View>
           <Text style={[s.section, { color: C.danger }]}>{t('settings.safety')}</Text>
           <View style={s.safetyCard}>
             <Text style={s.safetyTitle}>
@@ -293,6 +267,27 @@ export function SettingsScreen({
           <Text style={s.upcomingNote}>
             {t('settings.upcoming.note', { manual: isManualSelection ? t('settings.upcoming.noteManual') : '' })}
           </Text>
+        </View>
+
+        <View>
+          <Text style={s.section}>{t('settings.language')}</Text>
+          <View style={s.langWrap}>
+            {languageOptions().map((opt) => {
+              const on = language === opt.id;
+              return (
+                <Pressable
+                  key={opt.id || 'auto'}
+                  onPress={() => onLanguageChange(opt.id)}
+                  style={[s.langChip, on && s.langChipOn]}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={opt.a11y}
+                >
+                  <Text style={[s.langChipTxt, on && s.langChipTxtOn]}>{opt.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
 
         <View>
@@ -394,6 +389,18 @@ const s = StyleSheet.create({
   },
   radioOn: { borderColor: C.corona },
   radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.corona },
+  langWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  langChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surface,
+  },
+  langChipOn: { borderColor: 'rgba(255,196,87,0.55)', backgroundColor: 'rgba(255,196,87,0.12)' },
+  langChipTxt: { fontFamily: F.semibold, fontSize: 13, color: C.dim },
+  langChipTxtOn: { color: C.corona },
   activeTag: { fontFamily: F.medium, fontSize: 12, color: C.ok },
   deniedTag: { fontFamily: F.medium, fontSize: 12, color: C.danger },
   safetyCard: {
