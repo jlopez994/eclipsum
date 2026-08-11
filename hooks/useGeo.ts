@@ -94,5 +94,12 @@ export function useGeo() {
     };
   }, [locate]);
 
-  return { geo, locating, granted };
+  /**
+   * Vuelve a fijar la posición. La resolvemos una sola vez al arrancar, así que el día del
+   * eclipse la de alguien que abrió la app en casa y condujo al puesto sería la de casa —
+   * y de ella depende el aviso de «no estás donde planeaste».
+   */
+  const refresh = useCallback(() => void locate(false), [locate]);
+
+  return { geo, locating, granted, refresh };
 }

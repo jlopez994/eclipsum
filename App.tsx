@@ -98,7 +98,7 @@ function AppInner() {
   });
 
   const { prefs, update: onPrefsChange } = usePrefs();
-  const { geo, locating, granted: locationGranted } = useGeo();
+  const { geo, locating, granted: locationGranted, refresh: refreshGeo } = useGeo();
   const { permissions, request: requestPermission } = usePermissions(locationGranted);
   // Antes de cargar prefs, canal estable: nunca ofrecer una beta a quien no la pidió
   const remote = useRemoteExtras(prefs?.updateChannel ?? 'stable');
@@ -359,6 +359,12 @@ function AppInner() {
     if (inTotality || !inEclipseWindow) setModeExited(false);
   }, [inTotality, inEclipseWindow]);
 
+  // Al abrirse la ventana, posición fresca: el aviso de divergencia decide si las horas que
+  // vas a mirar durante dos horas son las de donde estás o las de un puesto que no pisaste
+  useEffect(() => {
+    if (inEclipseWindow) refreshGeo();
+  }, [inEclipseWindow, refreshGeo]);
+
   if (!fontsLoaded || !prefs) {
     return (
       <View style={s.loading}>
@@ -435,6 +441,10 @@ function AppInner() {
           place={cleanPlaceLabel(active.place)}
           now={now}
           exitLabel={drill ? t('settings.drill') : demo ? 'DEMO' : null}
+          // El aviso de «no estás donde planeaste» vivía solo en el mapa, la pantalla que
+          // esta tapa. Sin ensayo de por medio: en la demo estorbaría.
+          divergenceKm={drill || demo ? null : divergenceKm}
+          onRecalcHere={recalcHere}
           onExit={drill ? exitDrill : demo ? () => setDemoAt(null) : () => setModeExited(true)}
           // El salto repinta la fase al instante, sin esperar al tick del reloj
           onJumpToEvent={

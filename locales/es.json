@@ -68,6 +68,7 @@
   "mode.banner.done": "FINALIZADO",
   "mode.banner.doneSub": "HASTA EL PRÓXIMO ECLIPSE",
   "mode.tag": "MODO ECLIPSE · {place}",
+  "mode.diverge": "Estás a {km} km de {place}. Estas horas son las de {place}, no las de donde estás.",
   "mode.exit": "{label} · SALIR ✕",
   "mode.exitA11y": "Salir del {label}",
   "mode.exitReal.a11y": "Salir del modo eclipse",

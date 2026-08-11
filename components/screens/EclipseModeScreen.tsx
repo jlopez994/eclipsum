@@ -99,6 +99,13 @@ interface EclipseModeScreenProps {
   onExit: () => void;
   /** Salto de fase tocando el raíl; null = deshabilitado (eclipse real/demo) */
   onJumpToEvent: ((key: EclipseEvent['key']) => void) | null;
+  /**
+   * km entre tu GPS y el puesto del que salen ESTAS horas; null = sin discrepancia.
+   * Es el dato que decide si el crono que tienes delante describe dónde estás.
+   */
+  divergenceKm: number | null;
+  /** Hace de tu posición el puesto: recalcula cronología, nubes y alertas a la vez */
+  onRecalcHere: () => void;
 }
 
 function Clock() {
@@ -149,7 +156,16 @@ function CoronaRing({ glow, border, inner }: { glow: string; border: string; inn
   );
 }
 
-export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExit, onJumpToEvent }: EclipseModeScreenProps) {
+export function EclipseModeScreen({
+  eclipse,
+  place,
+  now,
+  exitLabel,
+  onExit,
+  onJumpToEvent,
+  divergenceKm,
+  onRecalcHere,
+}: EclipseModeScreenProps) {
   useKeepAwake();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -210,6 +226,18 @@ export function EclipseModeScreen({ eclipse, place, now, exitLabel, onExit, onJu
           </Pressable>
         )}
       </View>
+
+      {/* Encima del banner de seguridad a propósito: si las horas no son las de donde estás,
+          eso invalida todo lo que hay debajo. Un toque lo arregla de raíz — pasa el puesto a
+          tu posición, así que cronología, nubes y alertas vuelven a contar lo mismo. */}
+      {divergenceKm !== null && (
+        <Pressable style={s.diverge} onPress={onRecalcHere} accessibilityRole="button">
+          <Text style={s.divergeTxt}>
+            {t('mode.diverge', { km: Math.round(divergenceKm), place })}
+          </Text>
+          <Text style={s.divergeCta}>{t('map.recalc')}</Text>
+        </Pressable>
+      )}
 
       <View style={[s.banner, { backgroundColor: banner.bg, shadowColor: banner.bg }]}>
         {/* adjustsFontSizeToFit: «GAFAS PUESTAS» y otras traducciones largas no deben partirse */}
@@ -355,6 +383,19 @@ const s = StyleSheet.create({
     marginTop: 10,
     textAlign: 'center',
   },
+  diverge: {
+    marginHorizontal: 16,
+    marginTop: 4,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,107,94,0.55)',
+    backgroundColor: 'rgba(255,107,94,0.14)',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 6,
+  },
+  divergeTxt: { fontFamily: F.semibold, fontSize: 13, lineHeight: 18, color: C.text },
+  divergeCta: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1.2, color: C.danger },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   cdLabel: { fontFamily: F.semibold, fontSize: 12, letterSpacing: 3, color: 'rgba(242,239,233,0.75)' },
   chrono: {
