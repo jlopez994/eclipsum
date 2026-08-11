@@ -479,7 +479,6 @@ function AppInner() {
             permissions={permissions}
             alertSound={prefs.alertSound}
             activeEclipse={activeCatalog}
-            glassesUrl={glassesUrl}
             donateUrl={donateUrl}
             // El efecto de alertas reprograma solo al cambiar alertSound
             onSoundChange={(sound) => onPrefsChange({ ...prefs, alertSound: sound })}

@@ -26,6 +26,8 @@ import { CompassChip } from '../map/CompassChip';
 import { HorizonDiagram } from '../map/HorizonDiagram';
 import { C, F } from '../theme';
 
+const IGN_URL = 'https://eclipses.ign.es/como-observar-eclipses.html';
+
 /** Fallback bajo: mejor recortar un instante que asomar la cronología. */
 const SHEET_MIN_FALLBACK = 140;
 /** Mínimo de mapa visible con la hoja estirada */
@@ -266,7 +268,11 @@ export function MapScreen({
             </View>
           </View>
         </View>
-        <ScrollView style={s.sheetBody} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={s.sheetBody}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={s.sheetBodyContent}
+        >
           <View style={s.divider} />
           <View style={s.cronoHeader}>
             <Text style={[s.cronoTitle, { flex: 1 }]} numberOfLines={1}>
@@ -299,10 +305,13 @@ export function MapScreen({
           {/* Cierre de la cronología: cuándo mirar ya está resuelto arriba; aquí, cómo mirar */}
           <View style={s.safetyCard}>
             <Text style={s.safetyTitle}>
-              {t('settings.safety.title')}
+              {t('map.safety.title')}
               <Text style={{ color: C.danger }}>ISO 12312-2</Text>
             </Text>
-            <Text style={s.safetyBody}>{t('settings.safety.body')}</Text>
+            <Text style={s.safetyBody}>{t('map.safety.body')}</Text>
+            <Pressable onPress={() => Linking.openURL(IGN_URL).catch(() => {})} accessibilityRole="link">
+              <Text style={s.safetyLink}>{t('map.safety.guide')}</Text>
+            </Pressable>
             {!!glassesUrl && (
               <>
                 <Pressable
@@ -312,9 +321,9 @@ export function MapScreen({
                   }}
                   accessibilityRole="link"
                 >
-                  <Text style={s.safetyLink}>{t('settings.safety.buy')}</Text>
+                  <Text style={s.safetyLink}>{t('map.safety.buy')}</Text>
                 </Pressable>
-                <Text style={s.affiliateNote}>{t('settings.safety.affiliate')}</Text>
+                <Text style={s.affiliateNote}>{t('map.safety.affiliate')}</Text>
               </>
             )}
           </View>
@@ -437,6 +446,8 @@ const s = StyleSheet.create({
   },
   sheetPeekBody: { paddingHorizontal: 24, paddingBottom: 14 },
   sheetBody: { paddingHorizontal: 24 },
+  /** Aire final: las tarjetas no deben morir pegadas al borde de la hoja */
+  sheetBodyContent: { paddingBottom: 32 },
   statsRow: { flexDirection: 'row', gap: 10, marginTop: 4, alignItems: 'center' },
   stat: { flex: 1, gap: 2 },
   statValue: { fontFamily: F.bold, fontSize: 22, color: C.text, fontVariant: ['tabular-nums'] },

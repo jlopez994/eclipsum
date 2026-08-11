@@ -11,15 +11,11 @@ import type { AlertSound } from '../../lib/prefs';
 import { DRILL_PARTIAL, DRILL_TOTALITY, type DrillConfig } from '../../lib/drill';
 import { C, F } from '../theme';
 
-const IGN_URL = 'https://eclipses.ign.es/como-observar-eclipses.html';
-
 interface SettingsScreenProps {
   permissions: { location: boolean; notifications: boolean };
   alertSound: AlertSound;
   /** Entrada activa resuelta por App (única fuente de verdad; no leer el catálogo aquí) */
   activeEclipse: EclipseEntry;
-  /** URL de gafas certificadas (afiliado, vía Remote Config); vacío = botón oculto */
-  glassesUrl?: string;
   /** URL de donaciones (Buy Me a Coffee, vía Remote Config); vacío = sección oculta */
   donateUrl?: string;
   onSoundChange: (sound: AlertSound) => void;
@@ -111,7 +107,6 @@ function languageOptions(): { id: Lang | ''; label: string; a11y: string }[] {
 export function SettingsScreen({
   permissions,
   alertSound,
-  glassesUrl,
   donateUrl,
   onSoundChange,
   onDemoEclipse,
@@ -156,28 +151,6 @@ export function SettingsScreen({
       <Text style={[s.title, { paddingTop: insets.top + 14 }]}>{t('settings.title')}</Text>
       <ScrollView style={s.body} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 22, paddingBottom: 36 }}>
         <Text style={s.hint}>{t('settings.hint')}</Text>
-
-        <View>
-          <Text style={[s.section, { color: C.danger }]}>{t('settings.safety')}</Text>
-          <View style={s.safetyCard}>
-            <Text style={s.safetyTitle}>
-              {t('settings.safety.title')}
-              <Text style={{ color: C.danger }}>ISO 12312-2</Text>
-            </Text>
-            <Text style={s.safetyBody}>{t('settings.safety.body')}</Text>
-            <Pressable onPress={() => Linking.openURL(IGN_URL)}>
-              <Text style={s.safetyLink}>{t('settings.safety.guide')}</Text>
-            </Pressable>
-            {!!glassesUrl && (
-              <>
-                <Pressable onPress={() => Linking.openURL(glassesUrl)}>
-                  <Text style={s.safetyLink}>{t('settings.safety.buy')}</Text>
-                </Pressable>
-                <Text style={s.affiliateNote}>{t('settings.safety.affiliate')}</Text>
-              </>
-            )}
-          </View>
-        </View>
 
         <View>
           <Text style={s.section}>{t('settings.permissions')}</Text>
@@ -335,7 +308,7 @@ export function SettingsScreen({
                   Linking.openURL(donateUrl);
                 }}
               >
-                <Text style={s.safetyLink}>{t('settings.support.button')}</Text>
+                <Text style={s.linkCta}>{t('settings.support.button')}</Text>
               </Pressable>
             </View>
           </View>
@@ -477,17 +450,7 @@ const s = StyleSheet.create({
   langChipTxtOn: { color: C.corona },
   activeTag: { fontFamily: F.medium, fontSize: 12, color: C.ok },
   deniedTag: { fontFamily: F.medium, fontSize: 12, color: C.danger },
-  safetyCard: {
-    borderWidth: 1,
-    borderColor: 'rgba(255,107,94,0.4)',
-    borderRadius: 18,
-    padding: 18,
-    backgroundColor: 'rgba(255,107,94,0.06)',
-  },
-  safetyTitle: { fontFamily: F.bold, fontSize: 16, lineHeight: 21, color: C.text },
-  safetyBody: { fontFamily: F.regular, fontSize: 13, lineHeight: 19, color: C.dim, marginTop: 8 },
-  safetyLink: { fontFamily: F.bold, fontSize: 13, letterSpacing: 1, color: C.corona, marginTop: 12 },
-  affiliateNote: { fontFamily: F.regular, fontSize: 11, color: C.dim, marginTop: 4 },
+  linkCta: { fontFamily: F.bold, fontSize: 13, letterSpacing: 1, color: C.corona, marginTop: 12 },
   aboutValue: { fontFamily: F.medium, fontSize: 13, color: C.dim },
   upcomingActive: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 2, color: C.corona },
   upcomingNote: { fontFamily: F.regular, fontSize: 11, lineHeight: 16, color: C.dim, marginTop: 8 },
