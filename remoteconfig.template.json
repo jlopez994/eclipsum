@@ -37,7 +37,7 @@
     },
     "latest_version_code": {
       "defaultValue": {
-        "value": "23"
+        "value": "25"
       },
       "description": "android.versionCode de la última APK publicada (lo escribe el workflow release-apk). La app avisa si el suyo es menor. 0 = sin aviso.",
       "valueType": "STRING"
