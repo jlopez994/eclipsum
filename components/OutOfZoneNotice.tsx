@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { t } from '../lib/i18n';
 import { C, F } from './theme';
@@ -16,6 +15,8 @@ interface OutOfZoneNoticeProps {
    */
   otherLabel: string | null;
   onGoToOther: () => void;
+  /** Deshace la elección imposible: App devuelve el puesto al que sigue en pantalla */
+  onClose: () => void;
   top: number;
 }
 
@@ -23,9 +24,10 @@ interface OutOfZoneNoticeProps {
  * Velo semiopaco sobre el mapa: explica que el puesto elegido no ve el eclipse activo
  * y, si sabemos cuál sí se ve desde ahí, ofrece saltar a él.
  *
- * Se cierra con la ✕ para dejar ver el mapa. Detrás quedan los datos del último puesto
- * válido —nunca los del elegido—: sus cifras serían de otro eclipse. App lo remonta con
- * `key` al cambiar de puesto, así que un puesto nuevo vuelve a avisar aunque cerraras el anterior.
+ * Detrás quedan los datos del último puesto válido —nunca los del elegido—: sus cifras
+ * serían de otro eclipse. La ✕ deshace la elección (onClose), así que el puesto guardado
+ * vuelve a ser el que se ve; sin eso quedaría una selección fantasma que reaparecería al
+ * arrancar. App lo remonta con `key` al cambiar de puesto: uno nuevo vuelve a avisar.
  */
 export function OutOfZoneNotice({
   place,
@@ -33,17 +35,15 @@ export function OutOfZoneNotice({
   keepingPlace,
   otherLabel,
   onGoToOther,
+  onClose,
   top,
 }: OutOfZoneNoticeProps) {
-  const [closed, setClosed] = useState(false);
-  if (closed) return null;
-
   return (
     <View style={s.scrim}>
       <View style={[s.card, { marginTop: top }]}>
         <View style={s.headRow}>
           <Text style={s.kicker}>{t('app.outOfZone.title')}</Text>
-          <Pressable onPress={() => setClosed(true)} hitSlop={12} accessibilityLabel={t('sun.close')}>
+          <Pressable onPress={onClose} hitSlop={12} accessibilityLabel={t('sun.close')}>
             <Text style={s.close}>✕</Text>
           </Pressable>
         </View>

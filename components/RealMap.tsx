@@ -25,6 +25,8 @@ interface RealMapProps {
 export interface RealMapHandle {
   /** Vuela a unas coordenadas (botón GPS); el zoom lo decide el mapa (mín. útil local) */
   flyTo: (lat: number, lon: number) => void;
+  /** Cierra el globo de información sin esperar a que se agote su temporizador */
+  closePopup: () => void;
 }
 
 /** Contenido del popup de un punto tocado; se calcula en el lado RN (motor memoizado). */
@@ -103,6 +105,9 @@ export const RealMap = forwardRef<RealMapHandle, RealMapProps>(function RealMap(
         webRef.current?.injectJavaScript(
           `map.flyTo([${lat}, ${lon}], Math.max(map.getZoom(), 8), { duration: 0.8 }); true;`,
         );
+      },
+      closePopup: () => {
+        webRef.current?.injectJavaScript('window.eclipsumHidePopup && window.eclipsumHidePopup(); true;');
       },
     }),
     [],
@@ -277,6 +282,11 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
     L.popup({ closeButton: false }).setLatLng([i.lat, i.lon]).setContent(h).openOn(map);
     clearTimeout(popupTimer);
     popupTimer = setTimeout(function () { map.closePopup(); }, POPUP_HIDE_MS);
+  };
+  // Cierre desde RN: al tocar cualquier control de la app el globo estorba
+  window.eclipsumHidePopup = function () {
+    clearTimeout(popupTimer);
+    map.closePopup();
   };
   window.eclipsumPick = function (lat, lon) {
     map.closePopup();

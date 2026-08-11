@@ -57,10 +57,10 @@ const DIVERGENCE_KM = 20;
 
 /** Puesto que se está pintando, con sus circunstancias ya calculadas. */
 interface ShownSpot {
-  place: string;
-  lat: number;
-  lon: number;
+  spot: Spot;
   eclipse: LocalEclipse;
+  /** Día civil del eclipse con el que se calculó: al cambiar de eclipse deja de valer */
+  day: string;
 }
 
 function inFineClockWindow(eclipse: LocalEclipse, t: number): boolean {
@@ -158,22 +158,32 @@ function AppInner() {
   const outOfZone = localEclipse !== null && !isActiveEclipse(localEclipse);
   const eclipse = outOfZone ? null : localEclipse;
 
+  /** El puesto elegido como Spot, venga de prefs o del GPS mientras se siembra. */
+  const chosenSpot: Spot | null = active
+    ? activeSpot ?? { name: active.place, lat: active.lat, lon: active.lon, origin: active.origin }
+    : null;
+
   // Último puesto con circunstancias reales: es lo que sigue pintándose detrás del aviso
-  // cuando el nuevo cae fuera de zona. Se guarda en un ref (y no en estado) porque solo
-  // se lee al renderizar el caso raro: mantenerlo en estado provocaría un render de más.
+  // cuando el nuevo cae fuera de zona. En un ref y no en estado porque solo se lee al
+  // renderizar el caso raro: mantenerlo en estado provocaría un render de más.
   const lastValidRef = useRef<ShownSpot | null>(null);
   useEffect(() => {
-    if (eclipse && active) {
-      lastValidRef.current = { place: active.place, lat: active.lat, lon: active.lon, eclipse };
+    if (eclipse && chosenSpot) {
+      lastValidRef.current = { spot: chosenSpot, eclipse, day: activeCatalog.civilDate };
     }
-  }, [eclipse, active?.lat, active?.lon, active?.place]);
+  }, [eclipse, chosenSpot?.lat, chosenSpot?.lon, chosenSpot?.name, activeCatalog.civilDate]);
+
+  // El respaldo caduca al cambiar de eclipse: enseñar cifras de 2026 con el activo en 2028
+  // sería la misma mentira que estamos evitando
+  const fallback =
+    lastValidRef.current?.day === activeCatalog.civilDate ? lastValidRef.current : null;
 
   /** Lo que se pinta: el puesto elegido si sus datos valen, o el último que valió. */
   const shown: ShownSpot | null =
-    eclipse && active
-      ? { place: active.place, lat: active.lat, lon: active.lon, eclipse }
+    eclipse && chosenSpot
+      ? { spot: chosenSpot, eclipse, day: activeCatalog.civilDate }
       : outOfZone
-        ? lastValidRef.current
+        ? fallback
         : null;
 
   // Eclipse que SÍ se ve desde el puesto elegido: es justo el que devuelve el motor cuando
@@ -281,18 +291,29 @@ function AppInner() {
   // Velo con la explicación; `key` por puesto para que un puesto nuevo vuelva a avisar
   // aunque cerraras el anterior. Solo se ofrece saltar si el otro eclipse está en catálogo.
   const outOfZoneNotice =
-    outOfZone && active ? (
+    outOfZone && chosenSpot && shown ? (
       <OutOfZoneNotice
-        key={`${active.lat},${active.lon}`}
-        place={cleanPlaceLabel(active.place)}
+        key={`${chosenSpot.lat},${chosenSpot.lon}`}
+        place={cleanPlaceLabel(chosenSpot.name)}
         date={activeCatalog.shortDateLabel}
-        keepingPlace={shown ? cleanPlaceLabel(shown.place) : null}
+        keepingPlace={cleanPlaceLabel(shown.spot.name)}
         otherLabel={otherEclipse?.label ?? null}
+        // El puesto viaja con el salto: el contexto se guarda por día civil, y sin esto
+        // el eclipse nuevo nacería sin puesto y la siembra lo rellenaría con el GPS
         onGoToOther={() => {
           if (!otherEclipse) return;
           track('eclipse_selected', { day: otherEclipse.civilDate, from: 'out_of_zone' });
-          onPrefsChange({ ...prefs, selectedEclipseDay: otherEclipse.civilDate });
+          onPrefsChange(
+            withContext(
+              { ...prefs, selectedEclipseDay: otherEclipse.civilDate },
+              otherEclipse.civilDate,
+              { spot: chosenSpot },
+            ),
+          );
         }}
+        // Cerrar = deshacer la elección imposible. Si no, el puesto se quedaría guardado
+        // en prefs aunque la pantalla enseñe otro, y volvería a saltar al siguiente arranque
+        onClose={() => onPrefsChange(withContext(prefs, activeCatalog.civilDate, { spot: shown.spot }))}
         top={insets.top + 12}
       />
     ) : null;
@@ -305,7 +326,7 @@ function AppInner() {
 
   // Distancia GPS ↔ puesto PINTADO (no el elegido): el marcador «TÚ» y el aviso del día D
   // se miden contra lo que hay en pantalla, o dirían una cosa y el mapa otra
-  const spotDistanceKm = geo && shown ? haversineKm(geo.lat, geo.lon, shown.lat, shown.lon) : null;
+  const spotDistanceKm = geo && shown ? haversineKm(geo.lat, geo.lon, shown.spot.lat, shown.spot.lon) : null;
 
   const divergenceKm = (() => {
     if (spotDistanceKm === null || !activeSpot || !eclipse) return null;
@@ -359,18 +380,18 @@ function AppInner() {
           (shown ? (
             <MapScreen
               eclipse={shown.eclipse}
-              place={cleanPlaceLabel(shown.place)}
+              place={cleanPlaceLabel(shown.spot.name)}
               hereLabel={hereLabel}
               cloudPct={cloud.pct}
               cloudAgeHours={cloud.ageH}
               cloudLoading={cloud.loading}
               totality={totality}
               now={now}
-              spotCoords={{ lat: shown.lat, lon: shown.lon }}
+              spotCoords={{ lat: shown.spot.lat, lon: shown.spot.lon }}
               hereCoords={hereLabel !== null && geo ? { lat: geo.lat, lon: geo.lon } : null}
               gpsCoords={geo ? { lat: geo.lat, lon: geo.lon } : null}
               onOpenSelector={() => setSelectorOpen(true)}
-              onOpenMaps={() => openInMaps(shown.lat, shown.lon, shown.place)}
+              onOpenMaps={() => openInMaps(shown.spot.lat, shown.spot.lon, shown.spot.name)}
               onSelectMapPoint={selectMapPoint}
               divergenceKm={divergenceKm}
               onRecalcHere={recalcHere}

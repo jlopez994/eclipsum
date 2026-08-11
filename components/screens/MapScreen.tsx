@@ -20,6 +20,7 @@ import { fmtFixed1, t, type I18nKey } from '../../lib/i18n';
 import { bearingLabel, type TotalityDirection } from '../../lib/totality';
 import { track, type Sponsor } from '../../lib/firebase';
 import { cloudLevel, windyEclipseCloudsUrl } from '../../lib/weather';
+import { animateNextLayout } from '../../lib/anim';
 import { useSheet } from '../../hooks/useSheet';
 import { Countdown } from '../Countdown';
 import { RealMap, type RealMapHandle } from '../RealMap';
@@ -91,6 +92,16 @@ export function MapScreen({
   const { height: winH } = useWindowDimensions();
   const [sheetMin, setSheetMin] = useState(SHEET_MIN_FALLBACK);
   const [finderOpen, setFinderOpen] = useState(false);
+  const [compassOpen, setCompassOpen] = useState(false);
+
+  /**
+   * Tocar cualquier control de la app cierra el globo del mapa. Va en la fase de captura
+   * y devuelve false: observa el toque sin robárselo al Pressable que lo reciba.
+   */
+  const dismissMapPopup = () => {
+    mapRef.current?.closePopup();
+    return false;
+  };
   const mapRef = useRef<RealMapHandle>(null);
 
   // Fundido al cambiar de puesto: los datos nuevos entran suaves en vez de saltar
@@ -191,7 +202,10 @@ export function MapScreen({
       {gpsCoords && (
         <Pressable
           style={[s.gpsBtn, { bottom: sheetMin + 14 }]}
-          onPress={() => mapRef.current?.flyTo(gpsCoords.lat, gpsCoords.lon)}
+          onPress={() => {
+            mapRef.current?.closePopup();
+            mapRef.current?.flyTo(gpsCoords.lat, gpsCoords.lon);
+          }}
           hitSlop={8}
           accessibilityLabel={t('map.recenter')}
         >
@@ -204,7 +218,11 @@ export function MapScreen({
       )}
 
       {/* Overlay superior: chips + lugares + aviso divergencia */}
-      <View style={[s.topOverlay, { top: insets.top + 8 }]} pointerEvents="box-none">
+      <View
+        style={[s.topOverlay, { top: insets.top + 8 }]}
+        pointerEvents="box-none"
+        onStartShouldSetResponderCapture={dismissMapPopup}
+      >
         <View style={s.chipsRow} pointerEvents="box-none">
           <View style={s.chipGroup}>
             <Pressable style={s.chipLocation} onPress={onOpenSelector}>
@@ -219,10 +237,36 @@ export function MapScreen({
           </View>
           <CompassChip
             targetAzimuthDeg={maxEvent?.azimuth ?? 270}
-            targetAltitudeDeg={maxEvent?.altitude}
-            onOpenFinder={maxEvent ? () => setFinderOpen(true) : undefined}
+            expanded={compassOpen}
+            onPress={
+              maxEvent
+                ? () => {
+                    animateNextLayout();
+                    setCompassOpen((v) => !v);
+                  }
+                : undefined
+            }
           />
         </View>
+        {/* Fuera del chip a propósito: aquí el ancho disponible es el de la pantalla,
+            así el panel se ajusta a su texto en vez de encogerse a los 40 px de la brújula */}
+        {compassOpen && maxEvent && (
+          <View style={s.compassPanelRow}>
+            <View style={s.compassPanel}>
+              <Text style={s.compassPanelText}>
+                {maxEvent.altitude > 0
+                  ? t('map.compass.height', { deg: Math.round(maxEvent.altitude) })
+                  : t('map.compass.belowHorizon')}
+              </Text>
+              {/* El visor solo tiene sentido con el sol sobre el horizonte */}
+              {maxEvent.altitude > 0 && (
+                <Pressable onPress={() => setFinderOpen(true)} hitSlop={6}>
+                  <Text style={s.compassPanelLink}>{t('map.compass.finder')}</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        )}
         {divergenceKm !== null && (
           <View style={s.divergence}>
             <Text style={s.divergenceText}>{t('map.divergence', { km: Math.round(divergenceKm) })}</Text>
@@ -234,7 +278,7 @@ export function MapScreen({
       </View>
 
       {/* Hoja inferior: peek medido = colapsada (solo countdown + stats) */}
-      <Animated.View style={[s.sheet, { height }]}>
+      <Animated.View style={[s.sheet, { height }]} onStartShouldSetResponderCapture={dismissMapPopup}>
         <View onLayout={onPeekLayout}>
           <View {...pan.panHandlers} style={s.handleArea}>
             <View style={s.handle} />
@@ -422,6 +466,19 @@ const s = StyleSheet.create({
     maxWidth: 260,
   },
   chipText: { fontFamily: F.semibold, fontSize: 13, color: C.text, flexShrink: 1 },
+  /** Alineado a la derecha bajo la brújula; el panel se ajusta a su propio texto */
+  compassPanelRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 20 },
+  compassPanel: {
+    alignItems: 'flex-end',
+    backgroundColor: 'rgba(21,21,30,0.92)',
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  compassPanelText: { fontFamily: F.semibold, fontSize: 11.5, color: C.text },
+  compassPanelLink: { fontFamily: F.bold, fontSize: 10, letterSpacing: 1, color: C.corona, marginTop: 6 },
   chipChevron: { fontFamily: F.semibold, fontSize: 12, color: C.dim, marginLeft: 2 },
   cronoHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   mapsLink: {
