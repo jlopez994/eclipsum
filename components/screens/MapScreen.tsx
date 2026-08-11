@@ -64,9 +64,6 @@ interface MapScreenProps {
   onOpenMaps: () => void;
   /** Punto tocado en el mapa real elegido como puesto de observación */
   onSelectMapPoint: (p: { lat: number; lon: number }) => void;
-  /** km entre GPS real y spot activo el día del eclipse; null = sin aviso */
-  divergenceKm: number | null;
-  onRecalcHere: () => void;
   /** Patrocinador del eclipse (Remote Config); null = sin tarjeta de patrocinio */
   sponsor?: Sponsor | null;
   /** URL de gafas certificadas (afiliado, vía Remote Config); vacío = solo el aviso, sin enlace */
@@ -88,8 +85,6 @@ export function MapScreen({
   onOpenSelector,
   onOpenMaps,
   onSelectMapPoint,
-  divergenceKm,
-  onRecalcHere,
   sponsor,
   glassesUrl,
 }: MapScreenProps) {
@@ -270,14 +265,6 @@ export function MapScreen({
             paused={finderOpen}
           />
         </View>
-        {divergenceKm !== null && (
-          <View style={s.divergence}>
-            <Text style={s.divergenceText}>{t('map.divergence', { km: Math.round(divergenceKm) })}</Text>
-            <Text style={s.divergenceAction} onPress={onRecalcHere}>
-              {t('map.recalc')}
-            </Text>
-          </View>
-        )}
       </View>
 
       {/* Hoja inferior: peek medido = colapsada (solo countdown + stats) */}
@@ -377,17 +364,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
   },
-  divergence: {
-    marginHorizontal: 20,
-    backgroundColor: 'rgba(255,107,94,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,107,94,0.5)',
-    borderRadius: 12,
-    padding: 12,
-    gap: 4,
-  },
-  divergenceText: { fontFamily: F.semibold, fontSize: 13, color: C.text },
-  divergenceAction: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1, color: C.danger },
   chipGroup: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1, minWidth: 0 },
   chipLocation: {
     flexDirection: 'row',

@@ -15,6 +15,10 @@ interface NoticeStackProps {
   /** El eclipse está en curso y el usuario cerró el modo: camino de vuelta */
   showBackToMode: boolean;
   onBackToMode: () => void;
+  /** km entre el GPS y el puesto elegido el día D; null = sin discrepancia */
+  divergenceKm: number | null;
+  /** Hace de tu posición el puesto: recalcula cronología, nubes y alertas a la vez */
+  onRecalcHere: () => void;
   /** Desplazamiento superior (safe area) */
   top: number;
 }
@@ -39,6 +43,8 @@ export function NoticeStack({
   onDonateResolve,
   showBackToMode,
   onBackToMode,
+  divergenceKm,
+  onRecalcHere,
   top,
 }: NoticeStackProps) {
   const [messageHidden, setMessageHidden] = useState(false);
@@ -46,28 +52,40 @@ export function NoticeStack({
 
   const showMessage = message !== '' && !messageHidden;
   const showUpdate = updateUrl !== '' && !updateHidden;
-  // El de volver al modo eclipse manda sobre todos: mientras el evento ocurre no hay nada
-  // más urgente en pantalla, y solo dura la ventana del eclipse
-  const notice = showBackToMode
-    ? 'mode'
-    : showMessage
-      ? 'info'
-      : showUpdate
-        ? 'update'
-        : showDonate
-          ? 'donate'
-          : null;
+  // La divergencia va primero: mientras el puesto no sea el correcto, TODO lo que hay
+  // debajo —cronología, nubes, alertas y el propio modo eclipse— describe otro sitio.
+  // Después, volver al modo: mientras el evento ocurre no hay nada más urgente.
+  const notice =
+    divergenceKm !== null
+      ? 'diverge'
+      : showBackToMode
+        ? 'mode'
+        : showMessage
+          ? 'info'
+          : showUpdate
+            ? 'update'
+            : showDonate
+              ? 'donate'
+              : null;
   if (notice === null) return null;
 
   return (
     <View style={[s.stack, { top: top + 8 }]} pointerEvents="box-none">
+      {/* Sin ✕: es un dato equivocado en pantalla, no una notificación que se descarte */}
+      {notice === 'diverge' && (
+        <Notice tone="warn" text={t('map.divergence', { km: Math.round(divergenceKm ?? 0) })}>
+          <NoticeLink label={t('map.recalc')} onPress={onRecalcHere} danger />
+        </Notice>
+      )}
       {/* Sin ✕: cerrarlo ya se hizo al salir del modo, y el evento sigue ocurriendo */}
       {notice === 'mode' && (
         <Notice tone="action" text={t('app.eclipseRunning')}>
           <NoticeLink label={t('app.backToMode')} onPress={onBackToMode} />
         </Notice>
       )}
-      {notice === 'info' && <Notice tone="info" text={message} onClose={() => setMessageHidden(true)} />}
+      {notice === 'info' && (
+        <Notice tone="info" text={message} onClose={() => setMessageHidden(true)} />
+      )}
       {notice === 'update' && (
         <Notice tone="action" text={t('app.updateBanner')} onClose={() => setUpdateHidden(true)}>
           <NoticeLink

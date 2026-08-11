@@ -470,6 +470,8 @@ function AppInner() {
         onDonateResolve={resolveDonate}
         showBackToMode={inEclipseWindow && modeExited}
         onBackToMode={() => setModeExited(false)}
+        divergenceKm={divergenceKm}
+        onRecalcHere={recalcHere}
         top={insets.top}
       />
       <View style={{ flex: 1 }}>
@@ -490,8 +492,6 @@ function AppInner() {
               onOpenSelector={() => setSelectorOpen(true)}
               onOpenMaps={() => openInMaps(shown.spot.lat, shown.spot.lon, shown.spot.name)}
               onSelectMapPoint={selectMapPoint}
-              divergenceKm={divergenceKm}
-              onRecalcHere={recalcHere}
               sponsor={remote.sponsor}
               glassesUrl={remote.glassesUrl}
             />

@@ -5,10 +5,10 @@ import { C, F } from './theme';
 
 /**
  * Aviso flotante de la parte superior. Escala de intensidad:
- * `info` = te cuento algo · `action` = puedes hacer algo · `quiet` = te pido algo.
- * (El rojo de atención vive en el mapa, pegado al dato que lo provoca.)
+ * `info` = te cuento algo · `action` = puedes hacer algo · `warn` = lo que estás viendo
+ * no vale · `quiet` = te pido algo.
  */
-export type NoticeTone = 'info' | 'action' | 'quiet';
+export type NoticeTone = 'info' | 'action' | 'warn' | 'quiet';
 
 /**
  * Fondos OPACOS: los avisos flotan sobre el mapa y un tinte translúcido dejaba pasar
@@ -18,6 +18,7 @@ export type NoticeTone = 'info' | 'action' | 'quiet';
 const TONE: Record<NoticeTone, { bg: string; border: string; color: string; font: string }> = {
   info: { bg: '#1D1A33', border: 'rgba(124,108,255,0.45)', color: C.text, font: F.semibold },
   action: { bg: '#2B2116', border: 'rgba(255,184,77,0.5)', color: C.text, font: F.semibold },
+  warn: { bg: '#2E1A18', border: 'rgba(255,107,94,0.55)', color: C.text, font: F.semibold },
   quiet: { bg: C.surface, border: C.border, color: C.dim, font: F.regular },
 };
 
@@ -64,14 +65,17 @@ export function NoticeLink({
   label,
   onPress,
   soft,
+  danger,
 }: {
   label: string;
   onPress: () => void;
   soft?: boolean;
+  /** Acción que corrige un dato equivocado; hereda el rojo del aviso */
+  danger?: boolean;
 }) {
   return (
     <Text
-      style={soft ? s.linkSoft : s.link}
+      style={[soft ? s.linkSoft : s.link, danger && { color: C.danger }]}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
