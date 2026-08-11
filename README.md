@@ -101,7 +101,8 @@ Deployment lives in **GitHub Actions** (`.github/workflows/release-apk.yml`): wh
 | `eclipse_catalog` | JSON of extra eclipses (with optional `band` path) without a release |
 | `glasses_url` | ISO 12312-2 glasses affiliate; empty = button hidden |
 | `sponsor` | `{"name","url","tagline"?}` sponsor of the active eclipse |
-| `latest_version_code` / `latest_apk_url` | In-app update notice |
+| `latest_version_code` / `latest_apk_url` | In-app update notice, stable channel |
+| `latest_beta_version_code` / `latest_beta_apk_url` | Same for the beta channel. The URL points at the asset of that pre-release's own tag, since a pre-release does not move `releases/latest`. Only read by users who picked "betas too" in Settings |
 | `suggested_spots` | `[{"name","lat","lon"}]` curated spots (max 6) for the picker; only those inside the active eclipse's band are shown, `[]` hides the section |
 
 Parameter descriptions: max 256 characters (RC limit).
