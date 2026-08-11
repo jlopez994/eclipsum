@@ -195,13 +195,13 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
     }).addTo(map);
 
     // Límites reales de la banda (los cierres verticales del polígono son artefactos del dataset)
-    L.polyline(D.north, { interactive: false, color: '${C.totality}', weight: 1, opacity: 0.5 }).addTo(map);
-    L.polyline(D.south, { interactive: false, color: '${C.totality}', weight: 1, opacity: 0.5 }).addTo(map);
+    L.polyline(D.north, { interactive: false, color: '${C.totality}', weight: 0.8, opacity: 0.22 }).addTo(map);
+    L.polyline(D.south, { interactive: false, color: '${C.totality}', weight: 0.8, opacity: 0.22 }).addTo(map);
 
     // Línea central con glow: halos anchos translúcidos bajo la línea fina (Leaflet no tiene blur)
-    L.polyline(D.center, { interactive: false, color: '${C.violet}', weight: 9, opacity: 0.1 }).addTo(map);
-    L.polyline(D.center, { interactive: false, color: '${C.violet}', weight: 4.5, opacity: 0.22 }).addTo(map);
-    L.polyline(D.center, { interactive: false, color: '${C.violet}', weight: 1.5, opacity: 0.9 }).addTo(map);
+    L.polyline(D.center, { interactive: false, color: '${C.violet}', weight: 12, opacity: 0.045 }).addTo(map);
+    L.polyline(D.center, { interactive: false, color: '${C.violet}', weight: 6, opacity: 0.07 }).addTo(map);
+    L.polyline(D.center, { interactive: false, color: '${C.violet}', weight: 1.2, opacity: 0.45 }).addTo(map);
   }
 
   var ptLayer = L.layerGroup().addTo(map);
@@ -222,12 +222,12 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
     if (d.here) dot(d.here, false);
 
     // Encuadre abierto SIEMPRE (también al marcar destino): tramo de banda alrededor
-    // del puesto (±12° de lon, robusto al antimeridiano) + marcadores. Sin banda
-    // cerca, vista regional del puesto.
+    // del puesto (±BAND_LON_SPAN de lon, robusto al antimeridiano) + marcadores.
+    // Sin banda cerca, vista regional del puesto.
     var seg = [];
     if (D.polygon) {
       seg = D.north.concat(D.south).filter(function (p) {
-        return Math.abs(((p[1] - d.spot.lon + 540) % 360) - 180) <= 12;
+        return Math.abs(((p[1] - d.spot.lon + 540) % 360) - 180) <= BAND_LON_SPAN;
       });
     }
     var target = seg.concat(pts);
@@ -243,6 +243,8 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
     }
   }
   var DEFAULT_ZOOM = 6;
+  /** Grados de longitud de banda a cada lado del puesto en el encuadre (ancho ≈ Iberia) */
+  var BAND_LON_SPAN = 5;
   draw(D, false);
   window.eclipsumUpdate = function (d) { draw(d, true); };
 
