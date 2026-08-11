@@ -183,11 +183,9 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
   .pop-title { font: 700 12px system-ui; letter-spacing: 1.2px; text-transform: uppercase; }
   .pop-line { font: 500 11.5px system-ui; color: ${C.dim}; margin-top: 3px; }
   .pop-warn { font: 600 11.5px system-ui; color: ${C.danger}; margin-top: 3px; }
-  /* CTA con forma de botón: en un popup pequeño el texto suelto no se lee como pulsable */
   .pop-btn { font: 700 11px system-ui; letter-spacing: 1.2px; color: ${C.corona}; margin-top: 10px;
-    padding: 7px 0; text-align: center; border: 1px solid rgba(255,184,77,0.45);
-    background: rgba(255,184,77,0.10); border-radius: 9px; }
-  .pop-btn:active { background: rgba(255,184,77,0.2); }
+    padding: 2px 0; }
+  .pop-btn:active { opacity: 0.6; }
 </style>
 </head><body>
 <div id="map"></div>
@@ -204,17 +202,18 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
     // y el WebView no pinta el focus ring sobre el SVG de la banda.
     // Un solo relleno plano: capas superpuestas producen escalones visibles.
     L.polygon(D.polygon, {
-      interactive: false, stroke: false, fillColor: '${C.totality}', fillOpacity: 0.05,
+      interactive: false, stroke: false, fillColor: '${C.totality}', fillOpacity: 0.11,
     }).addTo(map);
 
     // Límites reales de la banda (los cierres verticales del polígono son artefactos del dataset)
-    L.polyline(D.north, { interactive: false, color: '${C.totality}', weight: 0.8, opacity: 0.22 }).addTo(map);
-    L.polyline(D.south, { interactive: false, color: '${C.totality}', weight: 0.8, opacity: 0.22 }).addTo(map);
+    L.polyline(D.north, { interactive: false, color: '${C.totality}', weight: 1.1, opacity: 0.38 }).addTo(map);
+    L.polyline(D.south, { interactive: false, color: '${C.totality}', weight: 1.1, opacity: 0.38 }).addTo(map);
 
-    // Línea central con glow: halos anchos translúcidos bajo la línea fina (Leaflet no tiene blur)
+    // Línea central con glow: halos anchos translúcidos bajo la línea fina (Leaflet no tiene blur).
+    // Más tenue que los bordes: la banda entera vale, el centro solo marca duración máxima.
     L.polyline(D.center, { interactive: false, color: '${C.violet}', weight: 12, opacity: 0.045 }).addTo(map);
     L.polyline(D.center, { interactive: false, color: '${C.violet}', weight: 6, opacity: 0.07 }).addTo(map);
-    L.polyline(D.center, { interactive: false, color: '${C.violet}', weight: 1.2, opacity: 0.45 }).addTo(map);
+    L.polyline(D.center, { interactive: false, color: '${C.violet}', weight: 1.2, opacity: 0.32 }).addTo(map);
   }
 
   var ptLayer = L.layerGroup().addTo(map);
