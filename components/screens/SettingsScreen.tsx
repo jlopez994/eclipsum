@@ -129,41 +129,25 @@ export function SettingsScreen({
       <ScrollView style={s.body} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 22, paddingBottom: 36 }}>
         <Text style={s.hint}>{t('settings.hint')}</Text>
 
-        {!!donateUrl && (
-          <View>
-            <Text style={s.section}>{t('settings.support')}</Text>
-            <View style={[s.card, { padding: 18 }]}>
-              <Text style={s.aboutNote}>{t('settings.support.body')}</Text>
-              <Pressable
-                onPress={() => {
-                  track('donate_click');
-                  Linking.openURL(donateUrl);
-                }}
-              >
-                <Text style={s.safetyLink}>{t('settings.support.button')}</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
-
         <View>
-          <Text style={s.section}>{t('settings.language')}</Text>
-          <View style={s.langWrap}>
-            {languageOptions().map((opt) => {
-              const on = language === opt.id;
-              return (
-                <Pressable
-                  key={opt.id || 'auto'}
-                  onPress={() => onLanguageChange(opt.id)}
-                  style={[s.langChip, on && s.langChipOn]}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
-                  accessibilityLabel={opt.a11y}
-                >
-                  <Text style={[s.langChipTxt, on && s.langChipTxtOn]}>{opt.label}</Text>
+          <Text style={[s.section, { color: C.danger }]}>{t('settings.safety')}</Text>
+          <View style={s.safetyCard}>
+            <Text style={s.safetyTitle}>
+              {t('settings.safety.title')}
+              <Text style={{ color: C.danger }}>ISO 12312-2</Text>
+            </Text>
+            <Text style={s.safetyBody}>{t('settings.safety.body')}</Text>
+            <Pressable onPress={() => Linking.openURL(IGN_URL)}>
+              <Text style={s.safetyLink}>{t('settings.safety.guide')}</Text>
+            </Pressable>
+            {!!glassesUrl && (
+              <>
+                <Pressable onPress={() => Linking.openURL(glassesUrl)}>
+                  <Text style={s.safetyLink}>{t('settings.safety.buy')}</Text>
                 </Pressable>
-              );
-            })}
+                <Text style={s.affiliateNote}>{t('settings.safety.affiliate')}</Text>
+              </>
+            )}
           </View>
         </View>
 
@@ -183,6 +167,38 @@ export function SettingsScreen({
               </Text>
             </View>
           </View>
+        </View>
+
+        <View>
+          <Text style={s.section}>{t('settings.upcoming')}</Text>
+          <View style={s.card}>
+            {upcoming.map((e, i) => {
+              const on = e.civilDate === activeEclipse.civilDate;
+              const sub = [fmtCountdown(e.civilDate), fmtPeak(e), bandOf(e) ? t('settings.upcoming.band') : null]
+                .filter(Boolean)
+                .join(' · ');
+              return (
+                <Pressable
+                  key={e.civilDate}
+                  style={[s.rowItem, i < upcoming.length - 1 && s.rowDivider]}
+                  onPress={() => onSelectEclipse(e.civilDate === upcoming[0]?.civilDate ? '' : e.civilDate)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`${e.label}. ${sub}`}
+                >
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={s.rowTitle}>{e.label}</Text>
+                    <Text style={s.soundHint}>{sub}</Text>
+                  </View>
+                  {on && <Text style={s.upcomingActive}>{t('settings.upcoming.active')}</Text>}
+                  <View style={[s.radio, on && s.radioOn, { marginLeft: 10 }]}>{on && <View style={s.radioDot} />}</View>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={s.upcomingNote}>
+            {t('settings.upcoming.note', { manual: isManualSelection ? t('settings.upcoming.noteManual') : '' })}
+          </Text>
         </View>
 
         <View>
@@ -223,28 +239,6 @@ export function SettingsScreen({
         </View>
 
         <View>
-          <Text style={[s.section, { color: C.danger }]}>{t('settings.safety')}</Text>
-          <View style={s.safetyCard}>
-            <Text style={s.safetyTitle}>
-              {t('settings.safety.title')}
-              <Text style={{ color: C.danger }}>ISO 12312-2</Text>
-            </Text>
-            <Text style={s.safetyBody}>{t('settings.safety.body')}</Text>
-            <Pressable onPress={() => Linking.openURL(IGN_URL)}>
-              <Text style={s.safetyLink}>{t('settings.safety.guide')}</Text>
-            </Pressable>
-            {!!glassesUrl && (
-              <>
-                <Pressable onPress={() => Linking.openURL(glassesUrl)}>
-                  <Text style={s.safetyLink}>{t('settings.safety.buy')}</Text>
-                </Pressable>
-                <Text style={s.affiliateNote}>{t('settings.safety.affiliate')}</Text>
-              </>
-            )}
-          </View>
-        </View>
-
-        <View>
           <Text style={s.section}>{t('settings.drill')}</Text>
           <View style={s.card}>
             <View style={[s.rowItem, s.rowDivider]}>
@@ -280,36 +274,42 @@ export function SettingsScreen({
         </View>
 
         <View>
-          <Text style={s.section}>{t('settings.upcoming')}</Text>
-          <View style={s.card}>
-            {upcoming.map((e, i) => {
-              const on = e.civilDate === activeEclipse.civilDate;
-              const sub = [fmtCountdown(e.civilDate), fmtPeak(e), bandOf(e) ? t('settings.upcoming.band') : null]
-                .filter(Boolean)
-                .join(' · ');
+          <Text style={s.section}>{t('settings.language')}</Text>
+          <View style={s.langWrap}>
+            {languageOptions().map((opt) => {
+              const on = language === opt.id;
               return (
                 <Pressable
-                  key={e.civilDate}
-                  style={[s.rowItem, i < upcoming.length - 1 && s.rowDivider]}
-                  onPress={() => onSelectEclipse(e.civilDate === upcoming[0]?.civilDate ? '' : e.civilDate)}
+                  key={opt.id || 'auto'}
+                  onPress={() => onLanguageChange(opt.id)}
+                  style={[s.langChip, on && s.langChipOn]}
                   accessibilityRole="radio"
                   accessibilityState={{ selected: on }}
-                  accessibilityLabel={`${e.label}. ${sub}`}
+                  accessibilityLabel={opt.a11y}
                 >
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={s.rowTitle}>{e.label}</Text>
-                    <Text style={s.soundHint}>{sub}</Text>
-                  </View>
-                  {on && <Text style={s.upcomingActive}>{t('settings.upcoming.active')}</Text>}
-                  <View style={[s.radio, on && s.radioOn, { marginLeft: 10 }]}>{on && <View style={s.radioDot} />}</View>
+                  <Text style={[s.langChipTxt, on && s.langChipTxtOn]}>{opt.label}</Text>
                 </Pressable>
               );
             })}
           </View>
-          <Text style={s.upcomingNote}>
-            {t('settings.upcoming.note', { manual: isManualSelection ? t('settings.upcoming.noteManual') : '' })}
-          </Text>
         </View>
+
+        {!!donateUrl && (
+          <View>
+            <Text style={s.section}>{t('settings.support')}</Text>
+            <View style={[s.card, { padding: 18 }]}>
+              <Text style={s.aboutNote}>{t('settings.support.body')}</Text>
+              <Pressable
+                onPress={() => {
+                  track('donate_click');
+                  Linking.openURL(donateUrl);
+                }}
+              >
+                <Text style={s.safetyLink}>{t('settings.support.button')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
 
         <View>
           <Text style={s.section}>{t('settings.about')}</Text>
