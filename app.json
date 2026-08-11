@@ -2,7 +2,7 @@
   "expo": {
     "name": "eclipsum",
     "slug": "eclipsum",
-    "version": "b24-beta",
+    "version": "b25",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -20,7 +20,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "versionCode": 24,
+      "versionCode": 25,
       "permissions": [
         "android.permission.USE_EXACT_ALARM"
       ]
