@@ -51,9 +51,19 @@ export function TabBar({ active, onChange }: TabBarProps) {
   return (
     <View style={[s.bar, { height: 68 + insets.bottom, paddingBottom: insets.bottom }]}>
       {TABS.map((t) => {
-        const color = active === t.key ? C.corona : C.dim;
+        const on = active === t.key;
+        const color = on ? C.corona : C.dim;
         return (
-          <Pressable key={t.key} style={s.tab} onPress={() => onChange(t.key)}>
+          // El estado activo iba SOLO en el color: sin rol ni selected, un lector de pantalla
+          // lee las tres pestañas idénticas y no dice en cuál estás
+          <Pressable
+            key={t.key}
+            style={s.tab}
+            onPress={() => onChange(t.key)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: on }}
+            accessibilityLabel={i18nLabel(t.labelKey)}
+          >
             <Icon tab={t.key} color={color} />
             <Text style={[s.label, { color }]}>{i18nLabel(t.labelKey)}</Text>
           </Pressable>

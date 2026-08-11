@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { LocalEclipse } from '../lib/eclipse';
+import { eventAt, type LocalEclipse } from '../lib/eclipse';
 import { cloudCoverAt, fetchCloudCoverCached } from '../lib/weather';
 import { findNearestTotality, type TotalityDirection } from '../lib/totality';
 import { track } from '../lib/firebase';
@@ -28,7 +28,7 @@ export function useSpotData(active: { lat: number; lon: number } | null, eclipse
     track('eclipse_computed', { kind: eclipse.kind, obscuration: Math.round(eclipse.obscuration * 100) });
 
     setCloud({ pct: null, ageH: null, loading: true });
-    const maxEvent = eclipse.events.find((e) => e.key === 'MAX');
+    const maxEvent = eventAt(eclipse, 'MAX');
     fetchCloudCoverCached(active.lat, active.lon).then((c) => {
       if (cancelled) return;
       animateNextLayout();

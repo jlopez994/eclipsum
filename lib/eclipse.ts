@@ -72,15 +72,25 @@ function computeLocalEclipseUncached(
 
   let sunset: Date | null = null;
   try {
-    // Desde 12h antes del pico: el siguiente ocaso es el de la tarde del eclipse
-    const from = new Date(ec.peak.time.date.getTime() - 12 * 3600 * 1000);
-    sunset = SearchRiseSet(Body.Sun, observer, -1, from, 1)?.date ?? null;
+    // Anclado en C1, no en el pico: el ocaso que importa es el primero que corta la
+    // visibilidad del eclipse ya empezado. Con «pico − 12 h» los eclipses de mañana
+    // devolvían la puesta de la VÍSPERA (Azores 2027-08-02: máx 08:32, ocaso 21:01 del día 1).
+    sunset = SearchRiseSet(Body.Sun, observer, -1, ec.partial_begin.time.date, 1)?.date ?? null;
   } catch {
     sunset = null;
   }
 
   return { kind: ec.kind as LocalEclipse['kind'], obscuration: ec.obscuration, events, totalityDurationSec, sunset };
 }
+
+/**
+ * Tolerancia al comparar el día del máximo LOCAL con el día civil del pico GLOBAL.
+ * El máximo local se separa hasta ~2 h del global, así que con el pico global cerca de
+ * medianoche UTC hay observadores que lo ven al día siguiente (anular 2035-03-09, pico
+ * 23:04 UTC: media malla del Pacífico sur da máximo el día 10). Un día de margen es
+ * inequívoco — dos eclipses consecutivos distan ≥29 días.
+ */
+const SAME_ECLIPSE_DAYS = 1;
 
 /**
  * ¿La serie calculada es la del eclipse activo?
@@ -91,14 +101,33 @@ function computeLocalEclipseUncached(
  * Todo lo que pinte datos de un puesto debe filtrar por aquí primero.
  */
 export function isActiveEclipse(eclipse: LocalEclipse): boolean {
-  const day = eclipseDayOf(eclipse);
-  return day !== null && day === getActiveEclipse().civilDate;
+  const max = eventAt(eclipse, 'MAX');
+  if (!max) return false;
+  const activeDay = Date.parse(`${getActiveEclipse().civilDate}T12:00:00Z`);
+  return Math.abs(max.time.getTime() - activeDay) <= (SAME_ECLIPSE_DAYS + 0.5) * 86_400_000;
 }
 
 /** Día civil UTC (AAAA-MM-DD) de la serie calculada, por su máximo; null si no tiene. */
 export function eclipseDayOf(eclipse: LocalEclipse): string | null {
-  const max = eclipse.events.find((e) => e.key === 'MAX');
+  const max = eventAt(eclipse, 'MAX');
   return max ? max.time.toISOString().slice(0, 10) : null;
+}
+
+/** Contacto de la serie por su clave; undefined si este eclipse no lo tiene (parcial: sin C2/C3). */
+export function eventAt(eclipse: LocalEclipse, key: EclipseEvent['key']): EclipseEvent | undefined {
+  return eclipse.events.find((e) => e.key === key);
+}
+
+/** Instantes del primer y el último contacto; null si la serie viene vacía. */
+export function eclipseSpan(eclipse: LocalEclipse): { start: number; end: number } | null {
+  const first = eclipse.events[0];
+  const last = eclipse.events[eclipse.events.length - 1];
+  return first && last ? { start: first.time.getTime(), end: last.time.getTime() } : null;
+}
+
+/** Abreviatura del hito para raíles y cronologías: «MAX» se localiza, el resto es su clave. */
+export function eventShortLabel(key: EclipseEvent['key'] | string): string {
+  return key === 'MAX' ? i18n('event.maxShort') : key;
 }
 
 /**
@@ -125,7 +154,7 @@ export interface PhaseStatus {
 /** Fase en curso, o null si el eclipse no ha empezado o ya terminó. */
 export function currentPhase(eclipse: LocalEclipse, now: Date): PhaseStatus | null {
   const t = now.getTime();
-  const at = (k: EclipseEvent['key']) => eclipse.events.find((e) => e.key === k)?.time.getTime();
+  const at = (k: EclipseEvent['key']) => eventAt(eclipse, k)?.time.getTime();
   const c1 = at('C1');
   const c2 = at('C2');
   const c3 = at('C3');

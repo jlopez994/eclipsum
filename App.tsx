@@ -12,6 +12,8 @@ import {
 import {
   computeLocalEclipse,
   eclipseDayOf,
+  eclipseSpan,
+  eventAt,
   isActiveEclipse,
   shiftEclipse,
   type LocalEclipse,
@@ -19,7 +21,7 @@ import {
 import { eclipseForDay, getActiveEclipse } from './lib/eclipseCatalog';
 import { haversineKm } from './lib/totality';
 import { openInMaps } from './lib/maps';
-import { cleanPlaceLabel, REAL_PLACE_KM, type Spot } from './lib/spots';
+import { cleanPlaceLabel, REAL_PLACE_KM, sameCoords, type Spot } from './lib/spots';
 import { scheduleEclipseAlerts } from './lib/notifications';
 import { track, trackError } from './lib/firebase';
 import {
@@ -65,21 +67,24 @@ interface ShownSpot {
 }
 
 function inFineClockWindow(eclipse: LocalEclipse, t: number): boolean {
-  const first = eclipse.events[0];
-  const last = eclipse.events[eclipse.events.length - 1];
-  if (!first || !last) return false;
-  return t >= first.time.getTime() - ECLIPSE_MODE_LEAD_MS && t <= last.time.getTime() + ECLIPSE_MODE_TAIL_MS;
+  const span = eclipseSpan(eclipse);
+  if (!span) return false;
+  return t >= span.start - ECLIPSE_MODE_LEAD_MS && t <= span.end + ECLIPSE_MODE_TAIL_MS;
 }
 
 function gpsSpot(geo: { place: string; lat: number; lon: number }): Spot {
   return { name: cleanPlaceLabel(geo.place) || t('app.myPosition'), lat: geo.lat, lon: geo.lon, origin: 'gps' };
 }
 
-/** Eclipse sintético para la demo: desplaza los eventos para que el siguiente hito caiga en ~2 min. */
-function buildDemoEclipse(real: LocalEclipse, now: Date): LocalEclipse {
-  const anchor = real.events.find((e) => e.key === 'C2') ?? real.events.find((e) => e.key === 'MAX');
+/**
+ * Eclipse sintético para la demo: desplaza los eventos para que el siguiente hito caiga en ~2 min.
+ * `startedAt` es el instante en que se PULSÓ la demo, no el reloj: recalcularlo con `now`
+ * desplazaba la serie un segundo por cada segundo y la cuenta atrás no bajaba nunca.
+ */
+function buildDemoEclipse(real: LocalEclipse, startedAt: Date): LocalEclipse {
+  const anchor = eventAt(real, 'C2') ?? eventAt(real, 'MAX');
   if (!anchor) return real;
-  return shiftEclipse(real, now.getTime() + 2 * 60_000 - anchor.time.getTime());
+  return shiftEclipse(real, startedAt.getTime() + 2 * 60_000 - anchor.time.getTime());
 }
 
 function AppInner() {
@@ -96,10 +101,14 @@ function AppInner() {
   const permissions = usePermissions(locationGranted);
   const remote = useRemoteExtras();
   const [tab, setTab] = useState<TabKey>('mapa');
-  const [demo, setDemo] = useState(false);
+  /** Instante en que se lanzó la demo; null = demo apagada. Ancla fija de la serie sintética */
+  const [demoAt, setDemoAt] = useState<Date | null>(null);
+  const demo = demoAt !== null;
   const [selectorOpen, setSelectorOpen] = useState(false);
   /** Repetición manual desde Ajustes; el primer pase lo dispara prefs.tourSeen */
   const [tourOpen, setTourOpen] = useState(false);
+  /** Velo de fuera de zona descartado en memoria (solo cuando no hay datos previos detrás) */
+  const [dismissedNotice, setDismissedNotice] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [fineClock, setFineClock] = useState(false);
 
@@ -138,13 +147,19 @@ function AppInner() {
     onPrefsChange(withContext(prefs, activeCatalog.civilDate, { spot: gpsSpot(geo) }));
   }, [prefs, geo, ctx.spot, activeCatalog.civilDate, onPrefsChange]);
 
-  // Puesto deseado (cálculos); fallback temporal a GPS mientras se siembra
+  // Puesto deseado (cálculos); fallback temporal a GPS mientras se siembra.
+  // Nada que calcular hasta que carguen las prefs: el GPS cubre el hueco de la SIEMBRA,
+  // no el de la carga (la pantalla es un spinner igual). Sin esta guarda, un arranque con
+  // puesto guardado lejano lanzaba búsqueda de totalidad + nubes + analytics para el GPS
+  // y lo repetía entero al llegar las prefs.
   const activeSpot = ctx.spot;
-  const active = activeSpot
-    ? { lat: activeSpot.lat, lon: activeSpot.lon, place: activeSpot.name, origin: activeSpot.origin }
-    : geo
-      ? { lat: geo.lat, lon: geo.lon, place: cleanPlaceLabel(geo.place), origin: 'gps' as const }
-      : null;
+  const active = !prefs
+    ? null
+    : activeSpot
+      ? { lat: activeSpot.lat, lon: activeSpot.lon, place: activeSpot.name, origin: activeSpot.origin }
+      : geo
+        ? { lat: geo.lat, lon: geo.lon, place: cleanPlaceLabel(geo.place), origin: 'gps' as const }
+        : null;
 
   const localEclipse = useMemo(
     () => (active ? computeLocalEclipse(active.lat, active.lon) : null),
@@ -230,14 +245,13 @@ function AppInner() {
       return;
     }
     let exitTimer: ReturnType<typeof setTimeout> | undefined;
-    const first = eclipse.events[0]?.time.getTime();
-    const last = eclipse.events[eclipse.events.length - 1]?.time.getTime();
-    if (first == null || last == null) {
+    const span = eclipseSpan(eclipse);
+    if (!span) {
       setFineClock(false);
       return;
     }
-    const start = first - ECLIPSE_MODE_LEAD_MS;
-    const end = last + ECLIPSE_MODE_TAIL_MS;
+    const start = span.start - ECLIPSE_MODE_LEAD_MS;
+    const end = span.end + ECLIPSE_MODE_TAIL_MS;
     const t = Date.now();
     if (t > end) {
       setFineClock(false);
@@ -288,15 +302,31 @@ function AppInner() {
     [prefs, activeCatalog.civilDate, onPrefsChange],
   );
 
-  // Punto tocado en el mapa real: nombre vía geocoder inverso (fallback coordenadas)
+  /**
+   * Punto tocado en el mapa real. El puesto se aplica YA con sus coordenadas y el geocoder
+   * solo lo renombra después: esperar a la red antes de escribir significaba persistir un
+   * `prefs` congelado en el instante del toque (revertía toggles cambiados entre medias) y
+   * dejar que dos toques seguidos se pisaran según cuál resolviera antes.
+   */
   const selectMapPoint = useCallback(
     ({ lat, lon }: { lat: number; lon: number }) => {
-      void (async () => {
-        const name = (await localityName(lat, lon)) ?? `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
-        selectSpot({ name, lat, lon, origin: 'manual' });
-      })();
+      const day = activeCatalog.civilDate;
+      selectSpot({ name: `${lat.toFixed(2)}, ${lon.toFixed(2)}`, lat, lon, origin: 'manual' });
+      void localityName(lat, lon).then((name) => {
+        if (!name) return;
+        onPrefsChange((p) => {
+          // Otro puesto elegido mientras resolvía: el renombrado ya no le corresponde
+          const current = contextFor(p, day).spot;
+          if (!current || current.lat !== lat || current.lon !== lon) return p;
+          return {
+            ...withContext(p, day, { spot: { ...current, name } }),
+            // La entrada de habituales se creó con las coordenadas: renombrarla también
+            recentSpots: p.recentSpots.map((r) => (sameCoords(r, current) ? { ...r, name } : r)),
+          };
+        });
+      });
     },
-    [selectSpot],
+    [selectSpot, activeCatalog.civilDate, onPrefsChange],
   );
 
   const recalcHere = useCallback(() => {
@@ -313,13 +343,18 @@ function AppInner() {
 
   // Velo con la explicación; `key` por puesto para que un puesto nuevo vuelva a avisar
   // aunque cerraras el anterior. Solo se ofrece saltar si el otro eclipse está en catálogo.
+  //
+  // NO exige `shown`: en un arranque en frío con el puesto fuera de zona ya guardado, el
+  // efecto que rellena lastValidRef nunca entra (eclipse es null desde el primer render),
+  // así que exigirlo dejaba la pestaña Mapa en «Sin GPS» sin explicación ni salida.
+  const noticeKey = chosenSpot ? `${chosenSpot.lat},${chosenSpot.lon}` : null;
   const outOfZoneNotice =
-    outOfZone && chosenSpot && shown ? (
+    outOfZone && chosenSpot && noticeKey !== dismissedNotice ? (
       <OutOfZoneNotice
-        key={`${chosenSpot.lat},${chosenSpot.lon}`}
+        key={noticeKey ?? 'out-of-zone'}
         place={cleanPlaceLabel(chosenSpot.name)}
         date={activeCatalog.shortDateLabel}
-        keepingPlace={cleanPlaceLabel(shown.spot.name)}
+        keepingPlace={shown ? cleanPlaceLabel(shown.spot.name) : null}
         otherLabel={otherEclipse?.label ?? null}
         // El puesto viaja con el salto: el contexto se guarda por día civil, y sin esto
         // el eclipse nuevo nacería sin puesto y la siembra lo rellenaría con el GPS
@@ -334,14 +369,21 @@ function AppInner() {
             ),
           );
         }}
-        // Cerrar = deshacer la elección imposible. Si no, el puesto se quedaría guardado
-        // en prefs aunque la pantalla enseñe otro, y volvería a saltar al siguiente arranque
-        onClose={() => onPrefsChange(withContext(prefs, activeCatalog.civilDate, { spot: shown.spot }))}
+        // Con datos detrás, cerrar = deshacer la elección imposible: si no, el puesto se
+        // quedaría guardado aunque la pantalla enseñe otro y volvería a saltar al arrancar.
+        // Sin nada detrás no hay adónde volver (devolverlo a null lo resembraría con el GPS,
+        // y con el GPS también fuera de zona el velo sería imposible de cerrar): se descarta
+        // en memoria, así que reaparece en el siguiente arranque mientras el puesto siga ahí.
+        onClose={() =>
+          shown
+            ? onPrefsChange(withContext(prefs, activeCatalog.civilDate, { spot: shown.spot }))
+            : setDismissedNotice(noticeKey)
+        }
         top={insets.top + 12}
       />
     ) : null;
 
-  const demoEclipse = demo && eclipse ? buildDemoEclipse(eclipse, now) : null;
+  const demoEclipse = demoAt && eclipse ? buildDemoEclipse(eclipse, demoAt) : null;
   const activeEclipse = drill?.eclipse ?? demoEclipse ?? eclipse;
 
   // Modo eclipse: automático en ventana del evento, o demo forzada
@@ -353,8 +395,8 @@ function AppInner() {
 
   const divergenceKm = (() => {
     if (spotDistanceKm === null || !activeSpot || !eclipse) return null;
-    const c1 = eclipse.events[0];
-    if (!c1 || now.getTime() < c1.time.getTime() - 24 * 3_600_000) return null;
+    const span = eclipseSpan(eclipse);
+    if (!span || now.getTime() < span.start - 24 * 3_600_000) return null;
     return spotDistanceKm > DIVERGENCE_KM ? spotDistanceKm : null;
   })();
 
@@ -373,7 +415,7 @@ function AppInner() {
           place={cleanPlaceLabel(active.place)}
           now={now}
           exitLabel={drill ? t('settings.drill') : demo ? 'DEMO' : null}
-          onExitDemo={drill ? exitDrill : () => setDemo(false)}
+          onExitDemo={drill ? exitDrill : () => setDemoAt(null)}
           // El salto repinta la fase al instante, sin esperar al tick del reloj
           onJumpToEvent={
             drill
@@ -423,7 +465,21 @@ function AppInner() {
             />
           ) : (
             <View style={s.loading}>
-              {locating ? (
+              {/* Fuera de zona sin puesto previo válido: decir POR QUÉ no hay mapa. Antes
+                  caía en «Sin GPS» con el GPS funcionando, igual que ya hace Alertas. */}
+              {outOfZone && active ? (
+                <>
+                  <Text style={s.loadingText}>
+                    {t('app.outOfZone', {
+                      place: cleanPlaceLabel(active.place),
+                      date: activeCatalog.shortDateLabel,
+                    })}
+                  </Text>
+                  <Text style={s.chooseLink} onPress={() => setSelectorOpen(true)}>
+                    {t('app.choosePlace')}
+                  </Text>
+                </>
+              ) : locating ? (
                 <>
                   <ActivityIndicator color={C.corona} size="large" />
                   <Text style={s.loadingText}>{t('app.locating')}</Text>
@@ -442,6 +498,7 @@ function AppInner() {
           (eclipse ? (
             <AlertsScreen
               eclipse={eclipse}
+              notificationsGranted={permissions.notifications}
               toggles={ctx.alertsOn}
               early={ctx.alertEarly}
               c1Plan={ctx.c1PlanAlerts}
@@ -482,7 +539,7 @@ function AppInner() {
             donateUrl={remote.donateUrl}
             // El efecto de alertas reprograma solo al cambiar alertSound
             onSoundChange={(sound) => onPrefsChange({ ...prefs, alertSound: sound })}
-            onDemoEclipse={() => setDemo(true)}
+            onDemoEclipse={() => setDemoAt(new Date())}
             language={prefs.language}
             onLanguageChange={(lang) => onPrefsChange({ ...prefs, language: lang })}
             onSelectEclipse={(day) => {

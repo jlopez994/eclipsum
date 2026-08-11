@@ -13,7 +13,14 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { computeLocalEclipse, isActiveEclipse, nextEvent, type LocalEclipse } from '../../lib/eclipse';
+import {
+  computeLocalEclipse,
+  eventAt,
+  eventShortLabel,
+  isActiveEclipse,
+  nextEvent,
+  type LocalEclipse,
+} from '../../lib/eclipse';
 import { bandOf, getActiveEclipse } from '../../lib/eclipseCatalog';
 import { fmtDur, fmtHM, fmtHMS } from '../../lib/format';
 import { fmtFixed1, t, type I18nKey } from '../../lib/i18n';
@@ -131,7 +138,7 @@ export function MapScreen({
   };
   const isTotal = eclipse.kind === 'total';
   const upcoming = nextEvent(eclipse, now);
-  const maxEvent = eclipse.events.find((e) => e.key === 'MAX');
+  const maxEvent = eventAt(eclipse, 'MAX');
 
   /**
    * Máximo SOBRE TI, no sobre el puesto elegido. La brújula y el visor son instrumentos
@@ -144,7 +151,7 @@ export function MapScreen({
     try {
       const here = computeLocalEclipse(gpsCoords.lat, gpsCoords.lon);
       if (!isActiveEclipse(here)) return null;
-      return here.events.find((e) => e.key === 'MAX') ?? null;
+      return eventAt(here, 'MAX') ?? null;
     } catch {
       return null;
     }
@@ -317,7 +324,7 @@ export function MapScreen({
               {upcoming
                 ? t('map.kicker', {
                     label: t(`event.${upcoming.key}` as I18nKey).toUpperCase(),
-                    key: upcoming.key === 'MAX' ? t('event.maxShort') : upcoming.key,
+                    key: eventShortLabel(upcoming.key),
                   })
                 : t('map.finished')}
             </Text>
@@ -372,9 +379,7 @@ export function MapScreen({
           {cronoRows.map((e) => (
             <View key={e.key} style={s.cronoRow}>
               <Text style={[s.cronoLabel, (e.time <= now || e.belowHorizon) && { color: C.dim }]}>
-                <Text style={{ color: EVENT_ACCENT[e.key] ?? C.dim }}>
-                  {e.key === 'MAX' ? t('event.maxShort') : e.key}
-                </Text>
+                <Text style={{ color: EVENT_ACCENT[e.key] ?? C.dim }}>{eventShortLabel(e.key)}</Text>
                 {'  '}
                 {e.label}
                 {e.belowHorizon ? t('map.belowHorizon') : ''}

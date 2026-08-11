@@ -37,6 +37,9 @@ export function CompassChip({ targetAzimuthDeg, onPress, expanded = false }: Com
           const deg = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
           if (!cancelled && Number.isFinite(deg)) setHeading(((deg % 360) + 360) % 360);
         });
+        // Desmontado mientras resolvía: la limpieza ya corrió con sub=null y el
+        // magnetómetro se quedaría suscrito para siempre
+        if (cancelled) sub.remove();
       } catch {
         // sin brújula disponible
       }

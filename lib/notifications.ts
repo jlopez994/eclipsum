@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { t, type I18nKey } from './i18n';
-import { shiftEclipse, type LocalEclipse } from './eclipse';
+import { eventAt, shiftEclipse, type LocalEclipse } from './eclipse';
 import type { AlertEarly, AlertSound, AlertToggles, C1PlanAlerts } from './prefs';
 import { ALERT_EARLY_SECONDS, DEFAULT_ALERT_EARLY, DEFAULT_C1_PLAN_ALERTS } from './prefs';
 
@@ -75,7 +75,7 @@ function buildAlerts(
   c1Plan: C1PlanAlerts,
 ): Alert[] {
   const alerts: Alert[] = [];
-  const c1 = enabled.C1 ? eclipse.events.find((e) => e.key === 'C1') : undefined;
+  const c1 = enabled.C1 ? eventAt(eclipse, 'C1') : undefined;
   if (c1) {
     if (c1Plan.before24h) {
       alerts.push({
@@ -210,7 +210,7 @@ async function doScheduleFake(
   early: AlertEarly,
 ): Promise<string[]> {
   const channelId = await ensurePermissionAndChannel(sound);
-  const c1 = eclipse.events.find((e) => e.key === 'C1');
+  const c1 = eventAt(eclipse, 'C1');
   if (!c1) return [];
   const shifted = shiftEclipse(eclipse, c1At.getTime() - c1.time.getTime());
   // Sin avisos de planificación (24h/1h): el simulacro es la serie del día

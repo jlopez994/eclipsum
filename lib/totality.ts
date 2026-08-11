@@ -1,4 +1,4 @@
-import { computeLocalEclipse } from './eclipse';
+import { computeLocalEclipse, isActiveEclipse } from './eclipse';
 import { activeSearchStart } from './eclipseCatalog';
 import { t } from './i18n';
 
@@ -41,7 +41,11 @@ function destination(lat: number, lon: number, bearingDeg: number, distKm: numbe
 
 function isTotalAt(lat: number, lon: number, searchStart: Date): boolean {
   try {
-    return computeLocalEclipse(lat, lon, 0, searchStart).kind === 'total';
+    const ec = computeLocalEclipse(lat, lon, 0, searchStart);
+    // `searchStart` solo fija DESDE CUÁNDO buscar, no QUÉ eclipse contesta el motor: fuera
+    // del footprint del activo devuelve el siguiente de ese punto. Sin este filtro, desde
+    // Melbourne salía «totalidad a 604 km» apuntando a la banda de 2028.
+    return ec.kind === 'total' && isActiveEclipse(ec);
   } catch {
     return false;
   }
@@ -105,7 +109,9 @@ async function searchNearestTotality(lat: number, lon: number, searchStart: Date
       const inner = destination(lat, lon, bearing, hiKm + 5);
       let durationSec: number | null = null;
       try {
-        durationSec = computeLocalEclipse(inner.lat, inner.lon, 0, searchStart).totalityDurationSec;
+        // Mismo filtro que isTotalAt: una duración de otro eclipse sería un dato falso
+        const ecInner = computeLocalEclipse(inner.lat, inner.lon, 0, searchStart);
+        durationSec = isActiveEclipse(ecInner) ? ecInner.totalityDurationSec : null;
       } catch {
         durationSec = null;
       }

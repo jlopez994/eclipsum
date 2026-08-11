@@ -4,7 +4,7 @@
  * a escala: cuanto antes acabe la serie, antes se sabe si todo va bien.
  * Sin imports de react-native — selfcheck lo ejecuta en Node.
  */
-import type { EclipseEvent, LocalEclipse } from './eclipse';
+import { eventAt, type EclipseEvent, type LocalEclipse } from './eclipse';
 
 /**
  * Mínimos que respetan la mecánica de avisos: el aviso anticipado de C2
@@ -20,7 +20,7 @@ export const DRILL_TOTALITY_SEC = 45;
  */
 export function buildDrillEclipse(template: LocalEclipse, c1At: Date): LocalEclipse {
   const geom = (key: EclipseEvent['key']) => {
-    const e = template.events.find((ev) => ev.key === key) ?? template.events.find((ev) => ev.key === 'MAX');
+    const e = eventAt(template, key) ?? eventAt(template, 'MAX');
     return e ? { altitude: e.altitude, azimuth: e.azimuth } : { altitude: 30, azimuth: 270 };
   };
   const t0 = c1At.getTime();

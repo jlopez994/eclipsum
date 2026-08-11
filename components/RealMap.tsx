@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import { StyleSheet } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { type BandSlice } from '../lib/bandGeo';
-import { computeLocalEclipse, isActiveEclipse } from '../lib/eclipse';
+import { computeLocalEclipse, eventAt, isActiveEclipse } from '../lib/eclipse';
 import { bandOf, getActiveEclipse } from '../lib/eclipseCatalog';
 import { fmtDur, fmtHM } from '../lib/format';
 import { fmtFixed1, t } from '../lib/i18n';
@@ -50,7 +50,7 @@ function tapInfo(lat: number, lon: number): TapInfo {
   const base = { lat, lon, warn: null, canSelect: true, cta: t('real.observeHere') };
   try {
     const ec = computeLocalEclipse(lat, lon);
-    const max = ec.events.find((e) => e.key === 'MAX');
+    const max = eventAt(ec, 'MAX');
     // Desde este punto no se ve el eclipse activo. Se puede elegir igual (la pantalla
     // del mapa lo explica): así se puede explorar «¿y desde aquí?» sin pelearse con el mapa.
     if (!max || !isActiveEclipse(ec)) {
@@ -274,10 +274,12 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
   // Autocierre del popup si no se pulsa nada; cada tap nuevo reinicia el temporizador
   var POPUP_HIDE_MS = 4000;
   var popupTimer = null;
+  // esc() en TODO el texto: lines incluye shortDateLabel, que puede venir literal de
+  // Remote Config (isValidEntry solo comprueba que sea string no vacía)
   window.eclipsumShowInfo = function (i) {
-    var h = '<div class="pop-title" style="color:' + i.color + '">' + i.title + '</div>';
-    for (var k = 0; k < i.lines.length; k++) h += '<div class="pop-line">' + i.lines[k] + '</div>';
-    if (i.warn) h += '<div class="pop-warn">' + i.warn + '</div>';
+    var h = '<div class="pop-title" style="color:' + i.color + '">' + esc(i.title) + '</div>';
+    for (var k = 0; k < i.lines.length; k++) h += '<div class="pop-line">' + esc(i.lines[k]) + '</div>';
+    if (i.warn) h += '<div class="pop-warn">' + esc(i.warn) + '</div>';
     if (i.canSelect) h += '<div class="pop-btn" onclick="window.eclipsumPick(' + i.lat + ',' + i.lon + ')">' + esc(i.cta) + '</div>';
     L.popup({ closeButton: false }).setLatLng([i.lat, i.lon]).setContent(h).openOn(map);
     clearTimeout(popupTimer);

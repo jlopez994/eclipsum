@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { shiftEclipse, type EclipseEvent, type LocalEclipse } from '../lib/eclipse';
+import { eventAt, shiftEclipse, type EclipseEvent, type LocalEclipse } from '../lib/eclipse';
 import { buildDrillEclipse } from '../lib/drill';
 import { cancelAlertsByIds, scheduleFakeEclipseAlerts } from '../lib/notifications';
 import { track } from '../lib/firebase';
@@ -37,13 +37,25 @@ export function useDrill(
   const startDrill = useCallback(async () => {
     if (!eclipse || !prefs) return t('app.drill.needSpot');
     if (!Object.values(ctx.alertsOn).some(Boolean)) return t('app.drill.needAlert');
+    if (drill) return t('app.drill.running', { time: fmtHM(drill.eclipse.events[0].time) });
     const c1At = new Date(Date.now() + DRILL_LEAD_MS);
     const fake = buildDrillEclipse(eclipse, c1At);
-    const ids = await scheduleFakeEclipseAlerts(fake, c1At, ctx.alertsOn, prefs.alertSound, ctx.alertEarly);
-    setDrill({ eclipse: fake, ids });
+    // Marcar ANTES del await: dentro está la petición de permiso, que en Android abre el
+    // diálogo del sistema (segundos) y al volver a primer plano dispara el efecto de alertas
+    // de App. Con drill=null su guarda no protegía y el cancelAll borraba los [PRUEBA].
+    setDrill({ eclipse: fake, ids: [] });
+    let ids: string[];
+    try {
+      ids = await scheduleFakeEclipseAlerts(fake, c1At, ctx.alertsOn, prefs.alertSound, ctx.alertEarly);
+    } catch (e) {
+      setDrill(null); // permiso denegado: no dejar la app atrapada en simulacro sin avisos
+      throw e; // Ajustes lo traduce a notif.permissionDenied
+    }
+    // No resucitar el simulacro si mientras tanto se salió o terminó solo
+    setDrill((d) => (d ? { ...d, ids } : d));
     track('drill_started');
     return t('app.drill.running', { time: fmtHM(c1At) });
-  }, [eclipse, prefs, ctx]);
+  }, [eclipse, prefs, ctx, drill]);
 
   const exitDrill = useCallback(() => {
     if (drill) void cancelAlertsByIds(drill.ids);
@@ -55,7 +67,7 @@ export function useDrill(
   const jumpDrill = useCallback(
     (key: EclipseEvent['key']) => {
       if (!drill || !prefs) return;
-      const target = drill.eclipse.events.find((e) => e.key === key);
+      const target = eventAt(drill.eclipse, key);
       if (!target) return;
       const shifted = shiftEclipse(drill.eclipse, Date.now() + DRILL_JUMP_LEAD_MS - target.time.getTime());
       void cancelAlertsByIds(drill.ids);

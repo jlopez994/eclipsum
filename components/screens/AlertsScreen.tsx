@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
-import type { LocalEclipse } from '../../lib/eclipse';
+import { eventShortLabel, type LocalEclipse } from '../../lib/eclipse';
 import {
   countEclipseAlerts,
   scheduleEclipseAlerts,
@@ -17,6 +17,8 @@ import { C, EVENT_ACCENT, F } from '../theme';
 
 interface AlertsScreenProps {
   eclipse: LocalEclipse;
+  /** Permiso de notificaciones concedido; sin él NADA se programa de verdad */
+  notificationsGranted: boolean;
   toggles: AlertToggles;
   early: AlertEarly;
   c1Plan: C1PlanAlerts;
@@ -28,6 +30,7 @@ interface AlertsScreenProps {
 
 export function AlertsScreen({
   eclipse,
+  notificationsGranted,
   toggles,
   early,
   c1Plan,
@@ -63,6 +66,18 @@ export function AlertsScreen({
       if (testClearRef.current) clearTimeout(testClearRef.current);
     };
   }, []);
+
+  /**
+   * Único sitio donde se pide el permiso sin que el usuario tenga que tocar nada. Esta es
+   * la pantalla que PROMETE los avisos: en Android 13+ nadie mostraba el diálogo, así que
+   * una instalación nueva enseñaba «5 avisos programados» con cero notificaciones reales.
+   * Al conceder, usePermissions se refresca al volver a primer plano y el efecto de App
+   * programa de verdad (con su guarda de simulacro intacta).
+   */
+  useEffect(() => {
+    if (notificationsGranted) return;
+    void Notifications.requestPermissionsAsync().catch(() => {});
+  }, [notificationsGranted]);
 
   const reschedule = async (
     nextToggles: AlertToggles,
@@ -153,7 +168,7 @@ export function AlertsScreen({
               <View style={s.rowBody}>
                 <View style={s.rowTitleLine}>
                   <Text style={s.rowTitle}>
-                    {e.key === 'MAX' ? t('event.maxShort') : e.key} · {t(`event.${e.key}` as I18nKey)}
+                    {eventShortLabel(e.key)} · {t(`event.${e.key}` as I18nKey)}
                   </Text>
                   <Text style={[s.rowTime, { color: belowHorizon ? C.dim : accent }]}>{fmtHMS(e.time)}</Text>
                 </View>
@@ -217,8 +232,13 @@ export function AlertsScreen({
                     })}
                 </View>
               </View>
+              {/* El estado iba solo en el color y el knob: sin nombre ni rol, un lector de
+                  pantalla anunciaba «Botón» y no había forma de saber si el aviso está puesto */}
               <Pressable
                 onPress={() => handleToggle(e.key)}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: on }}
+                accessibilityLabel={`${eventShortLabel(e.key)} · ${t(`event.${e.key}` as I18nKey)}`}
                 style={[
                   s.track,
                   { backgroundColor: on ? accent : C.surface, borderColor: on ? accent : C.border },
@@ -241,7 +261,11 @@ export function AlertsScreen({
             {testing ? t('alerts.testing') : t('alerts.test')}
           </Text>
         </Pressable>
-        <Text style={s.status}>{flash ?? t('alerts.scheduled', { n: scheduledCount })}</Text>
+        {/* Sin permiso NO hay nada programado: decirlo en vez de contar avisos imaginarios */}
+        <Text style={[s.status, !notificationsGranted && { color: C.danger }]}>
+          {flash ??
+            (notificationsGranted ? t('alerts.scheduled', { n: scheduledCount }) : t('alerts.noPermission'))}
+        </Text>
       </View>
     </View>
   );

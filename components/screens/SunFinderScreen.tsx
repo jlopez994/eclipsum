@@ -77,8 +77,12 @@ export function SunFinderScreen({
     let sub: { remove: () => void } | null = null;
     let cancelled = false;
     void (async () => {
-      if (!(await DeviceMotion.isAvailableAsync())) {
-        if (!cancelled) setSensorsOff(true);
+      const available = await DeviceMotion.isAvailableAsync();
+      // Cerrado mientras resolvía: sin este corte el listener queda a 20 Hz para siempre
+      // (addListener es síncrono, así que después del corte ya no hay ventana de carrera)
+      if (cancelled) return;
+      if (!available) {
+        setSensorsOff(true);
         return;
       }
       DeviceMotion.setUpdateInterval(MOTION_INTERVAL_MS);
@@ -110,6 +114,8 @@ export function SunFinderScreen({
           setHeading(((d % 360) + 360) % 360);
           setHeadingAccuracy(typeof h.accuracy === 'number' ? h.accuracy : null);
         });
+        // Cerrado durante el await: la limpieza vio sub=null y nadie soltaría la brújula
+        if (cancelled) sub.remove();
       } catch {
         // sin brújula: el guiñado se queda con el de DeviceMotion (relativo, pero usable)
       }

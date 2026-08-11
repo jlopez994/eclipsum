@@ -1,6 +1,13 @@
 // Ejecutar: npx tsx scripts/selfcheck.ts
 import assert from 'node:assert';
-import { computeLocalEclipse, currentPhase, nextEvent } from '../lib/eclipse';
+import {
+  computeLocalEclipse,
+  currentPhase,
+  eclipseSpan,
+  eventAt,
+  isActiveEclipse,
+  nextEvent,
+} from '../lib/eclipse';
 import {
   bandOf,
   ECLIPSES,
@@ -62,7 +69,21 @@ async function main() {
     `Duración totalidad plausible: ${zgz.totalityDurationSec}s`,
   );
   assert.deepEqual(zgz.events.map((e) => e.key), ['C1', 'C2', 'MAX', 'C3', 'C4'], 'Cinco contactos ordenados');
-  const max = zgz.events.find((e) => e.key === 'MAX')!;
+  const max = eventAt(zgz, 'MAX')!;
+
+  // eclipseSpan: primer y último contacto (ventana del modo eclipse y del raíl)
+  const span = eclipseSpan(zgz)!;
+  assert.equal(span.start, eventAt(zgz, 'C1')!.time.getTime(), 'Span: arranca en C1');
+  assert.equal(span.end, eventAt(zgz, 'C4')!.time.getTime(), 'Span: termina en C4');
+  assert.equal(eclipseSpan({ ...zgz, events: [] }), null, 'Span: serie vacía → null');
+  assert.equal(eventAt(zgz, 'C2')?.key, 'C2', 'eventAt: encuentra el contacto pedido');
+
+  // El ocaso debe ser POSTERIOR a C1: anclarlo en el pico − 12 h devolvía la puesta de
+  // la víspera en eclipses de mañana (Azores 2027-08-02)
+  assert.ok(
+    zgz.sunset !== null && zgz.sunset.getTime() > span.start,
+    `Ocaso posterior a C1: ${zgz.sunset?.toISOString()}`,
+  );
   assert.equal(
     max.time.toISOString().slice(0, 10),
     active.civilDate,
@@ -74,6 +95,19 @@ async function main() {
   const svq = computeLocalEclipse(37.39, -5.99, 10);
   assert.equal(svq.kind, 'partial', 'Sevilla debe ser parcial');
   assert.ok(svq.obscuration < 0.999 && svq.obscuration > 0.5, `Sevilla parcial profunda: ${svq.obscuration}`);
+  assert.equal(eventAt(svq, 'C2'), undefined, 'eventAt: un parcial no tiene C2');
+
+  // Fuera del footprint del activo el motor contesta con OTRO eclipse: nada que lo pinte
+  // puede fiarse de kind/obscuración/duración sin pasar por isActiveEclipse
+  assert.ok(isActiveEclipse(zgz), 'Zaragoza ve el eclipse activo');
+  const syd = computeLocalEclipse(-33.87, 151.21);
+  assert.equal(syd.kind, 'total', 'Sídney: el motor devuelve un total… de otro eclipse');
+  assert.ok(!isActiveEclipse(syd), 'Sídney NO ve el eclipse activo (serie de 2028)');
+  assert.equal(
+    await findNearestTotality(-37.81, 144.96),
+    null,
+    'Melbourne: sin totalidad del activo cerca — no debe ofrecer la banda de 2028',
+  );
 
   // nextEvent
   assert.equal(nextEvent(zgz, new Date('2026-08-12T00:00:00Z'))?.key, 'C1');

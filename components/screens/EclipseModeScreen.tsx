@@ -3,7 +3,14 @@ import { Animated, Pressable, StyleSheet, Text, useWindowDimensions, View } from
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { useKeepAwake } from 'expo-keep-awake';
-import { currentPhase, nextEvent, type EclipseEvent, type LocalEclipse } from '../../lib/eclipse';
+import {
+  currentPhase,
+  eclipseSpan,
+  eventShortLabel,
+  nextEvent,
+  type EclipseEvent,
+  type LocalEclipse,
+} from '../../lib/eclipse';
 import { fmtHMS } from '../../lib/format';
 import { t, type I18nKey } from '../../lib/i18n';
 import { Countdown } from '../Countdown';
@@ -36,10 +43,10 @@ function EventRail({
 }) {
   const nextKey = nextEvent(eclipse, now)?.key;
   // Avance entre el primer y el último contacto: da sensación de progreso en una serie que dura horas
-  const first = eclipse.events[0]?.time.getTime() ?? 0;
-  const last = eclipse.events[eclipse.events.length - 1]?.time.getTime() ?? 0;
-  const span = last - first;
-  const progress = span > 0 ? Math.min(1, Math.max(0, (now.getTime() - first) / span)) : 0;
+  const span = eclipseSpan(eclipse);
+  const total = span ? span.end - span.start : 0;
+  const progress =
+    span && total > 0 ? Math.min(1, Math.max(0, (now.getTime() - span.start) / total)) : 0;
   return (
     <View>
       <View style={s.rail}>
@@ -70,7 +77,7 @@ function EventRail({
                 ]}
               />
               <Text style={[s.railKey, (passed || isNext) && { color: accent }]}>
-                {e.key === 'MAX' ? t('event.maxShort') : e.key}
+                {eventShortLabel(e.key)}
               </Text>
               <Text style={[s.railTime, isNext && { color: C.text }]}>{fmtHMS(e.time)}</Text>
             </Pressable>

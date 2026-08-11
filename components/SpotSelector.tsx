@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import * as Location from 'expo-location';
-import { computeLocalEclipse } from '../lib/eclipse';
+import { computeLocalEclipse, eventAt, isActiveEclipse } from '../lib/eclipse';
 import { openInMaps } from '../lib/maps';
 import type { SuggestedSpot } from '../lib/firebase';
 import { cleanPlaceLabel, sameCoords, type Spot, type SpotOption } from '../lib/spots';
@@ -38,22 +38,33 @@ interface SpotSelectorProps {
 interface Row extends SpotOption {
   cloudPct: number | null;
   selectValue: Spot;
+  /** Desde este puesto SÍ se ve el eclipse activo; false = kind/obscuración no valen nada */
+  visible: boolean;
 }
 
 type Section = { title: string; rows: Row[] };
 
+/**
+ * Fila del selector con las circunstancias del puesto.
+ *
+ * `computeLocalEclipse` devuelve el primer eclipse local del punto, que fuera del footprint
+ * del activo es OTRO distinto: sin el filtro de `isActiveEclipse`, Sídney salía como
+ * «TOTAL 3m52s» (eclipse de 2028) en la lista donde eliges dónde ver el de este año.
+ */
 function toRow(spot: Spot, ref: { lat: number; lon: number }, selectValue?: Spot): Row {
   const ec = computeLocalEclipse(spot.lat, spot.lon);
-  const max = ec.events.find((e) => e.key === 'MAX');
+  const visible = isActiveEclipse(ec);
+  const max = visible ? eventAt(ec, 'MAX') : undefined;
   return {
     ...spot,
     distanceKm: Math.round(haversineKm(ref.lat, ref.lon, spot.lat, spot.lon)),
-    kind: ec.kind,
-    obscuration: ec.obscuration,
-    totalityDurationSec: ec.totalityDurationSec,
+    kind: visible ? ec.kind : 'partial',
+    obscuration: visible ? ec.obscuration : 0,
+    totalityDurationSec: visible ? ec.totalityDurationSec : null,
     maxTime: max?.time ?? null,
     cloudPct: null,
     selectValue: selectValue ?? spot,
+    visible,
   };
 }
 
@@ -130,9 +141,11 @@ export function SpotSelector({
         next.push({ title: t('spot.myPosition'), rows: [gpsRow] });
       }
 
-      // Búsqueda de totalidad lanzada ya: su CPU se solapa con la red de nubes/geocoder
+      // Búsqueda de totalidad lanzada ya: su CPU se solapa con la red de nubes/geocoder.
+      // Si desde tu GPS no se ve el activo, buscar su banda desde ahí es trabajo inútil
+      // (el sondeo llega a 700 km; el eclipse puede estar en otro continente).
       const nearestP =
-        userGeo && gpsRow && gpsRow.kind !== 'total'
+        userGeo && gpsRow && gpsRow.visible && gpsRow.kind !== 'total'
           ? findNearestTotality(userGeo.lat, userGeo.lon).catch(() => null)
           : Promise.resolve(null);
 
@@ -191,6 +204,8 @@ export function SpotSelector({
           maxTime: null,
           cloudPct: null,
           selectValue: nearSpot,
+          // findNearestTotality ya filtra por el eclipse activo
+          visible: true,
         };
         allForClouds.push(nearRow);
         next.splice(1, 0, { title: t('spot.nearestTotality'), rows: [nearRow] });
@@ -273,6 +288,8 @@ export function SpotSelector({
         {searchError && <Text style={s.error}>{searchError}</Text>}
         <ScrollView style={s.list} showsVerticalScrollIndicator={false}>
           {sections === null && <Text style={s.loading}>{t('spot.computing')}</Text>}
+          {/* `undefined === 0` es false, así que carga y vacío no se solapan */}
+          {sections?.length === 0 && <Text style={s.loading}>{t('spot.empty')}</Text>}
           {sections?.map((sec) => (
             <View key={sec.title}>
               <Text style={s.sectionTitle}>{sec.title}</Text>
@@ -293,7 +310,10 @@ export function SpotSelector({
                           {row.cloudPct !== null ? ` · ${t('spot.clouds', { pct: row.cloudPct })}` : ''}
                         </Text>
                       </View>
-                      {row.kind === 'total' ? (
+                      {/* Fuera de zona: decirlo. Un «0%» sería otra mentira, solo que más barata */}
+                      {!row.visible ? (
+                        <Text style={s.rowUnseen}>{t('spot.notVisible')}</Text>
+                      ) : row.kind === 'total' ? (
                         <Text style={s.rowTotal}>
                           {t('spot.total')}
                           {row.totalityDurationSec != null ? ` ${fmtDur(row.totalityDurationSec)}` : ''}
@@ -392,6 +412,7 @@ const s = StyleSheet.create({
   rowMeta: { fontFamily: F.medium, fontSize: 12, color: C.dim, marginTop: 2, fontVariant: ['tabular-nums'] },
   rowTotal: { fontFamily: F.bold, fontSize: 13, color: C.violet },
   rowPartial: { fontFamily: F.bold, fontSize: 13, color: C.corona },
+  rowUnseen: { fontFamily: F.semibold, fontSize: 11, color: C.dim },
   rowCloudDot: { fontSize: 10 },
   mapsBtn: {
     paddingHorizontal: 8,
