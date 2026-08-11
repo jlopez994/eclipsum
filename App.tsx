@@ -83,6 +83,7 @@ function AppInner() {
   const [permissions, setPermissions] = useState({ location: false, notifications: false });
   const [remoteMsg, setRemoteMsg] = useState('');
   const [glassesUrl, setGlassesUrl] = useState('');
+  const [donateUrl, setDonateUrl] = useState('');
   const [sponsor, setSponsor] = useState<Sponsor | null>(null);
   const [updateUrl, setUpdateUrl] = useState('');
   const [catalogEpoch, setCatalogEpoch] = useState(0);
@@ -117,6 +118,7 @@ function AppInner() {
       void fetchRemoteExtras().then((r) => {
         setRemoteMsg(r.message);
         setGlassesUrl(r.glassesUrl);
+        setDonateUrl(r.donateUrl);
         setSponsor(r.sponsor);
         // Aviso de actualización sin tienda: RC anuncia versionCode y URL de la APK
         const ownVc = Constants.expoConfig?.android?.versionCode ?? 0;
@@ -434,6 +436,7 @@ function AppInner() {
             alertSound={prefs.alertSound}
             activeEclipse={activeCatalog}
             glassesUrl={glassesUrl}
+            donateUrl={donateUrl}
             // El efecto de alertas reprograma solo al cambiar alertSound
             onSoundChange={(sound) => onPrefsChange({ ...prefs, alertSound: sound })}
             onDemoEclipse={() => setDemo(true)}

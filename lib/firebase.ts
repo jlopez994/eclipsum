@@ -14,6 +14,8 @@ export interface RemoteExtras {
   activeEclipseId: string;
   /** URL de gafas certificadas (afiliado); vacío = botón oculto */
   glassesUrl: string;
+  /** URL de donaciones (Buy Me a Coffee); vacío = sección oculta */
+  donateUrl: string;
   /** Patrocinador del eclipse activo; null = sin patrocinio */
   sponsor: Sponsor | null;
   /** versionCode de la última APK publicada; 0 = sin dato */
@@ -61,6 +63,7 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       active_eclipse_id: '',
       eclipse_catalog: '[]',
       glasses_url: '',
+      donate_url: '',
       sponsor: '',
       latest_version_code: '0',
       latest_apk_url: 'https://github.com/jlopez994/eclipsum/releases/latest/download/eclipsum.apk',
@@ -74,13 +77,14 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
     const message = getString(rc, 'eclipse_message');
     const activeEclipseId = getString(rc, 'active_eclipse_id');
     const glassesUrl = getString(rc, 'glasses_url');
+    const donateUrl = getString(rc, 'donate_url');
     const sponsor = parseSponsor(getString(rc, 'sponsor'));
     const latestVersionCode = Number.parseInt(getString(rc, 'latest_version_code'), 10) || 0;
     const latestApkUrl = getString(rc, 'latest_apk_url');
     // Orden: primero el catálogo extra, luego el id activo (puede apuntar a una entrada remota)
     setRemoteCatalog(getString(rc, 'eclipse_catalog'));
     setRemoteActiveEclipseId(activeEclipseId);
-    return { message, activeEclipseId, glassesUrl, sponsor, latestVersionCode, latestApkUrl };
+    return { message, activeEclipseId, glassesUrl, donateUrl, sponsor, latestVersionCode, latestApkUrl };
   } catch (e) {
     // Aquí solo se llega por fallo del SDK (la falta de red se traga arriba): reportable
     trackError('remote_config', e);
@@ -88,6 +92,7 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       message: '',
       activeEclipseId: '',
       glassesUrl: '',
+      donateUrl: '',
       sponsor: null,
       latestVersionCode: 0,
       latestApkUrl: '',

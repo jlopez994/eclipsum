@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bandOf, upcomingEclipses, type EclipseEntry } from '../../lib/eclipseCatalog';
 import { alertSoundOptions, sendTestNotification } from '../../lib/notifications';
 import { previewAlertSound } from '../../lib/soundPreview';
+import { track } from '../../lib/firebase';
 import { LANG_META, LANGS, t, type Lang } from '../../lib/i18n';
 import type { AlertSound } from '../../lib/prefs';
 import { DRILL_PARTIAL, DRILL_TOTALITY, type DrillConfig } from '../../lib/drill';
@@ -19,6 +20,8 @@ interface SettingsScreenProps {
   activeEclipse: EclipseEntry;
   /** URL de gafas certificadas (afiliado, vía Remote Config); vacío = botón oculto */
   glassesUrl?: string;
+  /** URL de donaciones (Buy Me a Coffee, vía Remote Config); vacío = sección oculta */
+  donateUrl?: string;
   onSoundChange: (sound: AlertSound) => void;
   onDemoEclipse: () => void;
   /** Idioma elegido; '' = automático (sistema) */
@@ -81,6 +84,7 @@ export function SettingsScreen({
   permissions,
   alertSound,
   glassesUrl,
+  donateUrl,
   onSoundChange,
   onDemoEclipse,
   language,
@@ -289,6 +293,23 @@ export function SettingsScreen({
             })}
           </View>
         </View>
+
+        {!!donateUrl && (
+          <View>
+            <Text style={s.section}>{t('settings.support')}</Text>
+            <View style={[s.card, { padding: 18 }]}>
+              <Text style={s.aboutNote}>{t('settings.support.body')}</Text>
+              <Pressable
+                onPress={() => {
+                  track('donate_click');
+                  Linking.openURL(donateUrl);
+                }}
+              >
+                <Text style={s.safetyLink}>{t('settings.support.button')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
 
         <View>
           <Text style={s.section}>{t('settings.about')}</Text>
