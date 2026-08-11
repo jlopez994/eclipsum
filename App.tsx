@@ -186,9 +186,29 @@ function AppInner() {
         ? fallback
         : null;
 
-  // Eclipse que SÍ se ve desde el puesto elegido: es justo el que devuelve el motor cuando
-  // el activo no es visible. Sin entrada en el catálogo no hay adónde llevar al usuario.
-  const otherDay = outOfZone && localEclipse ? eclipseDayOf(localEclipse) : null;
+  /**
+   * Próximo eclipse visible desde el puesto elegido, contando DESDE HOY.
+   *
+   * No sirve el que devuelve el cálculo normal: ese va anclado al eclipse activo, así que
+   * tras saltar a uno lejano propondría el siguiente a ESA fecha y se saltaría los de en
+   * medio (con el activo en 2028, Seseña proponía 2030 en vez del de mañana).
+   *
+   * El ancla es el día civil de hoy, no `now`: con la hora exacta la clave de la memo del
+   * motor cambiaría en cada render y recalcularía (~10-30 ms) sin parar.
+   */
+  const todayKey = now.toISOString().slice(0, 10);
+  const nextHere = useMemo(() => {
+    if (!outOfZone || !active) return null;
+    try {
+      return computeLocalEclipse(active.lat, active.lon, 0, new Date(`${todayKey}T00:00:00Z`));
+    } catch {
+      return null; // el motor no encuentra ninguno: sin sugerencia, solo la explicación
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outOfZone, active?.lat, active?.lon, todayKey]);
+
+  // Sin entrada en el catálogo no hay adónde llevar al usuario: la acción se oculta
+  const otherDay = nextHere ? eclipseDayOf(nextHere) : null;
   const otherEclipse = otherDay !== null ? eclipseForDay(otherDay) : null;
 
   const { drill, startDrill, exitDrill, jumpDrill } = useDrill(eclipse, prefs, ctx, now);

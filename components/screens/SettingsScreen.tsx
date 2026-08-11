@@ -67,7 +67,15 @@ export function SettingsScreen({
   const [drillMsg, setDrillMsg] = useState<string | null>(null);
   // Sin memo: upcomingEclipses ya cachea por día+catálogo, y así un catálogo RC
   // recién activado refresca la lista sin esperar a remontar la pantalla
-  const upcoming = upcomingEclipses(UPCOMING_COUNT);
+  const nextFew = upcomingEclipses(UPCOMING_COUNT);
+  /**
+   * El activo SIEMPRE en la lista. Se puede llegar a uno más lejano que los UPCOMING_COUNT
+   * primeros (p. ej. desde el aviso de «aquí no se ve»), y sin su fila no habría ninguna
+   * marcada como activa ni forma de volver a otro desde aquí.
+   */
+  const upcoming = nextFew.some((e) => e.civilDate === activeEclipse.civilDate)
+    ? nextFew
+    : [...nextFew, activeEclipse].sort((a, b) => a.civilDate.localeCompare(b.civilDate));
   // Elegir el más próximo (fila 0) equivale al modo automático; misma regla que getActiveEclipse
   const isManualSelection = activeEclipse.civilDate !== upcoming[0]?.civilDate;
 
