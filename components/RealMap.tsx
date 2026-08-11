@@ -153,15 +153,7 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
   const south = band ? [...band].reverse().map((b) => [b.latS, b.lon]) : [];
   const center = band?.map((b) => [(b.latN + b.latS) / 2, b.lon]) ?? null;
   const polygon = band ? [...north, ...south] : null;
-  // Franja interior (50% del ancho): dos rellenos superpuestos simulan el degradado
-  // transversal hacia el centro (más luz donde más dura) sin gradientes reales en Leaflet
-  const inner = band
-    ? [
-        ...band.map((b) => [(b.latN + b.latS) / 2 + (b.latN - b.latS) / 4, b.lon]),
-        ...[...band].reverse().map((b) => [(b.latN + b.latS) / 2 - (b.latN - b.latS) / 4, b.lon]),
-      ]
-    : null;
-  const data = toJs({ polygon, inner, north, south, center, spot, here });
+  const data = toJs({ polygon, north, south, center, spot, here });
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -197,20 +189,19 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
   if (D.polygon) {
     // Marca fija y tenue, sin interacción: el tap pasa limpio al mapa (popup)
     // y el WebView no pinta el focus ring sobre el SVG de la banda.
-    // Dos rellenos superpuestos (banda + franja interior) = degradado sutil hacia el centro.
+    // Un solo relleno plano: capas superpuestas producen escalones visibles.
     L.polygon(D.polygon, {
       interactive: false, stroke: false, fillColor: '${C.totality}', fillOpacity: 0.05,
-    }).addTo(map);
-    L.polygon(D.inner, {
-      interactive: false, stroke: false, fillColor: '${C.totality}', fillOpacity: 0.06,
     }).addTo(map);
 
     // Límites reales de la banda (los cierres verticales del polígono son artefactos del dataset)
     L.polyline(D.north, { interactive: false, color: '${C.totality}', weight: 1, opacity: 0.5 }).addTo(map);
     L.polyline(D.south, { interactive: false, color: '${C.totality}', weight: 1, opacity: 0.5 }).addTo(map);
 
-    // Línea central luminosa y fina: protagonista discreta de la banda
-    L.polyline(D.center, { interactive: false, color: '${C.violet}', weight: 1.5, opacity: 0.75 }).addTo(map);
+    // Línea central con glow: halos anchos translúcidos bajo la línea fina (Leaflet no tiene blur)
+    L.polyline(D.center, { interactive: false, color: '${C.violet}', weight: 9, opacity: 0.1 }).addTo(map);
+    L.polyline(D.center, { interactive: false, color: '${C.violet}', weight: 4.5, opacity: 0.22 }).addTo(map);
+    L.polyline(D.center, { interactive: false, color: '${C.violet}', weight: 1.5, opacity: 0.9 }).addTo(map);
   }
 
   var ptLayer = L.layerGroup().addTo(map);
@@ -230,7 +221,20 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
     dot(d.spot, true);
     if (d.here) dot(d.here, false);
 
-    if (fly) {
+    // Encuadre abierto SIEMPRE (también al marcar destino): tramo de banda alrededor
+    // del puesto (±12° de lon, robusto al antimeridiano) + marcadores. Sin banda
+    // cerca, vista regional del puesto.
+    var seg = [];
+    if (D.polygon) {
+      seg = D.north.concat(D.south).filter(function (p) {
+        return Math.abs(((p[1] - d.spot.lon + 540) % 360) - 180) <= 12;
+      });
+    }
+    var target = seg.concat(pts);
+    if (seg.length) {
+      if (fly) map.flyToBounds(target, { padding: [40, 40], maxZoom: 7, duration: 0.9 });
+      else map.fitBounds(target, { padding: [40, 40], maxZoom: 7 });
+    } else if (fly) {
       if (pts.length > 1) map.flyToBounds(pts, { padding: [70, 70], duration: 0.9 });
       else map.flyTo(pts[0], DEFAULT_ZOOM, { duration: 0.9 });
     } else {
@@ -239,19 +243,7 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
     }
   }
   var DEFAULT_ZOOM = 6;
-  // Encuadre inicial abierto: el tramo de banda alrededor del puesto (±12° de lon,
-  // robusto al antimeridiano) + el puesto. Sin banda cerca, vista regional del puesto.
-  function initialView() {
-    if (!D.polygon) { draw(D, false); return; }
-    function lonNear(lon) { return Math.abs(((lon - D.spot.lon + 540) % 360) - 180) <= 12; }
-    var seg = D.north.concat(D.south).filter(function (p) { return lonNear(p[1]); });
-    if (!seg.length) { draw(D, false); return; }
-    seg.push([D.spot.lat, D.spot.lon]);
-    if (D.here) seg.push([D.here.lat, D.here.lon]);
-    draw(D, false);
-    map.fitBounds(seg, { padding: [40, 40], maxZoom: 7 });
-  }
-  initialView();
+  draw(D, false);
   window.eclipsumUpdate = function (d) { draw(d, true); };
 
   // Tap en el mapa → RN calcula el eclipse en ese punto → popup vía eclipsumShowInfo
