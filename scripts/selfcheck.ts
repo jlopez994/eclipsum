@@ -228,6 +228,22 @@ async function main() {
   setLang('es');
   assert.equal(tr('bearing.W'), esWest, 'i18n: vuelta a español restaura los textos');
 
+  // i18n del catálogo: labels del empaquetado y de la selección siguen el idioma activo
+  setLang('en');
+  assert.equal(
+    getActiveEclipse(new Date('2026-06-01T00:00:00Z')).bandLabel,
+    'PATH OF TOTALITY · 12 AUG 2026',
+    'i18n: labels del eclipse empaquetado regenerados en inglés',
+  );
+  setUserSelectedEclipseDay('2027-08-02'); // resuelta bajo en → labels ingleses horneados
+  setLang('es');
+  assert.equal(
+    getActiveEclipse(new Date('2026-06-01T00:00:00Z')).label,
+    'Total · 2 ago 2027',
+    'i18n: selección de usuario re-resuelta al cambiar de idioma',
+  );
+  setUserSelectedEclipseDay('');
+
   console.log('selfcheck OK — Zaragoza total', zgz.totalityDurationSec + 's, máximo', max.time.toISOString());
   console.log(
     'Sevilla → totalidad a', dir!.distanceKm, 'km al', bearingLabel(dir!.bearingDeg),

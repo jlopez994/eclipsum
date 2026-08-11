@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path, Rect, Text as SvgText } from 'react-native-svg';
-import { t } from '../../lib/i18n';
+import { fmtFixed1, t } from '../../lib/i18n';
 import { bearingLabel } from '../../lib/totality';
 import { C, F } from '../theme';
 
@@ -15,14 +15,14 @@ export function HorizonDiagram({ altitudeDeg, azimuthDeg }: { altitudeDeg: numbe
   const r = Math.min(205, sin > 0.05 ? (oy - 16) / sin : 205, cos > 0.05 ? (300 - 24 - ox) / cos : 205);
   const sx = ox + r * cos;
   const sy = oy - r * sin;
-  const altTxt = altitudeDeg.toFixed(1).replace('.', ',');
+  const altTxt = fmtFixed1(altitudeDeg);
   // Referencia a ojo: un puño con el brazo estirado cubre ~10°
   const fistTxt =
     altitudeDeg < 7.5
       ? t('horizon.fist.less')
       : altitudeDeg < 12.5
         ? t('horizon.fist.about')
-        : t('horizon.fist.n', { n: (altitudeDeg / 10).toFixed(1).replace('.', ',') });
+        : t('horizon.fist.n', { n: fmtFixed1(altitudeDeg / 10) });
   // Recorta el cielo vacío por encima del sol: menos margen con el título
   const minY = Math.max(0, Math.floor(sy) - 24);
   return (

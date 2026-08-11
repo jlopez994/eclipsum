@@ -20,15 +20,16 @@ export function usePrefs() {
 
   useEffect(() => {
     void loadPrefs(getActiveEclipse().civilDate).then((p) => {
-      setUserSelectedEclipseDay(p.selectedEclipseDay);
+      // Idioma primero: la resolución del eclipse hornea labels con getLang()
       setLang(resolveLang(p.language));
+      setUserSelectedEclipseDay(p.selectedEclipseDay);
       setPrefs(p);
     });
   }, []);
 
   const update = useCallback((next: Prefs) => {
-    setUserSelectedEclipseDay(next.selectedEclipseDay);
     setLang(resolveLang(next.language));
+    setUserSelectedEclipseDay(next.selectedEclipseDay);
     setPrefs(next);
     void savePrefs(next);
   }, []);

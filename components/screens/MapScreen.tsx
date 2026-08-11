@@ -16,7 +16,7 @@ import Svg, { Circle, Defs, Path, RadialGradient, Rect, Stop } from 'react-nativ
 import { LinearGradient } from 'expo-linear-gradient';
 import { nextEvent, type LocalEclipse } from '../../lib/eclipse';
 import { bandOf, getActiveEclipse } from '../../lib/eclipseCatalog';
-import { localeTag, t, type I18nKey } from '../../lib/i18n';
+import { fmtFixed1, localeTag, t, type I18nKey } from '../../lib/i18n';
 import { type TotalityDirection } from '../../lib/totality';
 import { track, type Sponsor } from '../../lib/firebase';
 import { windyEclipseCloudsUrl } from '../../lib/weather';
@@ -101,7 +101,7 @@ interface MapScreenProps {
 const fmtHM = (d: Date) =>
   d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-const fmtPct = (o: number) => `${(o * 100).toFixed(1).replace('.', ',')}%`;
+const fmtPct = (o: number) => `${fmtFixed1(o * 100)}%`;
 
 /** Fracción vertical para una distancia a la banda dada. */
 function kmFraction(km: number): number {
@@ -208,7 +208,7 @@ export function MapScreen({
           }),
         };
 
-  const obscuracion = (eclipse.obscuration * 100).toFixed(1).replace('.', ',');
+  const obscuracion = fmtFixed1(eclipse.obscuration * 100);
   const showHere = hereOnMap !== null;
   const spotFrac = dotTopFraction(isTotal, totality);
   const hereFrac = showHere ? dotTopFraction(hereOnMap.isTotal, hereOnMap.totality) : spotFrac;

@@ -24,6 +24,12 @@ export function localeTag(): string {
   return lang === 'es' ? 'es-ES' : 'en-GB';
 }
 
+/** toFixed(1) con el separador decimal del idioma activo (es: coma). */
+export function fmtFixed1(n: number): string {
+  const s = n.toFixed(1);
+  return lang === 'es' ? s.replace('.', ',') : s;
+}
+
 const es = {
   // Tabs
   'tab.map': 'MAPA',

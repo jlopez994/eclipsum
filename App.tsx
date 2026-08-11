@@ -331,7 +331,7 @@ function AppInner() {
           eclipse={activeEclipse}
           place={cleanPlaceLabel(active.place)}
           now={now}
-          exitLabel={drill ? 'SIMULACRO' : demo ? 'DEMO' : null}
+          exitLabel={drill ? t('settings.drill') : demo ? 'DEMO' : null}
           onExitDemo={drill ? exitDrill : () => setDemo(false)}
           onJumpToEvent={drill ? jumpDrill : null}
         />

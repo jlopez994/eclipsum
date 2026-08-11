@@ -43,8 +43,8 @@ function fmtCountdown(civilDate: string): string {
 /** «Pico 41°N 3°O» a partir del pico global (solo entradas autogeneradas). */
 function fmtPeak(e: EclipseEntry): string | null {
   if (e.peakLat === undefined || e.peakLon === undefined) return null;
-  const lat = `${Math.abs(e.peakLat).toFixed(0)}°${e.peakLat >= 0 ? 'N' : 'S'}`;
-  const lon = `${Math.abs(e.peakLon).toFixed(0)}°${e.peakLon >= 0 ? 'E' : t('bearing.W')}`;
+  const lat = `${Math.abs(e.peakLat).toFixed(0)}°${e.peakLat >= 0 ? t('bearing.N') : t('bearing.S')}`;
+  const lon = `${Math.abs(e.peakLon).toFixed(0)}°${e.peakLon >= 0 ? t('bearing.E') : t('bearing.W')}`;
   return t('settings.upcoming.peak', { lat, lon });
 }
 

@@ -13,6 +13,8 @@ export interface EclipseEntry {
   searchStart: string;
   /** Día civil UTC del evento (Open-Meteo / Windy / caché). */
   civilDate: string;
+  /** Tipo del eclipse; presente → los labels se regeneran en el idioma activo (allEclipses). */
+  kind?: 'total' | 'annular' | 'partial';
   /** Texto «Acerca de» / próximo eclipse. */
   label: string;
   /** Etiqueta de la banda en el diagrama. */
@@ -40,6 +42,8 @@ export const ECLIPSES: EclipseEntry[] = [
     id: '2026-08-12-iberia',
     searchStart: '2026-08-01T00:00:00Z',
     civilDate: '2026-08-12',
+    kind: 'total',
+    // Labels de fábrica en español; allEclipses() los regenera en el idioma activo vía kind
     label: 'Total · 12 ago 2026',
     bandLabel: 'BANDA DE TOTALIDAD · 12 AGO 2026',
     bandTooltip: 'Banda de totalidad · 12 ago 2026',
@@ -62,6 +66,8 @@ export function setRemoteActiveEclipseId(id: string): void {
  */
 let userSelectedDay = '';
 let userSelected: EclipseEntry | null = null;
+/** Idioma con el que se hornearon los labels de userSelected; distinto → re-resolver. */
+let userSelectedLang = '';
 
 function resolveByDay(day: string): EclipseEntry | null {
   return (
@@ -77,6 +83,7 @@ export function setUserSelectedEclipseDay(day: string): void {
   if (trimmed === userSelectedDay) return;
   userSelectedDay = trimmed;
   userSelected = trimmed ? resolveByDay(trimmed) : null;
+  userSelectedLang = getLang();
 }
 
 /** Entradas añadidas por Remote Config (`eclipse_catalog`); no requieren release. */
@@ -133,19 +140,25 @@ export function setRemoteCatalog(json: string): void {
   catalogVersion++;
   autoCache = null;
   // El catálogo nuevo puede contener (o retirar) la selección del usuario
-  if (userSelectedDay) userSelected = resolveByDay(userSelectedDay);
+  if (userSelectedDay) {
+    userSelected = resolveByDay(userSelectedDay);
+    userSelectedLang = getLang();
+  }
 }
 
 /**
  * Catálogo completo: empaquetado + RC, ordenado por fecha para el rollover.
  * Dedupe por id Y por día civil: genEclipse puede publicar el mismo eclipse con
  * id autogenerado («2026-08-12-total» vs «2026-08-12-iberia») — gana la empaquetada.
+ * Entradas con `kind` salen con labels regenerados en el idioma activo.
  */
 function allEclipses(): EclipseEntry[] {
   const extras = remoteEntries.filter(
     (r) => !ECLIPSES.some((e) => e.id === r.id || e.civilDate === r.civilDate),
   );
-  return [...ECLIPSES, ...extras].sort((a, b) => a.civilDate.localeCompare(b.civilDate));
+  return [...ECLIPSES, ...extras]
+    .map((e) => (e.kind ? { ...e, ...labelFields(e.kind, new Date(`${e.civilDate}T00:00:00Z`)) } : e))
+    .sort((a, b) => a.civilDate.localeCompare(b.civilDate));
 }
 
 export function getEclipseById(id: string): EclipseEntry | undefined {
@@ -166,11 +179,11 @@ const HOUR_MS = 3_600_000;
 /** Margen del ancla searchStart: SearchLocalSolarEclipse busca el primer eclipse local tras ella. */
 const SEARCH_START_DAYS_BEFORE = 15;
 
-/** Entrada de catálogo derivada de un eclipse global del motor (labels en el idioma activo). */
-export function entryFromGlobalEclipse(ev: GlobalSolarEclipseInfo): EclipseEntry {
-  const peak = ev.peak.date;
-  const kind = ev.kind as string;
-  const civilDate = peak.toISOString().slice(0, 10);
+/** Labels visibles (acerca de, banda, tooltip, abreviatura) en el idioma activo. */
+function labelFields(
+  kind: string,
+  peak: Date,
+): Pick<EclipseEntry, 'label' | 'bandLabel' | 'bandTooltip' | 'shortDateLabel'> {
   const d = peak.getUTCDate();
   const mes = MES[getLang()][peak.getUTCMonth()];
   const year = peak.getUTCFullYear();
@@ -179,15 +192,25 @@ export function entryFromGlobalEclipse(ev: GlobalSolarEclipseInfo): EclipseEntry
   const kindLabel = kind === 'total' || kind === 'annular' || kind === 'partial' ? t(`kind.${kind}` as I18nKey) : kind;
   const word = kind === 'total' || kind === 'annular' ? t(`band.word.${kind}` as I18nKey) : null;
   return {
-    id: `${civilDate}-${kind}`,
-    searchStart: `${new Date(peak.getTime() - SEARCH_START_DAYS_BEFORE * DAY_MS).toISOString().slice(0, 10)}T00:00:00Z`,
-    civilDate,
     label: `${kindLabel} · ${fecha}`,
     bandLabel: word
       ? t('band.label', { word: word.toUpperCase(), date: fechaMayus })
       : t('band.label.partial', { date: fechaMayus }),
     bandTooltip: word ? t('band.tooltip', { word, date: fecha }) : t('band.tooltip.partial', { date: fecha }),
     shortDateLabel: `${d} ${mes.toUpperCase()}`,
+  };
+}
+
+/** Entrada de catálogo derivada de un eclipse global del motor (labels en el idioma activo). */
+export function entryFromGlobalEclipse(ev: GlobalSolarEclipseInfo): EclipseEntry {
+  const peak = ev.peak.date;
+  const kind = ev.kind as string;
+  const civilDate = peak.toISOString().slice(0, 10);
+  return {
+    id: `${civilDate}-${kind}`,
+    searchStart: `${new Date(peak.getTime() - SEARCH_START_DAYS_BEFORE * DAY_MS).toISOString().slice(0, 10)}T00:00:00Z`,
+    civilDate,
+    ...labelFields(kind, peak),
     windyFallbackMax: new Date(Math.round(peak.getTime() / HOUR_MS) * HOUR_MS)
       .toISOString()
       .replace('.000Z', 'Z'),
@@ -238,7 +261,14 @@ let autoCacheLang = '';
  * override RC → el más próximo (misma regla que la lista de upcomingEclipses).
  */
 export function getActiveEclipse(now: Date = new Date()): EclipseEntry {
-  if (userSelected && eclipseEndMs(userSelected) >= now.getTime()) return userSelected;
+  if (userSelected && eclipseEndMs(userSelected) >= now.getTime()) {
+    if (userSelectedLang !== getLang()) {
+      // Labels horneados al resolver: cambio de idioma → re-resuelve la misma selección
+      userSelected = resolveByDay(userSelectedDay) ?? userSelected;
+      userSelectedLang = getLang();
+    }
+    return userSelected;
+  }
   if (remoteActiveId) {
     const forced = getEclipseById(remoteActiveId);
     if (forced) return forced;

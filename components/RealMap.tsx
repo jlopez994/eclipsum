@@ -4,7 +4,7 @@ import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { type BandSlice } from '../lib/bandGeo';
 import { computeLocalEclipse } from '../lib/eclipse';
 import { bandOf, getActiveEclipse } from '../lib/eclipseCatalog';
-import { localeTag, t } from '../lib/i18n';
+import { fmtFixed1, localeTag, t } from '../lib/i18n';
 import { LEAFLET_CSS, LEAFLET_JS } from '../lib/leafletVendor';
 import { C } from './theme';
 
@@ -64,7 +64,7 @@ function tapInfo(lat: number, lon: number): TapInfo {
         ec.totalityDurationSec != null ? `${t('real.total')} · ${fmtDur(ec.totalityDurationSec)}` : t('real.total');
       return { ...base, title, color: C.totality, lines, warn };
     }
-    const pct = (ec.obscuration * 100).toFixed(1).replace('.', ',');
+    const pct = fmtFixed1(ec.obscuration * 100);
     return {
       ...base,
       title: `${ec.kind === 'annular' ? t('real.annular') : t('real.partial')} · ${t('real.pctHidden', { pct })}`,
