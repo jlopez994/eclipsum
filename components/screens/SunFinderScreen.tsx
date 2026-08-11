@@ -33,6 +33,12 @@ interface SunFinderScreenProps {
   momentLabel: string;
   /** Hora local del hito */
   momentTime: string;
+  /**
+   * Distancia y nombre del puesto elegido cuando el GPS está lejos de él. El visor
+   * SIEMPRE pinta el cielo de donde estás; esto evita creer que enseña el del destino.
+   * null = estás prácticamente en tu puesto, no hay nada que aclarar.
+   */
+  awayFromSpot: { km: number; place: string } | null;
   onClose: () => void;
 }
 
@@ -50,6 +56,7 @@ export function SunFinderScreen({
   altitudeDeg,
   momentLabel,
   momentTime,
+  awayFromSpot,
   onClose,
 }: SunFinderScreenProps) {
   useKeepAwake();
@@ -128,6 +135,11 @@ export function SunFinderScreen({
       <View style={[s.gate, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}>
         <Text style={s.gateKicker}>{t('sun.title')}</Text>
         <Text style={s.gateTitle}>{t('sun.warn.title')}</Text>
+        {/* Antes de nada, de qué cielo hablamos */}
+        <Text style={s.gateFromHere}>{t('sun.fromHere')}</Text>
+        {awayFromSpot && (
+          <Text style={s.gateAway}>{t('sun.awayFromSpot', awayFromSpot)}</Text>
+        )}
         <Text style={s.gateBody}>{t('sun.warn.body')}</Text>
         <View style={s.gateActions}>
           <Pressable style={s.gateCta} onPress={() => setAccepted(true)}>
@@ -255,6 +267,10 @@ export function SunFinderScreen({
       <View style={[s.top, { paddingTop: insets.top + 12 }]} pointerEvents="box-none">
         <View style={s.targetPill}>
           <Text style={s.targetText}>{t('sun.target', { label: momentLabel, time: momentTime })}</Text>
+          {/* Permanente: la hora y la posición son las de aquí, no las del puesto elegido */}
+          <Text style={s.targetFromHere} numberOfLines={2}>
+            {awayFromSpot ? t('sun.awayFromSpot', awayFromSpot) : t('sun.fromHere')}
+          </Text>
         </View>
         <Pressable style={s.closeBtn} onPress={onClose} hitSlop={10} accessibilityLabel={t('sun.close')}>
           <Text style={s.closeBtnText}>✕</Text>
@@ -285,6 +301,8 @@ const s = StyleSheet.create({
   gateKicker: { fontFamily: F.semibold, fontSize: 11, letterSpacing: 2.5, color: C.dim },
   gateTitle: { fontFamily: F.bold, fontSize: 26, letterSpacing: -0.4, color: C.text },
   gateBody: { fontFamily: F.regular, fontSize: 14, lineHeight: 21, color: C.dim },
+  gateFromHere: { fontFamily: F.bold, fontSize: 13, letterSpacing: 0.5, color: C.corona },
+  gateAway: { fontFamily: F.semibold, fontSize: 13, lineHeight: 19, color: C.text },
   gateActions: { marginTop: 10, gap: 18, alignItems: 'center' },
   gateCta: {
     alignSelf: 'stretch',
@@ -339,6 +357,7 @@ const s = StyleSheet.create({
     flexShrink: 1,
   },
   targetText: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1.2, color: C.text },
+  targetFromHere: { fontFamily: F.medium, fontSize: 10.5, lineHeight: 14, color: C.corona, marginTop: 2 },
   closeBtn: {
     width: 38,
     height: 38,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
@@ -13,11 +13,11 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { nextEvent, type LocalEclipse } from '../../lib/eclipse';
+import { computeLocalEclipse, isActiveEclipse, nextEvent, type LocalEclipse } from '../../lib/eclipse';
 import { bandOf, getActiveEclipse } from '../../lib/eclipseCatalog';
 import { fmtDur, fmtHM, fmtHMS } from '../../lib/format';
 import { fmtFixed1, t, type I18nKey } from '../../lib/i18n';
-import { bearingLabel, type TotalityDirection } from '../../lib/totality';
+import { bearingLabel, haversineKm, type TotalityDirection } from '../../lib/totality';
 import { track, type Sponsor } from '../../lib/firebase';
 import { cloudLevel, windyEclipseCloudsUrl } from '../../lib/weather';
 import { animateNextLayout } from '../../lib/anim';
@@ -35,6 +35,10 @@ const IGN_URL = 'https://eclipses.ign.es/como-observar-eclipses.html';
 const SHEET_MIN_FALLBACK = 140;
 /** Mínimo de mapa visible con la hoja estirada */
 const SHEET_TOP_GAP = 150;
+/** A partir de aquí (km) los obstáculos de donde estás no dicen nada del puesto elegido */
+const FINDER_AWAY_KM = 5;
+/** Por debajo de esta altura (grados) en el máximo, cualquier obstáculo tapa el sol */
+const LOW_SUN_DEG = 10;
 
 interface MapScreenProps {
   eclipse: LocalEclipse;
@@ -130,6 +134,34 @@ export function MapScreen({
   const isTotal = eclipse.kind === 'total';
   const upcoming = nextEvent(eclipse, now);
   const maxEvent = eclipse.events.find((e) => e.key === 'MAX');
+
+  /**
+   * Máximo SOBRE TI, no sobre el puesto elegido. La brújula y el visor son instrumentos
+   * de puntería: describen el cielo de donde apuntas el móvil. Con el puesto a 500 km, su
+   * azimut se va 4° y su hora casi 5 min — la cabecera del visor daría una hora que no es
+   * la tuya. null = sin GPS, o desde aquí no se ve este eclipse.
+   */
+  const sunHere = useMemo(() => {
+    if (!gpsCoords) return null;
+    try {
+      const here = computeLocalEclipse(gpsCoords.lat, gpsCoords.lon);
+      if (!isActiveEclipse(here)) return null;
+      return here.events.find((e) => e.key === 'MAX') ?? null;
+    } catch {
+      return null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gpsCoords?.lat, gpsCoords?.lon, eclipse]);
+
+  // La brújula tolera el respaldo del puesto (es orientativa); el visor no: ver abajo
+  const compassTarget = sunHere ?? maxEvent ?? null;
+
+  // A partir de unos km los obstáculos de aquí no dicen nada de los de allí: se avisa
+  const awayFromSpot = (() => {
+    if (!gpsCoords) return null;
+    const km = Math.round(haversineKm(gpsCoords.lat, gpsCoords.lon, spotCoords.lat, spotCoords.lon));
+    return km >= FINDER_AWAY_KM ? { km, place } : null;
+  })();
   // Cronología con el ocaso intercalado; los contactos bajo el horizonte no se ven
   const cronoRows = [
     ...eclipse.events.map((e) => ({
@@ -236,10 +268,10 @@ export function MapScreen({
             </Pressable>
           </View>
           <CompassChip
-            targetAzimuthDeg={maxEvent?.azimuth ?? 270}
+            targetAzimuthDeg={compassTarget?.azimuth ?? 270}
             expanded={compassOpen}
             onPress={
-              maxEvent
+              compassTarget
                 ? () => {
                     animateNextLayout();
                     setCompassOpen((v) => !v);
@@ -250,16 +282,17 @@ export function MapScreen({
         </View>
         {/* Fuera del chip a propósito: aquí el ancho disponible es el de la pantalla,
             así el panel se ajusta a su texto en vez de encogerse a los 40 px de la brújula */}
-        {compassOpen && maxEvent && (
+        {compassOpen && compassTarget && (
           <View style={s.compassPanelRow}>
             <View style={s.compassPanel}>
               <Text style={s.compassPanelText}>
-                {maxEvent.altitude > 0
-                  ? t('map.compass.height', { deg: Math.round(maxEvent.altitude) })
+                {compassTarget.altitude > 0
+                  ? t('map.compass.height', { deg: Math.round(compassTarget.altitude) })
                   : t('map.compass.belowHorizon')}
               </Text>
-              {/* El visor solo tiene sentido con el sol sobre el horizonte */}
-              {maxEvent.altitude > 0 && (
+              {/* El visor exige posición REAL: sin GPS no sabemos qué cielo hay sobre la
+                  cámara, y con el sol bajo el horizonte no hay nada que señalar */}
+              {sunHere && sunHere.altitude > 0 && (
                 <Pressable onPress={() => setFinderOpen(true)} hitSlop={6}>
                   <Text style={s.compassPanelLink}>{t('map.compass.finder')}</Text>
                 </Pressable>
@@ -356,6 +389,15 @@ export function MapScreen({
               <View style={s.divider} />
               <Text style={s.cronoTitle}>{t('map.sunAtMax')}</Text>
               <HorizonDiagram altitudeDeg={maxEvent.altitude} azimuthDeg={maxEvent.azimuth} />
+              {/* A poca altura el sitio importa más que el pronóstico: se dice con el número */}
+              {maxEvent.altitude < LOW_SUN_DEG && (
+                <Text style={s.lowSun}>
+                  {t('map.lowSun', {
+                    deg: Math.round(maxEvent.altitude),
+                    dir: bearingLabel(maxEvent.azimuth),
+                  })}
+                </Text>
+              )}
             </>
           )}
           {/* Cierre de la cronología: cuándo mirar ya está resuelto arriba; aquí, cómo mirar */}
@@ -403,12 +445,14 @@ export function MapScreen({
       </Animated.View>
       </Animated.View>
       {/* Encima de todo, incluida la hoja: el visor es pantalla completa */}
-      {finderOpen && maxEvent && (
+      {/* Siempre con sunHere: azimut, altura y hora son los de DONDE ESTÁS */}
+      {finderOpen && sunHere && (
         <SunFinderScreen
-          azimuthDeg={maxEvent.azimuth}
-          altitudeDeg={maxEvent.altitude}
+          azimuthDeg={sunHere.azimuth}
+          altitudeDeg={sunHere.altitude}
           momentLabel={t('event.MAX').toUpperCase()}
-          momentTime={fmtHM(maxEvent.time)}
+          momentTime={fmtHM(sunHere.time)}
+          awayFromSpot={awayFromSpot}
           onClose={() => setFinderOpen(false)}
         />
       )}
@@ -479,6 +523,13 @@ const s = StyleSheet.create({
   },
   compassPanelText: { fontFamily: F.semibold, fontSize: 11.5, color: C.text },
   compassPanelLink: { fontFamily: F.bold, fontSize: 10, letterSpacing: 1, color: C.corona, marginTop: 6 },
+  lowSun: {
+    fontFamily: F.semibold,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: C.corona,
+    marginTop: 10,
+  },
   chipChevron: { fontFamily: F.semibold, fontSize: 12, color: C.dim, marginLeft: 2 },
   cronoHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   mapsLink: {
