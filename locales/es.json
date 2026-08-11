@@ -220,7 +220,6 @@
   "map.compass.belowHorizon": "Máximo · bajo el horizonte",
   "map.compass.a11yHint": "Toca para ver la altura del sol",
   "map.compass.finder": "VERLO DESDE AQUÍ →",
-  "map.lowSun": "Sol muy bajo. A {deg}° sobre el horizonte lo tapa cualquier edificio o loma: busca horizonte {dir} despejado.",
   "sun.fromHere": "Desde tu ubicación actual",
   "sun.awayFromSpot": "Estás a {km} km de {place}. Esto es el cielo de aquí, no el de allí.",
   "sun.title": "DÓNDE MIRAR",

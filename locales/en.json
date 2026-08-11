@@ -220,7 +220,6 @@
   "map.compass.belowHorizon": "Maximum · below the horizon",
   "map.compass.a11yHint": "Tap to see the sun's height",
   "map.compass.finder": "SEE IT FROM HERE →",
-  "map.lowSun": "Very low sun. At {deg}° above the horizon any building or hill will block it: find a clear {dir} horizon.",
   "sun.fromHere": "From your current location",
   "sun.awayFromSpot": "You're {km} km from {place}. This is the sky here, not there.",
   "sun.title": "WHERE TO LOOK",

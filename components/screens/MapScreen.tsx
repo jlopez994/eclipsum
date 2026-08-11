@@ -37,8 +37,6 @@ const SHEET_MIN_FALLBACK = 140;
 const SHEET_TOP_GAP = 150;
 /** A partir de aquí (km) los obstáculos de donde estás no dicen nada del puesto elegido */
 const FINDER_AWAY_KM = 5;
-/** Por debajo de esta altura (grados) en el máximo, cualquier obstáculo tapa el sol */
-const LOW_SUN_DEG = 10;
 
 interface MapScreenProps {
   eclipse: LocalEclipse;
@@ -388,16 +386,8 @@ export function MapScreen({
             <>
               <View style={s.divider} />
               <Text style={s.cronoTitle}>{t('map.sunAtMax')}</Text>
+              {/* El aviso de sol bajo lo da el propio diagrama (horizon.noteLow) */}
               <HorizonDiagram altitudeDeg={maxEvent.altitude} azimuthDeg={maxEvent.azimuth} />
-              {/* A poca altura el sitio importa más que el pronóstico: se dice con el número */}
-              {maxEvent.altitude < LOW_SUN_DEG && (
-                <Text style={s.lowSun}>
-                  {t('map.lowSun', {
-                    deg: Math.round(maxEvent.altitude),
-                    dir: bearingLabel(maxEvent.azimuth),
-                  })}
-                </Text>
-              )}
             </>
           )}
           {/* Cierre de la cronología: cuándo mirar ya está resuelto arriba; aquí, cómo mirar */}
@@ -523,13 +513,6 @@ const s = StyleSheet.create({
   },
   compassPanelText: { fontFamily: F.semibold, fontSize: 11.5, color: C.text },
   compassPanelLink: { fontFamily: F.bold, fontSize: 10, letterSpacing: 1, color: C.corona, marginTop: 6 },
-  lowSun: {
-    fontFamily: F.semibold,
-    fontSize: 12.5,
-    lineHeight: 18,
-    color: C.corona,
-    marginTop: 10,
-  },
   chipChevron: { fontFamily: F.semibold, fontSize: 12, color: C.dim, marginLeft: 2 },
   cronoHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   mapsLink: {
