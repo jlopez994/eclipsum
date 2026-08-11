@@ -68,9 +68,25 @@ export function Tour({ onClose }: TourProps) {
           ))}
         </View>
         <View style={s.actions}>
-          <Pressable onPress={() => finish(true)} hitSlop={10} accessibilityRole="button">
-            <Text style={s.skip}>{t('tour.skip')}</Text>
-          </Pressable>
+          {/* Atrás solo desde la segunda tarjeta: en la primera no hay nada detrás y un
+              botón muerto ahí haría dudar de si el tutorial responde */}
+          <View style={s.actionsLeft}>
+            {step > 0 && (
+              <Pressable
+                onPress={() => {
+                  animateNextLayout();
+                  setStep((v) => v - 1);
+                }}
+                hitSlop={10}
+                accessibilityRole="button"
+              >
+                <Text style={s.back}>{t('tour.back')}</Text>
+              </Pressable>
+            )}
+            <Pressable onPress={() => finish(true)} hitSlop={10} accessibilityRole="button">
+              <Text style={s.skip}>{t('tour.skip')}</Text>
+            </Pressable>
+          </View>
           <Pressable
             style={s.nextBtn}
             accessibilityRole="button"
@@ -130,7 +146,10 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: 18,
   },
+  actionsLeft: { flexDirection: 'row', alignItems: 'center', gap: 18 },
   skip: { fontFamily: F.semibold, fontSize: 11, letterSpacing: 1.5, color: C.dim, paddingVertical: 6 },
+  /** Volver es secundario frente a seguir, pero más visible que «saltar»: es navegación, no salida */
+  back: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1.5, color: C.corona, paddingVertical: 6 },
   nextBtn: {
     paddingHorizontal: 20,
     paddingVertical: 12,

@@ -126,48 +126,6 @@ export function SettingsScreen({
         <Text style={s.hint}>{t('settings.hint')}</Text>
 
         <View>
-          <Text style={s.section}>{t('settings.permissions')}</Text>
-          <View style={s.card}>
-            {PERMISSION_ROWS.map((row, i) => {
-              const on = permissions[row.kind];
-              return (
-                // El peso visual va al que PIDE algo: concedido se resuelve con un check
-                // discreto y sin robar ancho al texto, y solo lo pendiente se pinta como
-                // llamada. Tocar la fila lo concede, sin ir a buscar la pantalla que lo usa.
-                <Pressable
-                  key={row.kind}
-                  style={[
-                    s.permRow,
-                    !on && s.permRowPending,
-                    i < PERMISSION_ROWS.length - 1 && s.rowDivider,
-                  ]}
-                  onPress={on ? undefined : () => onRequestPermission(row.kind)}
-                  disabled={on}
-                  accessibilityRole={on ? undefined : 'button'}
-                  accessibilityLabel={`${t(row.label)}. ${on ? t('settings.granted') : t('settings.permissions.grant')}`}
-                >
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={s.rowTitle}>{t(row.label)}</Text>
-                    <Text style={s.permWhy}>{t(row.why)}</Text>
-                  </View>
-                  {on ? (
-                    <View style={s.permOk}>
-                      <Text style={s.permOkIcon}>✓</Text>
-                    </View>
-                  ) : (
-                    <View style={s.permCta}>
-                      <Text style={s.permCtaTxt}>{t('settings.permissions.grant')}</Text>
-                    </View>
-                  )}
-                </Pressable>
-              );
-            })}
-          </View>
-          {/* Con todo concedido la explicación sobra: sería ruido permanente */}
-          {missingPermission && <Text style={s.upcomingNote}>{t('settings.permissions.hint')}</Text>}
-        </View>
-
-        <View>
           <Text style={s.section}>{t('settings.upcoming')}</Text>
           <View style={s.card}>
             {upcoming.map((e, i) => {
@@ -246,28 +204,45 @@ export function SettingsScreen({
         </View>
 
         <View>
-          <Text style={s.section}>{t('settings.channel')}</Text>
+          <Text style={s.section}>{t('settings.permissions')}</Text>
           <View style={s.card}>
-            {UPDATE_CHANNELS.map((opt, i) => {
-              const on = updateChannel === opt.id;
+            {PERMISSION_ROWS.map((row, i) => {
+              const on = permissions[row.kind];
               return (
+                // El peso visual va al que PIDE algo: concedido se resuelve con un check
+                // discreto y sin robar ancho al texto, y solo lo pendiente se pinta como
+                // llamada. Tocar la fila lo concede, sin ir a buscar la pantalla que lo usa.
                 <Pressable
-                  key={opt.id}
-                  style={[s.permRow, i < UPDATE_CHANNELS.length - 1 && s.rowDivider]}
-                  onPress={() => onUpdateChannelChange(opt.id)}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
-                  accessibilityLabel={`${t(opt.label)}. ${t(opt.hint)}`}
+                  key={row.kind}
+                  style={[
+                    s.permRow,
+                    !on && s.permRowPending,
+                    i < PERMISSION_ROWS.length - 1 && s.rowDivider,
+                  ]}
+                  onPress={on ? undefined : () => onRequestPermission(row.kind)}
+                  disabled={on}
+                  accessibilityRole={on ? undefined : 'button'}
+                  accessibilityLabel={`${t(row.label)}. ${on ? t('settings.granted') : t('settings.permissions.grant')}`}
                 >
                   <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={s.rowTitle}>{t(opt.label)}</Text>
-                    <Text style={s.permWhy}>{t(opt.hint)}</Text>
+                    <Text style={s.rowTitle}>{t(row.label)}</Text>
+                    <Text style={s.permWhy}>{t(row.why)}</Text>
                   </View>
-                  <View style={[s.radio, on && s.radioOn]}>{on && <View style={s.radioDot} />}</View>
+                  {on ? (
+                    <View style={s.permOk}>
+                      <Text style={s.permOkIcon}>✓</Text>
+                    </View>
+                  ) : (
+                    <View style={s.permCta}>
+                      <Text style={s.permCtaTxt}>{t('settings.permissions.grant')}</Text>
+                    </View>
+                  )}
                 </Pressable>
               );
             })}
           </View>
+          {/* Con todo concedido la explicación sobra: sería ruido permanente */}
+          {missingPermission && <Text style={s.upcomingNote}>{t('settings.permissions.hint')}</Text>}
         </View>
 
         <View>
@@ -285,6 +260,38 @@ export function SettingsScreen({
                   accessibilityLabel={opt.a11y}
                 >
                   <Text style={[s.langChipTxt, on && s.langChipTxtOn]}>{opt.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View>
+          <Text style={s.section}>{t('settings.channel')}</Text>
+          <View style={s.card}>
+            <View style={[s.rowItem, s.rowDivider]}>
+              <Text style={s.rowTitle}>{t('settings.version')}</Text>
+              {/* La versión ES el build (b<versionCode>, ver release.sh) */}
+              <Text style={s.aboutValue}>
+                Eclipsum {Constants.expoConfig?.version ?? `b${Constants.expoConfig?.android?.versionCode ?? '?'}`}
+              </Text>
+            </View>
+            {UPDATE_CHANNELS.map((opt, i) => {
+              const on = updateChannel === opt.id;
+              return (
+                <Pressable
+                  key={opt.id}
+                  style={[s.permRow, i < UPDATE_CHANNELS.length - 1 && s.rowDivider]}
+                  onPress={() => onUpdateChannelChange(opt.id)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`${t(opt.label)}. ${t(opt.hint)}`}
+                >
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={s.rowTitle}>{t(opt.label)}</Text>
+                    <Text style={s.permWhy}>{t(opt.hint)}</Text>
+                  </View>
+                  <View style={[s.radio, on && s.radioOn]}>{on && <View style={s.radioDot} />}</View>
                 </Pressable>
               );
             })}
@@ -323,17 +330,6 @@ export function SettingsScreen({
                 <Text style={s.rowTitle}>{t('settings.tour')}</Text>
                 <Text style={s.tourAction}>{t('settings.tour.action')}</Text>
               </Pressable>
-              <View style={[s.rowItem, s.rowDivider]}>
-                <Text style={s.rowTitle}>{t('settings.version')}</Text>
-                {/* La versión ES el build (b<versionCode>, ver release.sh) */}
-                <Text style={s.aboutValue}>
-                  Eclipsum {Constants.expoConfig?.version ?? `b${Constants.expoConfig?.android?.versionCode ?? '?'}`}
-                </Text>
-              </View>
-              <View style={[s.rowItem, s.rowDivider]}>
-                <Text style={s.rowTitle}>{t('settings.activeEclipse')}</Text>
-                <Text style={s.aboutValue}>{activeEclipse.label}</Text>
-              </View>
               <View style={{ padding: 16 }}>
                 <Text style={s.aboutNote}>{t('settings.aboutNote')}</Text>
               </View>
