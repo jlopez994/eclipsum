@@ -139,12 +139,6 @@ function AppInner() {
     onPrefsChange({ ...prefs, donateOpens: prefs.donateOpens + 1 });
   }, [prefs, onPrefsChange]);
 
-  /**
-   * Los avisos flotan BAJO el cromo propio de cada pestaña —chips en el mapa, título en
-   * el resto—: así no tapan nada ni empujan nada. Alturas fijas porque ese cromo lo es.
-   */
-  const bannerTop = insets.top + (tab === 'mapa' ? 52 : 64);
-
   // Ocultar un aviso dura lo que dure la sesión: al reiniciar vuelve si sigue vigente
   const showRemoteMsg = remoteMsg !== '' && !remoteMsgHidden;
   const showUpdate = updateUrl !== '' && !updateHidden;
@@ -404,12 +398,13 @@ function AppInner() {
     <View style={s.root}>
       <StatusBar style="light" />
       {/*
-        Los avisos FLOTAN sobre el contenido: si empujaran el layout, el WebView del
-        mapa se redimensionaría en cada aparición. box-none = los toques pasan al mapa
-        salvo en los propios banners.
+        Los avisos FLOTAN arriba, sobre el contenido: si empujaran el layout, el WebView
+        del mapa se redimensionaría en cada aparición. Tapan el cromo de la pantalla a
+        propósito —la ✕ los quita—, y por eso su fondo es opaco. box-none = los toques
+        pasan al contenido salvo en los propios banners.
       */}
       <View
-        style={[s.bannerStack, { top: bannerTop }]}
+        style={[s.bannerStack, { top: insets.top + 8 }]}
         pointerEvents="box-none"
       >
         {showRemoteMsg && (
