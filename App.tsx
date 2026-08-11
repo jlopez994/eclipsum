@@ -1,7 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, Linking, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
@@ -33,6 +33,7 @@ import { animateNextLayout } from './lib/anim';
 import { useGeo } from './hooks/useGeo';
 import { usePrefs } from './hooks/usePrefs';
 import { REAL_PLACE_KM, useSpotData } from './hooks/useSpotData';
+import { Notice, NoticeActions, NoticeLink } from './components/Notice';
 import { TabBar, type TabKey } from './components/TabBar';
 import { SpotSelector, localityName } from './components/SpotSelector';
 import { MapScreen } from './components/screens/MapScreen';
@@ -74,21 +75,6 @@ function buildDemoEclipse(real: LocalEclipse, now: Date): LocalEclipse {
     ...real,
     events: real.events.map((e) => ({ ...e, time: new Date(e.time.getTime() + shift) })),
   };
-}
-
-/** ✕ de un aviso flotante: esquina superior derecha, área táctil generosa */
-function CloseBanner({ onPress }: { onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      hitSlop={12}
-      style={s.bannerClose}
-      accessibilityRole="button"
-      accessibilityLabel={t('app.bannerClose')}
-    >
-      <Text style={s.bannerCloseTxt}>✕</Text>
-    </Pressable>
-  );
 }
 
 function AppInner() {
@@ -416,33 +402,29 @@ function AppInner() {
         pointerEvents="box-none"
       >
         {notice === 'info' && (
-          <View style={[s.infoBanner, s.bannerShadow]}>
-            <Text style={[s.infoBannerText, s.bannerTextInset]}>{remoteMsg}</Text>
-            <CloseBanner onPress={() => setRemoteMsgHidden(true)} />
-          </View>
+          <Notice tone="info" text={remoteMsg} onClose={() => setRemoteMsgHidden(true)} />
         )}
         {notice === 'update' && (
-          <View style={[s.updateBanner, s.bannerShadow]}>
-            <Text style={[s.updateText, s.bannerTextInset]}>{t('app.updateBanner')}</Text>
-            <Text style={s.updateLink} onPress={() => Linking.openURL(updateUrl).catch(() => {})}>
-              {t('app.updateCta')}
-            </Text>
-            <CloseBanner onPress={() => setUpdateHidden(true)} />
-          </View>
+          <Notice
+            tone="action"
+            text={t('app.updateBanner')}
+            onClose={() => setUpdateHidden(true)}
+          >
+            <NoticeLink
+              label={t('app.updateCta')}
+              onPress={() => Linking.openURL(updateUrl).catch(() => {})}
+            />
+          </Notice>
         )}
-        {/* Propina: solo tras varios usos, una vez en la vida y nunca en modo eclipse (return aparte) */}
+        {/* Propina: solo tras varios usos, una vez en la vida y nunca en modo eclipse (return aparte).
+            Sin ✕: su «ahora no» es definitivo, y un icono ambiguo aquí haría dudar si vuelve. */}
         {notice === 'donate' && (
-          <View style={[s.donateBanner, s.bannerShadow]}>
-            <Text style={s.donateText}>{t('app.donateBanner')}</Text>
-            <View style={s.donateActions}>
-              <Text style={s.donateLater} onPress={() => resolveDonate(false)}>
-                {t('app.donateLater')}
-              </Text>
-              <Text style={s.donateCta} onPress={() => resolveDonate(true)}>
-                {t('app.donateCta')}
-              </Text>
-            </View>
-          </View>
+          <Notice tone="quiet" text={t('app.donateBanner')}>
+            <NoticeActions>
+              <NoticeLink label={t('app.donateLater')} onPress={() => resolveDonate(false)} soft />
+              <NoticeLink label={t('app.donateCta')} onPress={() => resolveDonate(true)} />
+            </NoticeActions>
+          </Notice>
         )}
       </View>
       <View style={{ flex: 1 }}>
@@ -566,64 +548,4 @@ const s = StyleSheet.create({
    * Mismo molde en todos: tinte del acento, borde translúcido, texto blanco y acción en color.
    */
   bannerStack: { position: 'absolute', left: 0, right: 0, zIndex: 20, gap: 8 },
-  /** Hueco para que el texto no pase por debajo de la ✕ */
-  bannerTextInset: { paddingRight: 26 },
-  bannerClose: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 28,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bannerCloseTxt: { fontFamily: F.semibold, fontSize: 13, color: C.dim },
-  /**
-   * Fondos OPACOS: flotan sobre el mapa, y un tinte translúcido dejaba pasar las
-   * teselas y volvía ilegible el texto. Cada color es su tinte ya fundido sobre el
-   * fondo de la app, más sombra para despegarlo del contenido.
-   */
-  bannerShadow: {
-    shadowColor: '#000',
-    shadowOpacity: 0.55,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 10,
-  },
-  infoBanner: {
-    marginHorizontal: 16,
-    backgroundColor: '#1D1A33',
-    borderWidth: 1,
-    borderColor: 'rgba(124,108,255,0.45)',
-    borderRadius: 12,
-    padding: 12,
-  },
-  infoBannerText: { fontFamily: F.semibold, fontSize: 13, lineHeight: 18, color: C.text },
-  updateBanner: {
-    marginHorizontal: 16,
-    backgroundColor: '#2B2116',
-    borderWidth: 1,
-    borderColor: 'rgba(255,184,77,0.5)',
-    borderRadius: 12,
-    padding: 12,
-    gap: 4,
-  },
-  /** El más apagado de la escala a propósito: pide, no avisa */
-  donateBanner: {
-    marginHorizontal: 16,
-    backgroundColor: C.surface,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 10,
-  },
-  donateText: { fontFamily: F.regular, fontSize: 13, lineHeight: 18, color: C.dim },
-  donateActions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 18 },
-  donateLater: { fontFamily: F.semibold, fontSize: 11, letterSpacing: 1.2, color: C.dim, padding: 4 },
-  donateCta: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1.2, color: C.corona, padding: 4 },
-  // El texto explica qué pasa (blanco) y el color queda para lo que puedes pulsar
-  updateText: { fontFamily: F.semibold, fontSize: 13, lineHeight: 18, color: C.text },
-  updateLink: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1, color: C.corona },
 });
