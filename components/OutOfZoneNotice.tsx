@@ -7,54 +7,39 @@ interface OutOfZoneNoticeProps {
   place: string;
   /** Abreviatura del eclipse activo (p. ej. «12 AGO») */
   date: string;
-  /** Puesto cuyos datos siguen en pantalla detrás; null = no había ninguno previo */
-  keepingPlace: string | null;
   /**
    * Etiqueta del eclipse que SÍ se ve desde el puesto elegido («Total · 22 jul 2028»).
    * null = el motor lo sitúa fuera del catálogo conocido: sin dato, sin acción.
    */
   otherLabel: string | null;
   onGoToOther: () => void;
-  /** Deshace la elección imposible: App devuelve el puesto al que sigue en pantalla */
-  onClose: () => void;
-  top: number;
+  /** Abre el selector para buscar un puesto desde el que sí se vea este eclipse */
+  onChoosePlace: () => void;
 }
 
 /**
- * Velo semiopaco sobre el mapa: explica que el puesto elegido no ve el eclipse activo
- * y, si sabemos cuál sí se ve desde ahí, ofrece saltar a él.
+ * Pantalla de la pestaña Mapa cuando el puesto elegido no ve el eclipse activo: explica el
+ * porqué y ofrece las dos salidas —cambiar de puesto, o saltar al eclipse que sí se ve.
  *
- * Detrás quedan los datos del último puesto válido —nunca los del elegido—: sus cifras
- * serían de otro eclipse. La ✕ deshace la elección (onClose), así que el puesto guardado
- * vuelve a ser el que se ve; sin eso quedaría una selección fantasma que reaparecería al
- * arrancar. App lo remonta con `key` al cambiar de puesto: uno nuevo vuelve a avisar.
+ * Ocupa el hueco del mapa en vez de flotar sobre él porque fuera de zona no hay cifras que
+ * enseñar: las del último puesto válido describirían otro sitio. Sin ✕, por lo mismo: no
+ * tapa nada que se pueda recuperar cerrándola.
  */
-export function OutOfZoneNotice({
-  place,
-  date,
-  keepingPlace,
-  otherLabel,
-  onGoToOther,
-  onClose,
-  top,
-}: OutOfZoneNoticeProps) {
+export function OutOfZoneNotice({ place, date, otherLabel, onGoToOther, onChoosePlace }: OutOfZoneNoticeProps) {
   return (
-    <View style={s.scrim}>
-      <View style={[s.card, { marginTop: top }]}>
-        <View style={s.headRow}>
-          <Text style={s.kicker}>{t('app.outOfZone.title')}</Text>
-          <Pressable onPress={onClose} hitSlop={12} accessibilityLabel={t('sun.close')}>
-            <Text style={s.close}>✕</Text>
-          </Pressable>
-        </View>
+    <View style={s.screen}>
+      <View style={s.card}>
+        <Text style={s.kicker}>{t('app.outOfZone.title')}</Text>
         <Text style={s.body}>{t('app.outOfZone', { place, date })}</Text>
         {otherLabel !== null && <Text style={s.body}>{t('app.outOfZone.here', { label: otherLabel })}</Text>}
-        {keepingPlace !== null && (
-          <Text style={s.keeping}>{t('app.outOfZone.keeping', { place: keepingPlace })}</Text>
-        )}
+        {/* Primera salida y siempre disponible: el usuario eligió ESTE eclipse, así que
+            cambiar de puesto es lo que quiere. Saltar de eclipse es la alternativa. */}
+        <Pressable style={s.cta} onPress={onChoosePlace}>
+          <Text style={s.ctaText}>{t('app.choosePlace')}</Text>
+        </Pressable>
         {otherLabel !== null && (
-          <Pressable style={s.cta} onPress={onGoToOther}>
-            <Text style={s.ctaText}>{t('app.outOfZone.otherEclipse')}</Text>
+          <Pressable style={s.ctaGhost} onPress={onGoToOther}>
+            <Text style={s.ctaGhostText}>{t('app.outOfZone.otherEclipse')}</Text>
           </Pressable>
         )}
       </View>
@@ -63,17 +48,8 @@ export function OutOfZoneNotice({
 }
 
 const s = StyleSheet.create({
-  /** Semiopaco: el mapa de detrás se intuye, así se entiende que sigue ahí */
-  scrim: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(11,11,16,0.82)',
-    paddingHorizontal: 20,
-    zIndex: 30,
-  },
+  /** Centrada en el hueco del mapa: es el contenido de la pestaña, no una capa encima */
+  screen: { flex: 1, justifyContent: 'center', paddingHorizontal: 20 },
   card: {
     backgroundColor: C.surface,
     borderWidth: 1,
@@ -82,11 +58,8 @@ const s = StyleSheet.create({
     padding: 20,
     gap: 10,
   },
-  headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   kicker: { fontFamily: F.bold, fontSize: 11, letterSpacing: 2.5, color: C.danger },
-  close: { fontFamily: F.bold, fontSize: 15, color: C.dim },
   body: { fontFamily: F.regular, fontSize: 14, lineHeight: 20, color: C.text },
-  keeping: { fontFamily: F.regular, fontSize: 12.5, lineHeight: 18, color: C.dim },
   cta: {
     marginTop: 4,
     alignItems: 'center',
@@ -97,4 +70,7 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(255,184,77,0.10)',
   },
   ctaText: { fontFamily: F.bold, fontSize: 13, letterSpacing: 1.4, color: C.corona },
+  /** Secundaria: sin relleno, para que la de elegir puesto mande a primera vista */
+  ctaGhost: { alignItems: 'center', paddingVertical: 11 },
+  ctaGhostText: { fontFamily: F.bold, fontSize: 12.5, letterSpacing: 1.4, color: C.dim },
 });

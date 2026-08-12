@@ -44,7 +44,6 @@
   "app.outOfZone.title": "AQUÍ NO SE VE",
   "app.outOfZone.here": "El próximo visible desde ahí: {label}.",
   "app.outOfZone.otherEclipse": "VER ESE ECLIPSE →",
-  "app.outOfZone.keeping": "Sigues viendo los datos de {place}.",
   "app.myPosition": "Mi posición",
   "app.drill.needSpot": "Elige primero un puesto en el mapa",
   "app.drill.needAlert": "Activa alguna alerta en ALERTAS primero",

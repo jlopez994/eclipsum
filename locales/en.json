@@ -44,7 +44,6 @@
   "app.outOfZone.title": "NOT VISIBLE THERE",
   "app.outOfZone.here": "Next one visible from there: {label}.",
   "app.outOfZone.otherEclipse": "GO TO THAT ECLIPSE →",
-  "app.outOfZone.keeping": "You're still seeing data for {place}.",
   "app.myPosition": "My position",
   "app.drill.needSpot": "Pick a spot on the map first",
   "app.drill.needAlert": "Enable at least one alert in ALERTS first",

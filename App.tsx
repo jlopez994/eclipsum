@@ -61,8 +61,6 @@ const FINE_TICK_MS = 1_000;
 interface ShownSpot {
   spot: Spot;
   eclipse: LocalEclipse;
-  /** Día civil del eclipse con el que se calculó: al cambiar de eclipse deja de valer */
-  day: string;
 }
 
 function inFineClockWindow(eclipse: LocalEclipse, t: number): boolean {
@@ -107,8 +105,6 @@ function AppInner() {
   const [selectorOpen, setSelectorOpen] = useState(false);
   /** Repetición manual desde Ajustes; el primer pase lo dispara prefs.tourSeen */
   const [tourOpen, setTourOpen] = useState(false);
-  /** Velo de fuera de zona descartado en memoria (solo cuando no hay datos previos detrás) */
-  const [dismissedNotice, setDismissedNotice] = useState<string | null>(null);
   /** Modo eclipse real cerrado a mano; la totalidad lo recupera (ver más abajo) */
   const [modeExited, setModeExited] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -183,31 +179,15 @@ function AppInner() {
     ? activeSpot ?? { name: active.place, lat: active.lat, lon: active.lon, origin: active.origin }
     : null;
 
-  // Último puesto con circunstancias reales: es lo que sigue pintándose detrás del aviso
-  // cuando el nuevo cae fuera de zona. En un ref y no en estado porque solo se lee al
-  // renderizar el caso raro: mantenerlo en estado provocaría un render de más.
-  const lastValidRef = useRef<ShownSpot | null>(null);
-  useEffect(() => {
-    if (eclipse && chosenSpot) {
-      lastValidRef.current = { spot: chosenSpot, eclipse, day: activeCatalog.civilDate };
-    }
-    // chosenSpot se lista por campos, no como objeto: se reconstruye en cada render, así que
-    // depender de él relanzaría el efecto sin que el puesto haya cambiado
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eclipse, chosenSpot?.lat, chosenSpot?.lon, chosenSpot?.name, activeCatalog.civilDate]);
-
-  // El respaldo caduca al cambiar de eclipse: enseñar cifras de 2026 con el activo en 2028
-  // sería la misma mentira que estamos evitando
-  const fallback =
-    lastValidRef.current?.day === activeCatalog.civilDate ? lastValidRef.current : null;
-
-  /** Lo que se pinta: el puesto elegido si sus datos valen, o el último que valió. */
-  const shown: ShownSpot | null =
-    eclipse && chosenSpot
-      ? { spot: chosenSpot, eclipse, day: activeCatalog.civilDate }
-      : outOfZone
-        ? fallback
-        : null;
+  /**
+   * Lo que se pinta: SOLO el puesto elegido cuando sus datos valen.
+   *
+   * Fuera de zona no hay nada que enseñar. Antes se caía al último puesto válido y el mapa
+   * seguía pintando sus cifras bajo el velo: horas de contacto, % de ocultación y nubes de
+   * un sitio que no es el elegido, para un eclipse que desde ahí no se ve. Es justo la
+   * información que sobra, así que el mapa cede el sitio a la explicación y a la salida.
+   */
+  const shown: ShownSpot | null = eclipse && chosenSpot ? { spot: chosenSpot, eclipse } : null;
 
   /**
    * Próximo eclipse visible desde el puesto elegido, contando DESDE HOY.
@@ -374,21 +354,19 @@ function AppInner() {
     );
   }
 
-  // Velo con la explicación; `key` por puesto para que un puesto nuevo vuelva a avisar
-  // aunque cerraras el anterior. Solo se ofrece saltar si el otro eclipse está en catálogo.
+  // Ocupa la pestaña Mapa entera cuando el puesto no ve el eclipse: ya no es un velo sobre
+  // datos, porque detrás no queda ninguno. Sin ✕ ni descarte: no tapa nada que recuperar, y
+  // es la única pantalla con la explicación y las salidas.
   //
-  // NO exige `shown`: en un arranque en frío con el puesto fuera de zona ya guardado, el
-  // efecto que rellena lastValidRef nunca entra (eclipse es null desde el primer render),
-  // así que exigirlo dejaba la pestaña Mapa en «Sin GPS» sin explicación ni salida.
-  const noticeKey = chosenSpot ? `${chosenSpot.lat},${chosenSpot.lon}` : null;
+  // Depende de `chosenSpot` y no de `shown`, que fuera de zona es siempre null: es el
+  // puesto elegido —el que no ve el eclipse— el que hay que nombrar en el aviso.
   const outOfZoneNotice =
-    outOfZone && chosenSpot && noticeKey !== dismissedNotice ? (
+    outOfZone && chosenSpot ? (
       <OutOfZoneNotice
-        key={noticeKey ?? 'out-of-zone'}
         place={cleanPlaceLabel(chosenSpot.name)}
         date={activeCatalog.shortDateLabel}
-        keepingPlace={shown ? cleanPlaceLabel(shown.spot.name) : null}
         otherLabel={otherEclipse?.label ?? null}
+        onChoosePlace={() => setSelectorOpen(true)}
         // El puesto viaja con el salto: el contexto se guarda por día civil, y sin esto
         // el eclipse nuevo nacería sin puesto y la siembra lo rellenaría con el GPS
         onGoToOther={() => {
@@ -402,17 +380,6 @@ function AppInner() {
             ),
           );
         }}
-        // Con datos detrás, cerrar = deshacer la elección imposible: si no, el puesto se
-        // quedaría guardado aunque la pantalla enseñe otro y volvería a saltar al arrancar.
-        // Sin nada detrás no hay adónde volver (devolverlo a null lo resembraría con el GPS,
-        // y con el GPS también fuera de zona el velo sería imposible de cerrar): se descarta
-        // en memoria, así que reaparece en el siguiente arranque mientras el puesto siga ahí.
-        onClose={() =>
-          shown
-            ? onPrefsChange(withContext(prefs, activeCatalog.civilDate, { spot: shown.spot }))
-            : setDismissedNotice(noticeKey)
-        }
-        top={insets.top + 12}
       />
     ) : null;
 
@@ -499,23 +466,14 @@ function AppInner() {
               sponsor={remote.sponsor}
               glassesUrl={remote.glassesUrl}
             />
+          ) : outOfZoneNotice ? (
+            // Fuera de zona el aviso ES la pantalla: dice por qué no hay mapa y ofrece las
+            // salidas. Antes caía en «Sin GPS» con el GPS funcionando, igual que ya hace
+            // Alertas; y con el velo encima repetía el mismo texto dos veces.
+            outOfZoneNotice
           ) : (
             <View style={s.loading}>
-              {/* Fuera de zona sin puesto previo válido: decir POR QUÉ no hay mapa. Antes
-                  caía en «Sin GPS» con el GPS funcionando, igual que ya hace Alertas. */}
-              {outOfZone && active ? (
-                <>
-                  <Text style={s.loadingText}>
-                    {t('app.outOfZone', {
-                      place: cleanPlaceLabel(active.place),
-                      date: activeCatalog.shortDateLabel,
-                    })}
-                  </Text>
-                  <Text style={s.chooseLink} onPress={() => setSelectorOpen(true)}>
-                    {t('app.choosePlace')}
-                  </Text>
-                </>
-              ) : locating ? (
+              {locating ? (
                 <>
                   <ActivityIndicator color={C.corona} size="large" />
                   <Text style={s.loadingText}>{t('app.locating')}</Text>
@@ -565,8 +523,6 @@ function AppInner() {
               </Text>
             </View>
           ))}
-        {/* Encima del contenido y bajo la barra de pestañas: deja ver el mapa al cerrarse */}
-        {tab === 'mapa' && outOfZoneNotice}
         {tab === 'ajustes' && (
           <SettingsScreen
             permissions={permissions}
