@@ -61,6 +61,24 @@
         {
           "motionPermission": "Eclipsum usa los sensores de movimiento para saber hacia dónde apuntas el móvil."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "buildArchs": [
+              "arm64-v8a"
+            ],
+            "enableMinifyInReleaseBuilds": true,
+            "useLegacyPackaging": true,
+            "packagingOptions": {
+              "exclude": [
+                "**/libbarhopper_v3.so"
+              ]
+            },
+            "extraProguardRules": "-keepattributes SourceFile,LineNumberTable\n-renamesourcefileattribute SourceFile\n"
+          }
+        }
       ]
     ]
   }
