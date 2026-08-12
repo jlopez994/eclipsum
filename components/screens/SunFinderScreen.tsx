@@ -36,14 +36,28 @@ const MOTION_SMOOTHING = 0.18;
  */
 const HEADING_SMOOTHING = 0.06;
 /**
+ * Filtro para cuando el sistema declara la brújula mal calibrada: casi congelada. Con más de
+ * ~35° de error, seguir cada muestra sería perseguir ruido; así la guía queda estable y
+ * derivando despacio, que es un error que el usuario puede corregir girando el móvil.
+ */
+const HEADING_SMOOTHING_NOISY = 0.015;
+/**
  * expo-sensors documenta `rotation` en GRADOS, pero algunas versiones han devuelto
  * radianes. En cuanto vemos una magnitud imposible en radianes (>2π) fijamos grados;
  * hasta entonces asumimos radianes. Con el móvil plano ambos dan ~0, así que el
  * criterio se resuelve solo en cuanto lo inclinas — antes de que el error importe.
  */
 const RADIAN_CEILING = 7;
-/** Por encima de este error declarado (grados) la brújula no es fiable y se avisa. */
-const COMPASS_NOISE_DEG = 25;
+/**
+ * Calibración mínima para fiarse de la brújula. `accuracy` de expo-location NO son grados:
+ * es un nivel 0-3 (3 alta, <20° de incertidumbre; 2 media, <35°; 1 baja, <50°; 0 ninguna).
+ * Avisamos por debajo de 2 —más de ~35° de error—, el triple de la tolerancia que promete
+ * el círculo de puntería: por encima de ahí la marca ya no significa nada.
+ *
+ * Es lo que ocurre con el móvil cargando: el campo del cargador satura el magnetómetro y
+ * el sistema baja este nivel.
+ */
+const COMPASS_MIN_ACCURACY = 2;
 /**
  * Radio angular del círculo de puntería. No es estético: es el error que el visor NO puede
  * evitar — magnetómetro (±10-20°) y FOV estimada, porque expo-camera no expone la real.
@@ -146,10 +160,15 @@ export function SunFinderScreen({
         sub = await Location.watchHeadingAsync((h) => {
           const d = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
           if (cancelled || !Number.isFinite(d)) return;
-          const next = smoothBearing(headingRef.current, norm360(d), HEADING_SMOOTHING);
+          const acc = typeof h.accuracy === 'number' ? h.accuracy : null;
+          // Brújula descalibrada (cargador, coche, altavoz): endurecemos el filtro en vez de
+          // seguirla. Preferimos que la guía derive despacio a que dé bandazos — un error
+          // constante se corrige girando; uno que salta hace la marca inservible.
+          const f = acc !== null && acc < COMPASS_MIN_ACCURACY ? HEADING_SMOOTHING_NOISY : HEADING_SMOOTHING;
+          const next = smoothBearing(headingRef.current, norm360(d), f);
           headingRef.current = next;
           setHeading(next);
-          setHeadingAccuracy(typeof h.accuracy === 'number' ? h.accuracy : null);
+          setHeadingAccuracy(acc);
         });
         // Cerrado durante el await: la limpieza vio sub=null y nadie soltaría la brújula
         if (cancelled) sub.remove();
@@ -255,7 +274,7 @@ export function SunFinderScreen({
         Math.tan((fov.horizontalDeg * Math.PI) / 360),
     ),
   );
-  const noisyCompass = headingAccuracy !== null && headingAccuracy > COMPASS_NOISE_DEG;
+  const noisyCompass = headingAccuracy !== null && headingAccuracy < COMPASS_MIN_ACCURACY;
 
   return (
     <View style={s.root} onLayout={onLayout}>
