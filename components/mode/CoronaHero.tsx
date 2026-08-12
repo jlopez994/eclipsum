@@ -10,6 +10,21 @@ import Svg, {
   LinearGradient,
 } from 'react-native-svg';
 
+/**
+ * La corona a 2048×2048, reescalada con IA desde el original de 1024 (el mismo dibujo que
+ * el icono de la app y que el lienzo de diseño).
+ *
+ * Hace falta ese tamaño porque aquí la imagen se ESTIRA: en un móvil de 420 dpi la corona
+ * cubre ~1460 px físicos, mientras que el lienzo de diseño REDUCE esos 1024 a 580 CSS px —y
+ * reducir siempre se ve nítido—. De ahí que el mismo archivo luciera mejor allí que en el
+ * móvil. Medido en el emulador sobre la misma zona: el original a 1024 sube un 0,8 % sobre
+ * el JPEG de 720 px y este reescalado un 3,9 %, con los filamentos ya separados a la vista.
+ * Reescalar con Lanczos en vez de IA no daba nada: ampliar por interpolación no inventa
+ * detalle, y hace falta un modelo que lo redibuje.
+ *
+ * ponytail: JPEG q92 y no PNG — 439 KB frente a los 819 KB del original de 1024, o sea más
+ * nítido y a la vez más ligero; a este tamaño los artefactos no llegan a verse.
+ */
 const HERO = require('../../assets/eclipse-hero.jpg');
 
 export interface HeroLook {
@@ -25,7 +40,7 @@ export interface HeroLook {
 
 /**
  * Corona a sangre por el borde superior: la imagen ES el ambiente de la pantalla.
- * El JPEG viene sobre negro, así que en vez del `mix-blend-mode:screen` del diseño
+ * La imagen viene sobre negro, así que en vez del `mix-blend-mode:screen` del diseño
  * —que RN no tiene— se recorta con una máscara radial dentro del propio SVG: el borde
  * cuadrado de la foto desaparece y funde con el cielo sin depender de MaskedView.
  */

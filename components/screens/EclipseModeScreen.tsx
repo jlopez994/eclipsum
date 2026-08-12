@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useKeepAwake } from 'expo-keep-awake';
 import {
@@ -12,6 +13,7 @@ import {
   type EclipseEvent,
   type LocalEclipse,
 } from '../../lib/eclipse';
+import { usePulseOpacity } from '../../lib/anim';
 import { fmtDurCompact, fmtHM, fmtHMS } from '../../lib/format';
 import { t, type I18nKey } from '../../lib/i18n';
 import { Countdown } from '../Countdown';
@@ -58,19 +60,42 @@ function Clock() {
 
 /** Punto que parpadea: el estado de seguridad se lee de reojo, sin enfocar la pantalla. */
 function Pulse({ color, fast }: { color: string; fast?: boolean }) {
-  const v = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    const half = fast ? 400 : 700;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(v, { toValue: 0.25, duration: half, useNativeDriver: true }),
-        Animated.timing(v, { toValue: 1, duration: half, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [v, fast]);
-  return <Animated.View style={[s.pulse, { backgroundColor: color, shadowColor: color, opacity: v }]} />;
+  const opacity = usePulseOpacity(fast ? 400 : 700);
+  return <Animated.View style={[s.pulse, { backgroundColor: color, shadowColor: color, opacity }]} />;
+}
+
+/** Diámetro del anillo de totalidad y radio de su fulgor, en px (del diseño). */
+const TOT_RING = 34;
+const TOT_GLOW = 22;
+const TOT_BOX = TOT_RING + TOT_GLOW * 2;
+
+/**
+ * Anillo de la totalidad con su fulgor. En Android `shadow*` no pinta nada y `elevation`
+ * dibuja la sombra de la CAJA —dentro del anillo salía un disco negro—, así que el halo
+ * va en SVG: se ve igual en los dos sistemas. Los márgenes negativos dejan que ocupe
+ * en el layout los 34 px del aro, no los 78 del lienzo.
+ */
+function TotalityMark() {
+  const c = TOT_BOX / 2;
+  return (
+    <Svg width={TOT_BOX} height={TOT_BOX} style={s.totalityMark}>
+      <Defs>
+        {/* Arranca EN el aro y solo crece hacia fuera —un box-shadow no pinta bajo el
+            elemento, y al dejarlo entrar el interior salía gris—. La cola larga con
+            varias paradas imita el desenfoque gaussiano de la sombra CSS: un solo tramo
+            cae en línea recta y se ve un borde duro donde el diseño no tiene ninguno. */}
+        <RadialGradient id="totGlow" cx="50%" cy="50%" r="50%">
+          <Stop offset="43%" stopColor={WARM} stopOpacity="0" />
+          <Stop offset="48%" stopColor={WARM} stopOpacity="0.42" />
+          <Stop offset="62%" stopColor={WARM} stopOpacity="0.18" />
+          <Stop offset="80%" stopColor={WARM} stopOpacity="0.06" />
+          <Stop offset="100%" stopColor={WARM} stopOpacity="0" />
+        </RadialGradient>
+      </Defs>
+      <Circle cx={c} cy={c} r={c} fill="url(#totGlow)" />
+      <Circle cx={c} cy={c} r={TOT_RING / 2 - 1} stroke={WARM} strokeWidth={2} fill="none" />
+    </Svg>
+  );
 }
 
 interface EclipseModeScreenProps {
@@ -226,7 +251,7 @@ export function EclipseModeScreen({
           <>
             {inTotality ? (
               <View style={s.statusRow}>
-                <View style={s.totalityRing} />
+                <TotalityMark />
                 <View>
                   <Text style={s.totalityTitle}>{t('mode.banner.totality')}</Text>
                   <Text style={s.totalitySub}>{t('mode.banner.totalitySub')}</Text>
@@ -393,16 +418,7 @@ const s = StyleSheet.create({
   pulse: { width: 8, height: 8, borderRadius: 4, shadowOpacity: 0.9, shadowRadius: 6 },
   statusTitle: { fontFamily: F.bold, fontSize: 16, letterSpacing: 1.4, color: C.text },
   statusSub: { fontFamily: F.semibold, fontSize: 10.5, letterSpacing: 1.6, color: C.dim, flexShrink: 1 },
-  totalityRing: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 2,
-    borderColor: WARM,
-    shadowColor: WARM,
-    shadowOpacity: 0.7,
-    shadowRadius: 12,
-  },
+  totalityMark: { margin: -TOT_GLOW },
   totalityTitle: { fontFamily: F.bold, fontSize: 26, letterSpacing: 2, color: C.text },
   totalitySub: { fontFamily: F.bold, fontSize: 12, letterSpacing: 2, color: WARM, marginTop: 4 },
   kicker: {

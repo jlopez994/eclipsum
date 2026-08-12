@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { usePulseOpacity } from '../../lib/anim';
 import { barLayout, type BarPart } from '../../lib/eclipseBar';
 import { eventAt, type EclipseEvent, type LocalEclipse } from '../../lib/eclipse';
 import { fmtDurCompact, fmtDurHM, fmtHM } from '../../lib/format';
@@ -56,6 +57,9 @@ export function EclipseTimeline({ eclipse, now }: Props) {
   const layout = useMemo(() => barLayout(eclipse, width), [eclipse, width]);
 
   const tms = now.getTime();
+  // El punto late mientras el evento corre y se queda quieto al acabar: es el «estás aquí»
+  const finishedAt = eventAt(eclipse, 'C4')?.time.getTime();
+  const dotOpacity = usePulseOpacity(800, finishedAt === undefined || tms < finishedAt);
   const c1 = eventAt(eclipse, 'C1');
   const c2 = eventAt(eclipse, 'C2');
   const c3 = eventAt(eclipse, 'C3');
@@ -129,7 +133,7 @@ export function EclipseTimeline({ eclipse, now }: Props) {
         {/* En totalidad manda la astilla: el marcador ahí solo sería ruido encima */}
         {layout && !inTotality && (
           <View style={[s.now, finished && s.nowPast, { left: x - 1 }]}>
-            <View style={[s.nowDot, finished && s.nowDotPast]} />
+            <Animated.View style={[s.nowDot, finished && s.nowDotPast, { opacity: dotOpacity }]} />
           </View>
         )}
       </View>
