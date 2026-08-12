@@ -45,14 +45,15 @@ Reschedules all notifications when the spot, toggles, sound, language or permiss
 ### Drill
 
 - `startDrill`: requires a spot + ≥1 active alert. `buildDrillEclipse` (lib/drill.ts) builds a synthetic eclipse starting at *now + 1 min* with fixed minimum legs (30 s partial, 45 s totality — the whole run is ~2 min); `scheduleFakeEclipseAlerts` adds real `[PRUEBA]` notifications without touching the real eclipse's. No settings: a drill is a smoke test, not a scale rehearsal.
-- `jumpDrill(milestone)`: shifts the series so the tapped milestone lands in 20 s (only tappable from the rail in `EclipseModeScreen` during a drill).
+- `jumpDrill(milestone)`: shifts the series so the tapped milestone lands in 20 s (only reachable from the C1–C4 chips that `EclipseModeScreen` shows during a drill).
 - Exit: manual (`cancelAlertsByIds`) or automatic 60 s after the last event.
 
 ## lib/ — modules
 
 | Module | Purpose | Key points |
 |---|---|---|
-| `eclipse.ts` | Local circumstances: C1–C4, maximum, obscuration, totality duration, sunset | In-RAM memo (`Map`, max 400 entries). `nextEvent`, `currentPhase` |
+| `eclipse.ts` | Local circumstances: C1–C4, maximum, obscuration, totality duration, sunset | In-RAM memo (`Map`, max 400 entries). `nextEvent`, `currentPhase`. `sunCoverage(eclipse, now)` = live obscuration from piecewise-linear centre separation + equal-disc overlap area (~2 % off the real value, and valid for the synthetic drill too) |
+| `eclipseBar.ts` | Geometry of the eclipse-mode timeline | True-to-scale legs, totality sliver clamped to `SLIVER_MIN = 7`…`SLIVER_MAX = 24` px, and `xAt(t)` mapping instant → pixel leg by leg. Pure — asserted in selfcheck |
 | `eclipseCatalog.ts` | Catalog and active eclipse | Merge: bundled (`ECLIPSES`, today only `2026-08-12-iberia`) + RC (`eclipse_catalog`) + engine-generated up to 12 upcoming. Dedupe by **civil day** (bundled entry wins). Active priority: user selection → `active_eclipse_id` (RC) → the nearest. User selection persists by civil day, not id. Labels regenerated per language when the entry has `kind` |
 | `totality.ts` | Nearest totality | 8 bearings × probes `[25,50,100,200,400,700] km` + bisection to 2 km; duration measured 5 km inside the edge. RAM cache by `searchStart:lat,lon` |
 | `prefs.ts` | Preferences + per-eclipse context + migrations | AsyncStorage `eclipsum:prefs`. `contextFor`/`withContext` provide spot, alerts and recents **per eclipse civil day**. `ALERT_EARLY_SECONDS = 15`, `RECENT_CAP = 3` |
@@ -73,7 +74,9 @@ Reschedules all notifications when the spot, toggles, sound, language or permiss
 - `MapScreen` — main: real map, chips (place/compass), GPS recenter button, draggable bottom sheet with countdown, stats, clouds chip → Windy, timeline, horizon, sponsor.
 - `AlertsScreen` — C1–C4 milestones with switches, +15 s early warning, +1 h/+24 h reminders (C1 only), "after sunset" mark, test notification, scheduled counter.
 - `SettingsScreen` — eye safety (IGN + affiliate), permissions, 5 selectable upcoming eclipses, sound, drill, language, support (Buy Me a Coffee via RC `donate_url`), *About*.
-- `EclipseModeScreen` — event screen: clock, GLASSES ON/OFF banner, animated corona, giant countdown, milestone rail, `useKeepAwake()`.
+- `EclipseModeScreen` — event screen: full-bleed corona, safety status, giant countdown (two huge digits in the last 60 s before C2 and 15 s before C3), live sun coverage, true-to-scale timeline, NEXT card, `useKeepAwake()`. Six states: before C1 · partial · imminent · totality · after C3 · finished. During a drill it adds the C1–C4 jump chips.
+
+**Eclipse mode** (`components/mode/`): `CoronaHero` (the corona bleeds off the top edge; the JPEG is cut with an SVG radial mask because RN has no `mix-blend-mode`; sky, opacity and motion change per state), `EclipseTimeline` (the bar from `lib/eclipseBar`, veil over what has not happened yet, "you are here" marker).
 
 **Map** (`components/map/`): `CompassChip` (needle at the sun's azimuth, relative to device heading when a sensor exists), `HorizonDiagram` (sun altitude to scale, "fists" reference ≈ 10°).
 

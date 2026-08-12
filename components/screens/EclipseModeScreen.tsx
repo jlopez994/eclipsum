@@ -1,20 +1,42 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useKeepAwake } from 'expo-keep-awake';
 import {
   currentPhase,
-  eclipseSpan,
+  eventAt,
   eventShortLabel,
   nextEvent,
+  sunCoverage,
   type EclipseEvent,
   type LocalEclipse,
 } from '../../lib/eclipse';
-import { fmtHMS } from '../../lib/format';
+import { fmtDurCompact, fmtHM, fmtHMS } from '../../lib/format';
 import { t, type I18nKey } from '../../lib/i18n';
 import { Countdown } from '../Countdown';
-import { C, EVENT_ACCENT, F } from '../theme';
+import { CoronaHero, type HeroLook } from '../mode/CoronaHero';
+import { EclipseTimeline, totalSpanLabel } from '../mode/EclipseTimeline';
+import { C, F } from '../theme';
+
+const WARM = '#FFF7E6';
+const FAINT = '#55525F';
+
+/** Segundos a los que el crono pasa a dos dígitos gigantes: quitarse o ponerse las gafas
+ *  se juega al segundo, y ahí sobra todo lo demás en pantalla. */
+const IMMINENT_C2_SEC = 60;
+/** C3 cae dentro de una totalidad que puede durar poco más de un minuto: avisar con 60 s
+ *  se comería el rótulo de TOTALIDAD entero. 15 s = la misma antelación del aviso sonoro. */
+const IMMINENT_C3_SEC = 15;
+
+/** Color del rótulo del crono según a qué hito apunta. */
+const KICKER: Record<EclipseEvent['key'], string> = {
+  C1: C.coronaLight,
+  C2: C.violet,
+  MAX: C.violet,
+  C3: C.danger,
+  C4: C.coronaLight,
+};
 
 /** Color de lo que pasa DESPUÉS del hito; no coincide con EVENT_ACCENT (tras C1 hay peligro). */
 const AFTER_COLOR: Record<string, string> = {
@@ -25,68 +47,30 @@ const AFTER_COLOR: Record<string, string> = {
   C4: C.corona,
 };
 
-/**
- * Raíl de la serie completa: pasado (lleno), siguiente (anillo grande), futuro (tenue).
- * Con onJump (solo simulacro) cada hito es tocable y salta la serie a esa fase.
- */
-function EventRail({
-  eclipse,
-  now,
-  onJump,
-  accent,
-}: {
-  eclipse: LocalEclipse;
-  now: Date;
-  onJump: ((key: EclipseEvent['key']) => void) | null;
-  /** Color del avance recorrido (fase en curso) */
-  accent: string;
-}) {
-  const nextKey = nextEvent(eclipse, now)?.key;
-  // Avance entre el primer y el último contacto: da sensación de progreso en una serie que dura horas
-  const span = eclipseSpan(eclipse);
-  const total = span ? span.end - span.start : 0;
-  const progress =
-    span && total > 0 ? Math.min(1, Math.max(0, (now.getTime() - span.start) / total)) : 0;
-  return (
-    <View>
-      <View style={s.rail}>
-        <View style={s.railLine} />
-        <View style={[s.railLineFill, { width: `${progress * 80}%`, backgroundColor: accent }]} />
-        {eclipse.events.map((e) => {
-          const accent = EVENT_ACCENT[e.key] ?? C.dim;
-          const passed = e.time.getTime() <= now.getTime();
-          const isNext = e.key === nextKey;
-          return (
-            <Pressable
-              key={e.key}
-              style={s.railItem}
-              disabled={!onJump}
-              onPress={onJump ? () => onJump(e.key) : undefined}
-              hitSlop={8}
-              accessibilityLabel={
-                onJump
-                  ? t('mode.railJumpA11y', { label: t(`event.${e.key}` as I18nKey) })
-                  : t(`event.${e.key}` as I18nKey)
-              }
-            >
-              <View
-                style={[
-                  s.railDot,
-                  passed && { backgroundColor: accent, borderColor: accent },
-                  isNext && { borderColor: accent, width: 14, height: 14, borderRadius: 7, marginTop: -2 },
-                ]}
-              />
-              <Text style={[s.railKey, (passed || isNext) && { color: accent }]}>
-                {eventShortLabel(e.key)}
-              </Text>
-              <Text style={[s.railTime, isNext && { color: C.text }]}>{fmtHMS(e.time)}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      {onJump && <Text style={s.railHint}>{t('mode.railHint')}</Text>}
-    </View>
-  );
+function Clock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <Text style={s.clock}>{fmtHMS(now)}</Text>;
+}
+
+/** Punto que parpadea: el estado de seguridad se lee de reojo, sin enfocar la pantalla. */
+function Pulse({ color, fast }: { color: string; fast?: boolean }) {
+  const v = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const half = fast ? 400 : 700;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(v, { toValue: 0.25, duration: half, useNativeDriver: true }),
+        Animated.timing(v, { toValue: 1, duration: half, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [v, fast]);
+  return <Animated.View style={[s.pulse, { backgroundColor: color, shadowColor: color, opacity: v }]} />;
 }
 
 interface EclipseModeScreenProps {
@@ -97,7 +81,7 @@ interface EclipseModeScreenProps {
   exitLabel: string | null;
   /** Cierra la pantalla: sale del ensayo, o deja el modo real hasta la totalidad */
   onExit: () => void;
-  /** Salto de fase tocando el raíl; null = deshabilitado (eclipse real/demo) */
+  /** Salto de fase tocando un hito; null = deshabilitado (eclipse real/demo) */
   onJumpToEvent: ((key: EclipseEvent['key']) => void) | null;
   /**
    * km entre tu GPS y el puesto del que salen ESTAS horas; null = sin discrepancia.
@@ -106,54 +90,6 @@ interface EclipseModeScreenProps {
   divergenceKm: number | null;
   /** Hace de tu posición el puesto: recalcula cronología, nubes y alertas a la vez */
   onRecalcHere: () => void;
-}
-
-function Clock() {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  return <Text style={s.clock}>{fmtHMS(now)}</Text>;
-}
-
-function CoronaRing({ glow, border, inner }: { glow: string; border: string; inner: string }) {
-  const { width, height } = useWindowDimensions();
-  // El anillo respira dentro de la zona libre: en móviles estrechos no se recorta
-  const size = Math.max(220, Math.min(340, width - 56, height * 0.42));
-  const breath = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(breath, { toValue: 1, duration: 1750, useNativeDriver: true }),
-        Animated.timing(breath, { toValue: 0, duration: 1750, useNativeDriver: true }),
-      ]),
-    ).start();
-  }, [breath]);
-  const opacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0.95] });
-  return (
-    <Animated.View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', opacity }]}>
-      <Svg width={size} height={size} viewBox="0 0 320 320">
-        <Defs>
-          {/* El resplandor vive FUERA del disco (r=118): antes quedaba tapado y solo
-              asomaba un filo, con el crono cruzándolo por encima */}
-          <RadialGradient id="halo" cx="50%" cy="50%" r="50%">
-            <Stop offset="70%" stopColor="transparent" />
-            <Stop offset="79%" stopColor={glow} />
-            <Stop offset="94%" stopColor="transparent" />
-          </RadialGradient>
-          <RadialGradient id="ringGrad" cx="50%" cy="50%" r="50%">
-            <Stop offset="70%" stopColor="transparent" />
-            <Stop offset="75%" stopColor={inner} />
-            <Stop offset="86%" stopColor="transparent" />
-          </RadialGradient>
-        </Defs>
-        <Circle cx={160} cy={160} r={158} fill="url(#halo)" />
-        <Circle cx={160} cy={160} r={150} fill="url(#ringGrad)" />
-        <Circle cx={160} cy={160} r={118} fill="#000" stroke={border} strokeWidth={2} />
-      </Svg>
-    </Animated.View>
-  );
 }
 
 export function EclipseModeScreen({
@@ -169,118 +105,221 @@ export function EclipseModeScreen({
   useKeepAwake();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const phase = currentPhase(eclipse, now);
-  const upcoming = nextEvent(eclipse, now);
-  const inTotality = phase?.safeToLook === true;
 
-  const banner = inTotality
-    ? { bg: C.totality, fase: t('mode.banner.totality'), sub: t('mode.banner.totalitySub') }
-    : phase
-      ? { bg: C.danger, fase: t('mode.banner.partial'), sub: t('mode.banner.partialSub') }
-      : upcoming
-        ? { bg: C.surface, fase: t('mode.banner.ready'), sub: t('mode.banner.readySub') }
-        : { bg: C.surface, fase: t('mode.banner.done'), sub: t('mode.banner.doneSub') };
+  const tms = now.getTime();
+  const c1 = eventAt(eclipse, 'C1');
+  const c3 = eventAt(eclipse, 'C3');
+  const c4 = eventAt(eclipse, 'C4');
+  const max = eventAt(eclipse, 'MAX');
+  const started = !!c1 && tms >= c1.time.getTime();
+  const finished = !!c4 && tms >= c4.time.getTime();
+  const inTotality = currentPhase(eclipse, now)?.safeToLook === true;
+  // Durante la totalidad el hito que importa es su FIN, no el máximo que hay por medio
+  const target = inTotality && c3 ? c3 : nextEvent(eclipse, now);
+  const toTargetSec = target ? (target.time.getTime() - tms) / 1000 : Infinity;
+  const imminent =
+    (target?.key === 'C2' && toTargetSec <= IMMINENT_C2_SEC) ||
+    (target?.key === 'C3' && toTargetSec <= IMMINENT_C3_SEC);
+  const afterTotality = !!c3 && tms >= c3.time.getTime() && !finished;
 
-  const ring = inTotality
-    ? { glow: 'rgba(255,184,77,0.5)', border: 'rgba(255,216,160,0.85)', inner: 'rgba(255,184,77,0.28)' }
-    : phase || upcoming
-      ? { glow: 'rgba(255,107,94,0.32)', border: 'rgba(255,107,94,0.6)', inner: 'rgba(255,107,94,0.22)' }
-      : // Terminado: sin alarma de color, el rojo ya no advierte de nada
-        { glow: 'rgba(139,136,152,0.16)', border: 'rgba(139,136,152,0.4)', inner: 'rgba(139,136,152,0.12)' };
-  const railAccent = inTotality ? C.totality : phase || upcoming ? C.corona : C.dim;
+  const hero: HeroLook = finished
+    ? { sky: ['#12121C', '#08080C', '#000'], opacity: 0.3, scale: 1.35, motion: 'drift' }
+    : inTotality
+      ? { sky: ['#2E2560', '#0A0814', '#000'], opacity: 1, scale: 1.5, motion: 'breathe' }
+      : imminent
+        ? { sky: ['#241A4E', '#09070F', '#000'], opacity: 0.8, scale: 1.35, motion: 'breathe' }
+        : afterTotality
+          ? { sky: ['#2E1216', '#0B0710', '#000'], opacity: 0.55, scale: 1.35, motion: 'drift' }
+          : started
+            ? { sky: ['#2A1220', '#0B0710', '#000'], opacity: 0.62, scale: 1.35, motion: 'drift' }
+            : { sky: ['#1A1438', '#08070E', '#000'], opacity: 0.9, scale: 1.35, motion: 'drift' };
+
   // El crono no puede desbordar en pantallas estrechas ni con formato «1d 01:23:42»
-  const chronoSize = Math.min(100, Math.round(width * 0.25));
-
-  const after = upcoming
-    ? { label: t(`mode.after.${upcoming.key}` as I18nKey), color: AFTER_COLOR[upcoming.key] ?? C.corona }
+  const chronoSize = imminent
+    ? Math.min(168, Math.round(width * 0.4))
+    : Math.min(112, Math.round(width * 0.26));
+  const covered = sunCoverage(eclipse, now);
+  const after = target
+    ? { label: t(`mode.after.${target.key}` as I18nKey), color: AFTER_COLOR[target.key] ?? C.corona }
     : null;
+
+  const at = target ? t('mode.meta.at', { time: fmtHMS(target.time) }) : '';
+  const meta =
+    !target || imminent
+      ? null
+      : inTotality
+        ? `${at} · ${
+            max && tms >= max.time.getTime()
+              ? t('mode.meta.maxPast')
+              : t('mode.meta.maxAt', { time: max ? fmtHM(max.time) : '--:--' })
+          }`
+        : started && covered !== null
+          ? `${at} · ${t('mode.meta.covered', { pct: Math.round(covered * 100) })}`
+          : `${at} · ${t('mode.meta.dur', { dur: totalSpanLabel(eclipse) })}`;
 
   return (
     <View style={s.root}>
+      <CoronaHero look={hero} />
+
       {/* Ensayo: filo violeta permanente para no confundirlo con el eclipse real */}
       {exitLabel && <View style={[s.drillEdge, { top: insets.top }]} pointerEvents="none" />}
+
+      <LinearGradient
+        colors={['rgba(0,0,0,0.92)', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0)']}
+        style={[s.topFade, { height: insets.top + 92 }]}
+        pointerEvents="none"
+      />
       <View style={[s.topRow, { paddingTop: insets.top + 14 }]}>
-        <Clock />
-        {exitLabel ? (
-          <Pressable
-            onPress={onExit}
-            hitSlop={10}
-            style={s.exitPill}
-            accessibilityLabel={t('mode.exitA11y', { label: exitLabel.toLowerCase() })}
-          >
-            <Text style={s.exitPillTxt}>{t('mode.exit', { label: exitLabel })}</Text>
-          </Pressable>
-        ) : (
-          // El modo real también se puede cerrar: la ventana abarca hora y media de parcial
-          // antes del primer contacto, y ahí el usuario aún quiere mirar nubes o cambiar de
-          // puesto. La totalidad lo recupera sola (App), que es cuando de verdad importa.
-          <Pressable
-            onPress={onExit}
-            hitSlop={10}
-            style={s.exitTag}
-            accessibilityRole="button"
-            accessibilityLabel={t('mode.exitReal.a11y')}
-          >
-            <Text style={s.exitTagTxt}>{t('mode.tag', { place: place.toUpperCase() })}</Text>
-            <Text style={s.exitTagX}>✕</Text>
-          </Pressable>
-        )}
+        <View style={s.topLeft}>
+          <Clock />
+          <Text style={[s.tag, finished && { color: C.dim }]} numberOfLines={1}>
+            {exitLabel
+              ? t('mode.tagDrill', { label: exitLabel.toUpperCase(), place: place.toUpperCase() })
+              : t('mode.tag', { place: place.toUpperCase() })}
+          </Text>
+        </View>
+        <Pressable
+          onPress={onExit}
+          hitSlop={10}
+          style={s.closeHit}
+          accessibilityRole="button"
+          accessibilityLabel={
+            exitLabel ? t('mode.exitA11y', { label: exitLabel.toLowerCase() }) : t('mode.exitReal.a11y')
+          }
+        >
+          <View style={[s.close, inTotality && s.closeQuiet]}>
+            <Text style={[s.closeTxt, inTotality && { color: FAINT }]}>✕</Text>
+          </View>
+        </Pressable>
       </View>
 
-      {/* Encima del banner de seguridad a propósito: si las horas no son las de donde estás,
-          eso invalida todo lo que hay debajo. Un toque lo arregla de raíz — pasa el puesto a
-          tu posición, así que cronología, nubes y alertas vuelven a contar lo mismo. */}
+      {/* Encima de todo a propósito: si las horas no son las de donde estás, eso invalida
+          el resto de la pantalla. Un toque lo arregla de raíz — pasa el puesto a tu
+          posición, así que cronología, nubes y alertas vuelven a contar lo mismo. */}
       {divergenceKm !== null && (
         <Pressable style={s.diverge} onPress={onRecalcHere} accessibilityRole="button">
-          <Text style={s.divergeTxt}>
-            {t('mode.diverge', { km: Math.round(divergenceKm), place })}
-          </Text>
+          <Text style={s.divergeTxt}>{t('mode.diverge', { km: Math.round(divergenceKm), place })}</Text>
           <Text style={s.divergeCta}>{t('map.recalc')}</Text>
         </Pressable>
       )}
 
-      <View style={[s.banner, { backgroundColor: banner.bg, shadowColor: banner.bg }]}>
-        {/* adjustsFontSizeToFit: «GAFAS PUESTAS» y otras traducciones largas no deben partirse */}
-        <Text style={s.bannerFase} numberOfLines={1} adjustsFontSizeToFit>
-          {banner.fase}
-        </Text>
-        <Text style={s.bannerSub}>{banner.sub}</Text>
-      </View>
-
-      <View style={s.center}>
-        <CoronaRing {...ring} />
-        {upcoming && (
+      <View style={s.stage}>
+        {finished ? (
           <>
-            <Text style={s.cdLabel}>{t(`mode.next.${upcoming.key}` as I18nKey)}</Text>
-            <Countdown
-              target={upcoming.time}
-              format={upcoming.time.getTime() - now.getTime() < 3_600_000 ? 'mmss' : 'auto'}
-              style={[
-                s.chrono,
-                {
-                  fontSize: chronoSize,
-                  lineHeight: Math.round(chronoSize * 1.04),
-                  textShadowColor: inTotality ? 'rgba(124,108,255,0.5)' : 'rgba(255,107,94,0.45)',
-                },
-              ]}
-            />
+            <Text style={s.kicker}>{t('mode.done.kicker')}</Text>
+            <Text style={s.doneTitle}>{t('mode.banner.done')}</Text>
+            <Text style={s.doneSub}>{t('mode.banner.doneSub')}</Text>
+            <View style={s.stats}>
+              {eclipse.totalityDurationSec !== null && (
+                <View>
+                  <Text style={s.statKey}>{t('mode.done.totalitySeen')}</Text>
+                  <Text style={s.statVal}>{fmtDurCompact(eclipse.totalityDurationSec)}</Text>
+                </View>
+              )}
+              <View>
+                <Text style={s.statKey}>{t('mode.done.total')}</Text>
+                <Text style={s.statVal}>{totalSpanLabel(eclipse)}</Text>
+              </View>
+            </View>
+          </>
+        ) : (
+          <>
+            {inTotality ? (
+              <View style={s.statusRow}>
+                <View style={s.totalityRing} />
+                <View>
+                  <Text style={s.totalityTitle}>{t('mode.banner.totality')}</Text>
+                  <Text style={s.totalitySub}>{t('mode.banner.totalitySub')}</Text>
+                </View>
+              </View>
+            ) : (
+              <View style={s.statusRow}>
+                <Pulse color={started ? C.danger : C.corona} fast={imminent} />
+                <Text style={[s.statusTitle, started && { color: C.danger }]}>
+                  {imminent
+                    ? t('mode.status.stillGlasses')
+                    : started
+                      ? t('mode.banner.partial')
+                      : t('mode.banner.ready')}
+                </Text>
+                {!imminent && (
+                  <Text style={s.statusSub}>
+                    {started ? t('mode.status.partialSub') : t('mode.status.readySub')}
+                  </Text>
+                )}
+              </View>
+            )}
+
+            {target && (
+              <>
+                <Text style={[s.kicker, { color: KICKER[target.key] }]}>
+                  {t(`mode.next.${target.key}` as I18nKey)}
+                </Text>
+                <Countdown
+                  target={target.time}
+                  format={imminent ? 'ss' : toTargetSec < 3600 ? 'mmss' : 'auto'}
+                  style={[
+                    s.chrono,
+                    {
+                      fontSize: chronoSize,
+                      lineHeight: Math.round(chronoSize * 0.94),
+                      textShadowColor: inTotality
+                        ? 'rgba(255,247,230,0.35)'
+                        : target.key === 'C2'
+                          ? 'rgba(124,108,255,0.45)'
+                          : 'rgba(255,184,77,0.32)',
+                    },
+                  ]}
+                />
+              </>
+            )}
+            {imminent && target && <Text style={s.warn}>{t(`mode.warn.${target.key}` as I18nKey)}</Text>}
+            {meta && <Text style={s.meta}>{meta}</Text>}
           </>
         )}
-        {!upcoming && <Text style={s.cdLabel}>{t('mode.finished')}</Text>}
       </View>
 
-      <View style={s.footer}>
-        <EventRail eclipse={eclipse} now={now} onJump={onJumpToEvent} accent={railAccent} />
-        {upcoming && after && (
-          <View style={s.nextCard}>
-            <View>
-              <Text style={s.nextKicker}>{t('mode.after')}</Text>
-              <Text style={[s.nextLabel, { color: after.color }]}>{after.label}</Text>
-            </View>
-            <Text style={s.nextTime}>{fmtHMS(upcoming.time)}</Text>
+      <View style={[s.footer, { paddingBottom: Math.max(14, insets.bottom) }]}>
+        <EclipseTimeline eclipse={eclipse} now={now} />
+
+        {onJumpToEvent && (
+          <View style={s.jumpRow}>
+            {eclipse.events.map((e) => (
+              <Pressable
+                key={e.key}
+                onPress={() => onJumpToEvent(e.key)}
+                hitSlop={8}
+                style={s.jumpChip}
+                accessibilityRole="button"
+                accessibilityLabel={t('mode.railJumpA11y', { label: t(`event.${e.key}` as I18nKey) })}
+              >
+                <Text style={s.jumpTxt}>{eventShortLabel(e.key)}</Text>
+              </Pressable>
+            ))}
           </View>
         )}
-        <Text style={s.awakeNote}>{t('mode.keepAwake')}</Text>
+
+        {finished ? (
+          <Pressable style={s.doneExit} onPress={onExit} accessibilityRole="button">
+            <Text style={s.doneExitTxt}>{t('mode.done.exit')}</Text>
+            <Text style={s.doneExitX}>✕</Text>
+          </Pressable>
+        ) : (
+          target &&
+          after && (
+            <View
+              style={[s.afterCard, { borderColor: `${after.color}66`, backgroundColor: `${after.color}1F` }]}
+            >
+              <View>
+                <Text style={s.afterKicker}>{t('mode.after')}</Text>
+                <Text style={[s.afterLabel, { color: after.color }]}>{after.label}</Text>
+              </View>
+              <Text style={s.afterTime}>{fmtHMS(target.time)}</Text>
+            </View>
+          )
+        )}
+
+        <Text style={s.awakeNote}>{finished ? t('mode.done.sleep') : t('mode.keepAwake')}</Text>
       </View>
     </View>
   );
@@ -288,51 +327,37 @@ export function EclipseModeScreen({
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
+  topFade: { position: 'absolute', top: 0, left: 0, right: 0 },
   topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    alignItems: 'flex-start',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
   },
-  clock: { fontFamily: F.medium, fontSize: 13, color: C.text, fontVariant: ['tabular-nums'] },
-  /** Mismo peso que el tag que sustituye: informa del puesto y además cierra */
-  exitTag: {
-    flexDirection: 'row',
+  topLeft: { flex: 1, gap: 4 },
+  clock: { fontFamily: F.medium, fontSize: 12.5, color: C.text, fontVariant: ['tabular-nums'] },
+  tag: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 2.4, color: C.violet },
+  closeHit: {
+    width: 44,
+    height: 44,
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'center',
+    marginRight: -8,
+    marginTop: -5,
+  },
+  close: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: C.border,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    backgroundColor: 'rgba(21,21,30,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  exitTagTxt: { fontFamily: F.semibold, fontSize: 11, letterSpacing: 2, color: C.dim },
-  exitTagX: { fontFamily: F.bold, fontSize: 12, color: C.dim },
-  exitPill: {
-    borderWidth: 1,
-    borderColor: 'rgba(124,108,255,0.55)',
-    backgroundColor: 'rgba(124,108,255,0.12)',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-  },
-  exitPillTxt: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1.5, color: C.violet },
-  rail: {
-    flexDirection: 'row',
-    marginBottom: 16,
-    paddingHorizontal: 4,
-  },
-  railLine: {
-    position: 'absolute',
-    left: '10%',
-    right: '10%',
-    top: 5,
-    height: 2,
-    backgroundColor: '#26263A',
-  },
-  /** Avance recorrido sobre el raíl (mismo origen y grosor que railLine) */
-  railLineFill: { position: 'absolute', left: '10%', top: 5, height: 2, opacity: 0.55 },
+  closeQuiet: { backgroundColor: 'rgba(21,21,30,0.6)' },
+  closeTxt: { fontFamily: F.medium, fontSize: 15, color: C.dim, lineHeight: 18 },
   drillEdge: {
     position: 'absolute',
     left: 0,
@@ -341,47 +366,6 @@ const s = StyleSheet.create({
     backgroundColor: C.violet,
     opacity: 0.9,
     zIndex: 5,
-  },
-  railItem: { flex: 1, alignItems: 'center', gap: 4 },
-  railDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    borderWidth: 2,
-    borderColor: '#3A3A4C',
-    backgroundColor: '#0B0B10',
-  },
-  // Pantalla que se mira de noche y a distancia de brazo: sin miniaturas de 9 px
-  railKey: { fontFamily: F.semibold, fontSize: 11, letterSpacing: 1, color: C.dim },
-  railHint: {
-    textAlign: 'center',
-    fontFamily: F.medium,
-    fontSize: 9,
-    letterSpacing: 1.5,
-    color: '#55525F',
-    marginBottom: 12,
-  },
-  railTime: { fontFamily: F.medium, fontSize: 10.5, color: C.dim, fontVariant: ['tabular-nums'] },
-  banner: {
-    marginHorizontal: 16,
-    marginTop: 6,
-    borderRadius: 20,
-    paddingVertical: 26,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    shadowOpacity: 0.45,
-    shadowRadius: 30,
-    elevation: 12,
-  },
-  bannerFase: { fontFamily: F.bold, fontSize: 40, letterSpacing: 2, color: '#FFFFFF', textAlign: 'center' },
-  bannerSub: {
-    fontFamily: F.bold,
-    fontSize: 15,
-    letterSpacing: 2,
-    lineHeight: 21,
-    color: 'rgba(255,255,255,0.92)',
-    marginTop: 10,
-    textAlign: 'center',
   },
   diverge: {
     marginHorizontal: 16,
@@ -396,38 +380,112 @@ const s = StyleSheet.create({
   },
   divergeTxt: { fontFamily: F.semibold, fontSize: 13, lineHeight: 18, color: C.text },
   divergeCta: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1.2, color: C.danger },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  cdLabel: { fontFamily: F.semibold, fontSize: 12, letterSpacing: 3, color: 'rgba(242,239,233,0.75)' },
+  stage: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+    minHeight: 0,
+  },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  // Nada de `elevation` en los adornos: Android la pinta como sombra de caja —dentro del
+  // anillo de TOTALIDAD salía un disco negro—. El resplandor queda solo en iOS.
+  pulse: { width: 8, height: 8, borderRadius: 4, shadowOpacity: 0.9, shadowRadius: 6 },
+  statusTitle: { fontFamily: F.bold, fontSize: 16, letterSpacing: 1.4, color: C.text },
+  statusSub: { fontFamily: F.semibold, fontSize: 10.5, letterSpacing: 1.6, color: C.dim, flexShrink: 1 },
+  totalityRing: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 2,
+    borderColor: WARM,
+    shadowColor: WARM,
+    shadowOpacity: 0.7,
+    shadowRadius: 12,
+  },
+  totalityTitle: { fontFamily: F.bold, fontSize: 26, letterSpacing: 2, color: C.text },
+  totalitySub: { fontFamily: F.bold, fontSize: 12, letterSpacing: 2, color: WARM, marginTop: 4 },
+  kicker: {
+    fontFamily: F.semibold,
+    fontSize: 11,
+    letterSpacing: 3.2,
+    color: C.coronaLight,
+    marginTop: 18,
+  },
   chrono: {
     fontFamily: F.bold,
-    fontSize: 108,
-    lineHeight: 112,
-    letterSpacing: -3,
+    letterSpacing: -4,
     color: C.text,
+    marginTop: 8,
     fontVariant: ['tabular-nums'],
-    textShadowRadius: 40,
+    textShadowRadius: 45,
   },
-  footer: { paddingHorizontal: 24, paddingBottom: 30 },
-  nextCard: {
+  warn: {
+    fontFamily: F.semibold,
+    fontSize: 12,
+    letterSpacing: 1.4,
+    color: C.text,
+    marginTop: 10,
+    lineHeight: 17,
+  },
+  meta: {
+    fontFamily: F.semibold,
+    fontSize: 12,
+    letterSpacing: 1.4,
+    color: C.dim,
+    marginTop: 12,
+    fontVariant: ['tabular-nums'],
+  },
+  doneTitle: { fontFamily: F.bold, fontSize: 52, letterSpacing: 1, color: C.text, marginTop: 12 },
+  doneSub: { fontFamily: F.semibold, fontSize: 13, letterSpacing: 1.8, color: C.dim, marginTop: 12 },
+  stats: { flexDirection: 'row', gap: 26, marginTop: 26 },
+  statKey: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 1.8, color: FAINT },
+  statVal: { fontFamily: F.bold, fontSize: 20, color: C.text, marginTop: 4, fontVariant: ['tabular-nums'] },
+  footer: { paddingHorizontal: 20 },
+  jumpRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 6, marginTop: 14 },
+  jumpChip: {
+    flex: 1,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(124,108,255,0.45)',
+    backgroundColor: 'rgba(124,108,255,0.12)',
+    borderRadius: 999,
+    paddingVertical: 7,
+  },
+  jumpTxt: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1, color: C.violet },
+  afterCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingVertical: 15,
+    paddingHorizontal: 18,
+    marginTop: 16,
+  },
+  afterKicker: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 2.2, color: C.dim },
+  afterLabel: { fontFamily: F.bold, fontSize: 18, marginTop: 5 },
+  afterTime: { fontFamily: F.semibold, fontSize: 16, color: C.text, fontVariant: ['tabular-nums'] },
+  doneExit: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: 'rgba(21,21,30,0.85)',
     borderWidth: 1,
     borderColor: C.border,
-    borderRadius: 16,
-    paddingVertical: 18,
-    paddingHorizontal: 20,
+    borderRadius: 18,
+    paddingVertical: 15,
+    paddingHorizontal: 18,
+    marginTop: 16,
   },
-  nextKicker: { fontFamily: F.semibold, fontSize: 10.5, letterSpacing: 2, color: C.dim },
-  nextLabel: { fontFamily: F.bold, fontSize: 17, marginTop: 4 },
-  nextTime: { fontFamily: F.semibold, fontSize: 17, color: C.dim, fontVariant: ['tabular-nums'] },
+  doneExitTxt: { fontFamily: F.bold, fontSize: 14, letterSpacing: 1.2, color: C.text },
+  doneExitX: { fontFamily: F.medium, fontSize: 15, color: C.dim },
   awakeNote: {
     textAlign: 'center',
     fontFamily: F.medium,
-    fontSize: 11,
-    letterSpacing: 1.5,
-    color: '#55525F',
-    marginTop: 16,
+    fontSize: 10,
+    letterSpacing: 1.6,
+    color: FAINT,
+    paddingTop: 12,
   },
 });

@@ -14,3 +14,13 @@ export const fmtHMS = (d: Date) =>
 
 /** Duración «1m 47s»; segundos con cero a la izquierda para que no baile en columnas. */
 export const fmtDur = (sec: number) => `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s`;
+
+/** Duración compacta «45s» / «1m 45s»: por debajo del minuto el «0m» solo estorba. */
+export const fmtDurCompact = (sec: number) => (sec < 60 ? `${sec}s` : fmtDur(sec));
+
+/** Duración larga «1h 48m» / «48m»: tramos de horas donde los segundos sobran. */
+export const fmtDurHM = (sec: number) => {
+  const h = Math.floor(sec / 3600);
+  const m = Math.round((sec % 3600) / 60);
+  return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
+};

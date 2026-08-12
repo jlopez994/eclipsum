@@ -7,7 +7,9 @@ import {
   eventAt,
   isActiveEclipse,
   nextEvent,
+  sunCoverage,
 } from '../lib/eclipse';
+import { BAR_GAP, barLayout, SLIVER_MAX, SLIVER_MIN } from '../lib/eclipseBar';
 import {
   bandOf,
   ECLIPSES,
@@ -225,6 +227,55 @@ async function main() {
   // Los mínimos deben dejar sitio a los avisos anticipados sin cruzarse entre hitos
   assert.ok(DRILL_PARTIAL_SEC > ALERT_EARLY_SECONDS, 'Drill: aviso previo a C2 cae tras C1');
   assert.ok(DRILL_TOTALITY_SEC / 2 > ALERT_EARLY_SECONDS, 'Drill: MAX suena antes del aviso previo a C3');
+
+  // Sol cubierto: 0 en los contactos exteriores, 1 en toda la totalidad, null fuera
+  const zC1 = eventAt(zgz, 'C1')!.time;
+  const zC2 = eventAt(zgz, 'C2')!.time;
+  const zC4 = eventAt(zgz, 'C4')!.time;
+  assert.equal(sunCoverage(zgz, new Date(zC1.getTime() - 1000)), null, 'Cubierto: null antes de C1');
+  assert.equal(sunCoverage(zgz, new Date(zC4.getTime() + 1000)), null, 'Cubierto: null tras C4');
+  assert.ok(sunCoverage(zgz, zC1)! < 0.001, 'Cubierto: 0 en C1');
+  assert.equal(sunCoverage(zgz, eventAt(zgz, 'MAX')!.time), 1, 'Cubierto: 1 en el máximo de un total');
+  // A mitad del parcial la magnitud vale 0,5 → un 39 % de área, no un 50 %
+  const halfCov = sunCoverage(zgz, new Date((zC1.getTime() + zC2.getTime()) / 2))!;
+  assert.ok(Math.abs(halfCov - 0.391) < 0.01, `Cubierto: media magnitud ≈ 39 % (${halfCov})`);
+  let prevCov = -1;
+  for (let k = 0; k <= 20; k++) {
+    const cov = sunCoverage(zgz, new Date(zC1.getTime() + ((zC2.getTime() - zC1.getTime()) * k) / 20))!;
+    assert.ok(cov >= prevCov, 'Cubierto: crece sin saltos hasta C2');
+    prevCov = cov;
+  }
+  // Parcial profundo: el pico coincide con la obscuración que da el motor
+  const svqMax = sunCoverage(svq, eventAt(svq, 'MAX')!.time)!;
+  assert.ok(Math.abs(svqMax - svq.obscuration) < 0.01, `Cubierto: pico = obscuración (${svqMax})`);
+  // El simulacro no tiene geometría celeste real y aun así da una curva coherente
+  assert.equal(sunCoverage(drillE, eventAt(drillE, 'MAX')!.time), 1, 'Cubierto: simulacro tapa del todo');
+
+  // Barra de la serie: tramos a escala, astilla con ancho mínimo y mapeo instante → px
+  const bar = barLayout(zgz, 380)!;
+  const [legIn, sliver, legOut] = bar.parts;
+  assert.equal(bar.parts.length, 3, 'Barra: parcial + totalidad + parcial');
+  assert.equal(sliver.width, SLIVER_MIN, 'Barra: la totalidad real cabe en el mínimo');
+  assert.ok(legIn.width > 100 && legOut.width > 100, 'Barra: los parciales se reparten el resto');
+  assert.equal(sliver.left, legIn.width + BAR_GAP, 'Barra: la astilla arranca tras el primer hueco');
+  assert.ok(legOut.left + legOut.width <= 380, 'Barra: la serie no se sale del ancho dado');
+  assert.equal(bar.xAt(zC1.getTime() - 60_000), 0, 'Barra: antes de C1 pega al origen');
+  assert.equal(bar.xAt(zC4.getTime() + 60_000), legOut.left + legOut.width, 'Barra: tras C4 llega al final');
+  assert.ok(Math.abs(bar.xAt(zC2.getTime()) - sliver.left) < 0.001, 'Barra: C2 cae al empezar la astilla');
+  assert.ok(
+    bar.markX > sliver.left && bar.markX < sliver.left + sliver.width,
+    'Barra: la marca centra la astilla',
+  );
+  let prevX = -1;
+  for (let k = 0; k <= 50; k++) {
+    const x = bar.xAt(zC1.getTime() + ((zC4.getTime() - zC1.getTime()) * k) / 50);
+    assert.ok(x >= prevX, 'Barra: el marcador avanza siempre');
+    prevX = x;
+  }
+  // Simulacro: la totalidad ocupa el 43 % de la serie, así que la astilla llega al tope
+  assert.equal(barLayout(drillE, 380)!.parts[1].width, SLIVER_MAX, 'Barra: simulacro tope la astilla');
+  // Un parcial no tiene astilla: un solo tramo de C1 a C4
+  assert.equal(barLayout(svq, 380)!.parts.length, 1, 'Barra: eclipse parcial, tramo único');
 
   // upcomingEclipses: catálogo + autogenerados, sin duplicar el día del empaquetado
   const up = upcomingEclipses(5, new Date('2026-01-01T00:00:00Z'));

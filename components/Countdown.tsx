@@ -4,13 +4,14 @@ import { Text, type StyleProp, type TextStyle } from 'react-native';
 interface CountdownProps {
   target: Date;
   style?: StyleProp<TextStyle>;
-  /** 'auto': con días si faltan; 'mmss': solo mm:ss (modo eclipse) */
-  format?: 'auto' | 'mmss';
+  /** 'auto': con días si faltan; 'mmss': solo mm:ss; 'ss': dos dígitos (cuenta final) */
+  format?: 'auto' | 'mmss' | 'ss';
 }
 
-function fmt(ms: number, format: 'auto' | 'mmss'): string {
+function fmt(ms: number, format: 'auto' | 'mmss' | 'ss'): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   const p2 = (n: number) => String(n).padStart(2, '0');
+  if (format === 'ss') return p2(s);
   if (format === 'mmss') return `${p2(Math.floor(s / 60))}:${p2(s % 60)}`;
   const d = Math.floor(s / 86400);
   const h = Math.floor((s % 86400) / 3600);

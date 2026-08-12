@@ -165,3 +165,70 @@ export function currentPhase(eclipse: LocalEclipse, now: Date): PhaseStatus | nu
   }
   return { label: i18n('phase.partial'), safeToLook: false };
 }
+
+/**
+ * Fracción del disco solar tapada cuando los centros distan `x` (1 = discos tangentes,
+ * 0 = concéntricos). Área de intersección de dos círculos IGUALES, normalizada.
+ */
+function coveredAt(x: number): number {
+  const c = Math.min(1, Math.max(0, x));
+  return (2 * Math.acos(c) - 2 * c * Math.sqrt(1 - c * c)) / Math.PI;
+}
+
+/** Inversa de `coveredAt` por bisección: separación que deja tapada esa fracción. */
+function separationFor(covered: number): number {
+  if (covered <= 0) return 1;
+  if (covered >= 1) return 0;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 24; i++) {
+    const mid = (lo + hi) / 2;
+    // coveredAt decrece con x: si tapa de más, hay que separar los discos
+    if (coveredAt(mid) > covered) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/**
+ * Fracción del disco solar tapada AHORA (0..1); null fuera del eclipse.
+ *
+ * Modelo: la separación de los centros cae en tramos lineales entre contactos —el cono
+ * de sombra cruza a velocidad casi constante— y luna y sol se toman con el MISMO radio
+ * aparente. Con eso la obscuración es el área común de dos círculos iguales, dentro del
+ * ~2 % de la real en eclipses típicos: suficiente para un dato de apoyo y, al no tocar
+ * efemérides, igual de válido en el simulacro, cuya serie es sintética.
+ * ponytail: si algún día hace falta precisión de catálogo, aquí entra la separación real
+ * sol-luna de astronomy-engine en vez de la interpolación.
+ */
+export function sunCoverage(eclipse: LocalEclipse, now: Date): number | null {
+  const t = now.getTime();
+  const at = (k: EclipseEvent['key']) => eventAt(eclipse, k)?.time.getTime();
+  const c1 = at('C1');
+  const c4 = at('C4');
+  if (c1 === undefined || c4 === undefined || t < c1 || t > c4) return null;
+  const c2 = at('C2');
+  const c3 = at('C3');
+  // Nodos (instante, separación): 1 en los contactos exteriores, 0 en toda la totalidad
+  const knots: [number, number][] =
+    c2 !== undefined && c3 !== undefined
+      ? [
+          [c1, 1],
+          [c2, 0],
+          [c3, 0],
+          [c4, 1],
+        ]
+      : [
+          [c1, 1],
+          [at('MAX') ?? (c1 + c4) / 2, separationFor(eclipse.obscuration)],
+          [c4, 1],
+        ];
+  for (let i = 1; i < knots.length; i++) {
+    const [t0, x0] = knots[i - 1];
+    const [t1, x1] = knots[i];
+    if (t > t1) continue;
+    const k = t1 > t0 ? (t - t0) / (t1 - t0) : 0;
+    return coveredAt(x0 + (x1 - x0) * k);
+  }
+  return 0;
+}
