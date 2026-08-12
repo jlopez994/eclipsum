@@ -16,8 +16,12 @@ interface NoticeStackProps {
   /** El eclipse está en curso y el usuario cerró el modo: camino de vuelta */
   showBackToMode: boolean;
   onBackToMode: () => void;
-  /** El puesto se movió solo a la zona de visibilidad porque el elegido no veía el eclipse */
-  relocated: boolean;
+  /**
+   * Identidad de la mudanza cuando el puesto se movió solo a la zona de visibilidad: el día
+   * civil del eclipse que la provocó. null = no hubo. Es una clave y no un booleano para que
+   * cerrarla silencie ESA mudanza, no las de los eclipses que elijas después.
+   */
+  relocated: string | null;
   /** km entre el GPS y el puesto elegido el día D; null = sin discrepancia */
   divergenceKm: number | null;
   /** Identidad del puesto medido: al cambiar de puesto el aviso cerrado vuelve a salir */
@@ -56,7 +60,8 @@ export function NoticeStack({
 }: NoticeStackProps) {
   const [messageHidden, setMessageHidden] = useState(false);
   const [updateHidden, setUpdateHidden] = useState(false);
-  const [relocatedHidden, setRelocatedHidden] = useState(false);
+  /** Mudanza con la que se cerró el aviso; otra distinta vuelve a avisar */
+  const [relocatedHidden, setRelocatedHidden] = useState<string | null>(null);
   /** Puesto y distancia con los que se cerró el aviso de divergencia; null = no cerrado */
   const [divergeHidden, setDivergeHidden] = useState<{ key: string; km: number } | null>(null);
 
@@ -84,7 +89,7 @@ export function NoticeStack({
   // divergencia, por lo mismo el día D. Después, volver al modo: mientras el evento ocurre
   // no hay nada más urgente.
   const notice =
-    relocated && !relocatedHidden
+    relocated !== null && relocatedHidden !== relocated
       ? 'relocated'
       : divergenceKm !== null && !divergeDismissed
         ? 'diverge'
@@ -104,7 +109,7 @@ export function NoticeStack({
       {/* Con ✕: es informativo y ya está resuelto. El chip de lugar queda debajo para
           moverse a otro sitio de la zona, que es la corrección natural desde aquí */}
       {notice === 'relocated' && (
-        <Notice tone="info" text={t('map.relocated')} onClose={() => setRelocatedHidden(true)} />
+        <Notice tone="info" text={t('map.relocated')} onClose={() => setRelocatedHidden(relocated)} />
       )}
       {/* Con ✕ porque flota sobre los chips del mapa: dejarlo fijo inutiliza el selector de
           puesto y la brújula justo cuando quieres cambiar de sitio */}

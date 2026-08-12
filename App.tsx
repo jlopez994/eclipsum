@@ -332,21 +332,20 @@ function AppInner() {
    * se toca nada.
    */
   const relocatedDayRef = useRef<string | null>(null);
-  const [relocated, setRelocated] = useState(false);
+  const [relocatedDay, setRelocatedDay] = useState<string | null>(null);
   useEffect(() => {
     if (!outOfZone || relocatedDayRef.current === activeCatalog.civilDate) return;
     const point = visiblePointFor(activeCatalog);
     if (!point) return;
     relocatedDayRef.current = activeCatalog.civilDate;
-    setRelocated(true);
+    setRelocatedDay(activeCatalog.civilDate);
     track('spot_relocated', { day: activeCatalog.civilDate });
     selectMapPoint(point);
   }, [outOfZone, activeCatalog, selectMapPoint]);
 
-  // El aviso pertenece al eclipse que provocó la mudanza: al cambiar de eclipse sobra
-  useEffect(() => {
-    if (relocatedDayRef.current !== activeCatalog.civilDate) setRelocated(false);
-  }, [activeCatalog.civilDate]);
+  // El aviso pertenece al eclipse que provocó la mudanza: con otro activo no viene a cuento,
+  // y comparar aquí evita tener que apagarlo con un efecto al cambiar de eclipse
+  const relocated = relocatedDay === activeCatalog.civilDate ? relocatedDay : null;
 
   const demoEclipse = demoAt && eclipse ? buildDemoEclipse(eclipse, demoAt) : null;
   const activeEclipse = drill?.eclipse ?? demoEclipse ?? eclipse;
