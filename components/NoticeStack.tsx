@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Linking, StyleSheet, View } from 'react-native';
 import { t } from '../lib/i18n';
+import { DIVERGENCE_KM } from '../lib/spots';
 import { Notice, NoticeActions, NoticeLink } from './Notice';
 
 interface NoticeStackProps {
@@ -17,6 +18,8 @@ interface NoticeStackProps {
   onBackToMode: () => void;
   /** km entre el GPS y el puesto elegido el día D; null = sin discrepancia */
   divergenceKm: number | null;
+  /** Identidad del puesto medido: al cambiar de puesto el aviso cerrado vuelve a salir */
+  divergenceSpotKey: string;
   /** Hace de tu posición el puesto: recalcula cronología, nubes y alertas a la vez */
   onRecalcHere: () => void;
   /** Desplazamiento superior (safe area) */
@@ -44,11 +47,31 @@ export function NoticeStack({
   showBackToMode,
   onBackToMode,
   divergenceKm,
+  divergenceSpotKey,
   onRecalcHere,
   top,
 }: NoticeStackProps) {
   const [messageHidden, setMessageHidden] = useState(false);
   const [updateHidden, setUpdateHidden] = useState(false);
+  /** Puesto y distancia con los que se cerró el aviso de divergencia; null = no cerrado */
+  const [divergeHidden, setDivergeHidden] = useState<{ key: string; km: number } | null>(null);
+
+  /**
+   * Cerrar la divergencia NO cambia el puesto: sigues calculando para el sitio elegido,
+   * y el mapa lo sigue diciendo con dos marcadores («TÚ» y el puesto). Se cierra porque
+   * el aviso tapa los chips del mapa y hay que poder usarlos; el camino de corregirlo
+   * no se pierde (chip de lugar → «Mi posición»).
+   *
+   * Vuelve solo, sin ✕ que lo silencie para siempre, cuando la situación ya no es la que
+   * descartaste: otro puesto, otros DIVERGENCE_KM de alejamiento, o un arranque nuevo
+   * (estado en memoria). Y el modo eclipse pinta su propio aviso al margen de este: el
+   * día D, en la ventana del evento, la discrepancia se ve sí o sí.
+   */
+  const divergeDismissed =
+    divergenceKm !== null &&
+    divergeHidden !== null &&
+    divergeHidden.key === divergenceSpotKey &&
+    Math.abs(divergenceKm - divergeHidden.km) < DIVERGENCE_KM;
 
   const showMessage = message !== '' && !messageHidden;
   const showUpdate = updateUrl !== '' && !updateHidden;
@@ -56,7 +79,7 @@ export function NoticeStack({
   // debajo —cronología, nubes, alertas y el propio modo eclipse— describe otro sitio.
   // Después, volver al modo: mientras el evento ocurre no hay nada más urgente.
   const notice =
-    divergenceKm !== null
+    divergenceKm !== null && !divergeDismissed
       ? 'diverge'
       : showBackToMode
         ? 'mode'
@@ -71,9 +94,16 @@ export function NoticeStack({
 
   return (
     <View style={[s.stack, { top: top + 8 }]} pointerEvents="box-none">
-      {/* Sin ✕: es un dato equivocado en pantalla, no una notificación que se descarte */}
+      {/* Con ✕ porque flota sobre los chips del mapa: dejarlo fijo inutiliza el selector de
+          puesto y la brújula justo cuando quieres cambiar de sitio */}
       {notice === 'diverge' && (
-        <Notice tone="warn" text={t('map.divergence', { km: Math.round(divergenceKm ?? 0) })}>
+        <Notice
+          tone="warn"
+          text={t('map.divergence', { km: Math.round(divergenceKm ?? 0) })}
+          onClose={() =>
+            setDivergeHidden({ key: divergenceSpotKey, km: divergenceKm ?? 0 })
+          }
+        >
           <NoticeLink label={t('map.recalc')} onPress={onRecalcHere} danger />
         </Notice>
       )}

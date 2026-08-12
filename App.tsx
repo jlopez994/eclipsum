@@ -22,7 +22,7 @@ import {
 import { eclipseForDay, getActiveEclipse } from './lib/eclipseCatalog';
 import { haversineKm } from './lib/totality';
 import { openInMaps } from './lib/maps';
-import { cleanPlaceLabel, REAL_PLACE_KM, sameCoords, type Spot } from './lib/spots';
+import { cleanPlaceLabel, DIVERGENCE_KM, REAL_PLACE_KM, sameCoords, type Spot } from './lib/spots';
 import { scheduleEclipseAlerts } from './lib/notifications';
 import { track, trackError } from './lib/firebase';
 import {
@@ -56,8 +56,6 @@ const ECLIPSE_MODE_LEAD_MS = 30 * 60_000;
 const ECLIPSE_MODE_TAIL_MS = 5 * 60_000;
 const COARSE_TICK_MS = 30_000;
 const FINE_TICK_MS = 1_000;
-/** Aviso día D: GPS lejos del puesto elegido → las horas de contacto ya no valen */
-const DIVERGENCE_KM = 20;
 
 /** Puesto que se está pintando, con sus circunstancias ya calculadas. */
 interface ShownSpot {
@@ -474,6 +472,9 @@ function AppInner() {
         showBackToMode={inEclipseWindow && modeExited}
         onBackToMode={() => setModeExited(false)}
         divergenceKm={divergenceKm}
+        // El aviso se mide contra el puesto PINTADO: cambiar de puesto es otra discrepancia
+        // y el cierre anterior no la cubre
+        divergenceSpotKey={shown ? `${shown.spot.lat},${shown.spot.lon}` : ''}
         onRecalcHere={recalcHere}
         top={insets.top}
       />
