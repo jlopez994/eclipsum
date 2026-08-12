@@ -37,6 +37,27 @@ export function bandOf(e: EclipseEntry): BandSlice[] | null {
   return e.band ?? bandForEclipse(e.id);
 }
 
+/**
+ * Un punto desde el que SÍ se ve el eclipse, para reubicar al usuario cuando su puesto
+ * cae fuera: centro de la rodaja central de la banda o, sin banda, el pico global.
+ *
+ * La rodaja central y no un extremo porque la banda se recorta por longitud y en sus bordes
+ * el sol sale a ras de horizonte. Puede caer en mar —es geometría, no geografía—: sirve para
+ * centrar el mapa con cifras reales, y desde ahí el usuario ajusta. null = no sabemos dónde,
+ * así que no se reubica y queda el aviso de fuera de zona.
+ */
+export function visiblePointFor(e: EclipseEntry): { lat: number; lon: number } | null {
+  const band = bandOf(e);
+  if (band && band.length > 0) {
+    const mid = band[Math.floor(band.length / 2)];
+    return { lat: (mid.latS + mid.latN) / 2, lon: mid.lon };
+  }
+  if (typeof e.peakLat === 'number' && typeof e.peakLon === 'number') {
+    return { lat: e.peakLat, lon: e.peakLon };
+  }
+  return null;
+}
+
 export const ECLIPSES: EclipseEntry[] = [
   {
     id: '2026-08-12-iberia',

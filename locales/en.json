@@ -242,6 +242,7 @@
   "map.sponsor.kicker": "SUPPORTED BY",
   "map.sponsor.cta": "LEARN MORE →",
   "map.sponsor.a11y": "Sponsor: {name}",
+  "map.relocated": "This eclipse wasn't visible from your spot: we moved you to where it is",
   "map.divergence": "Your chosen spot is {km} km from your current location",
   "map.recalc": "USE MY CURRENT LOCATION →",
   "map.you": "YOU",

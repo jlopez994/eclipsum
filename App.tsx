@@ -19,7 +19,7 @@ import {
   shiftEclipse,
   type LocalEclipse,
 } from './lib/eclipse';
-import { eclipseForDay, getActiveEclipse } from './lib/eclipseCatalog';
+import { eclipseForDay, getActiveEclipse, visiblePointFor } from './lib/eclipseCatalog';
 import { haversineKm } from './lib/totality';
 import { openInMaps } from './lib/maps';
 import { cleanPlaceLabel, DIVERGENCE_KM, REAL_PLACE_KM, sameCoords, type Spot } from './lib/spots';
@@ -318,6 +318,36 @@ function AppInner() {
     if (geo) selectSpot(gpsSpot(geo));
   }, [geo, selectSpot]);
 
+  /**
+   * Puesto fuera de zona → lo movemos solos a la banda del eclipse elegido.
+   *
+   * Elegir un eclipse en Ajustes es decir «quiero ver ESTE», y quedarse mirando un aviso
+   * desde un sitio que no lo ve no lleva a ninguna parte: sin saber por dónde pasa, tampoco
+   * puedes buscar un puesto válido. Así el mapa se pinta siempre, con la banda a la vista y
+   * cifras reales, y desde ahí se ajusta.
+   *
+   * Marcado por día civil: reubicar una sola vez por eclipse. Si vuelves a poner un puesto
+   * que no lo ve, es tu decisión y se respeta —queda el aviso de fuera de zona—; sin esto
+   * el efecto lo desharía a cada render. Sin punto conocido (eclipse sin banda ni pico) no
+   * se toca nada.
+   */
+  const relocatedDayRef = useRef<string | null>(null);
+  const [relocated, setRelocated] = useState(false);
+  useEffect(() => {
+    if (!outOfZone || relocatedDayRef.current === activeCatalog.civilDate) return;
+    const point = visiblePointFor(activeCatalog);
+    if (!point) return;
+    relocatedDayRef.current = activeCatalog.civilDate;
+    setRelocated(true);
+    track('spot_relocated', { day: activeCatalog.civilDate });
+    selectMapPoint(point);
+  }, [outOfZone, activeCatalog, selectMapPoint]);
+
+  // El aviso pertenece al eclipse que provocó la mudanza: al cambiar de eclipse sobra
+  useEffect(() => {
+    if (relocatedDayRef.current !== activeCatalog.civilDate) setRelocated(false);
+  }, [activeCatalog.civilDate]);
+
   const demoEclipse = demoAt && eclipse ? buildDemoEclipse(eclipse, demoAt) : null;
   const activeEclipse = drill?.eclipse ?? demoEclipse ?? eclipse;
 
@@ -438,6 +468,7 @@ function AppInner() {
         onDonateResolve={resolveDonate}
         showBackToMode={inEclipseWindow && modeExited}
         onBackToMode={() => setModeExited(false)}
+        relocated={relocated}
         divergenceKm={divergenceKm}
         // El aviso se mide contra el puesto PINTADO: cambiar de puesto es otra discrepancia
         // y el cierre anterior no la cubre

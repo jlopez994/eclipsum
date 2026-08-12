@@ -16,6 +16,8 @@ interface NoticeStackProps {
   /** El eclipse está en curso y el usuario cerró el modo: camino de vuelta */
   showBackToMode: boolean;
   onBackToMode: () => void;
+  /** El puesto se movió solo a la zona de visibilidad porque el elegido no veía el eclipse */
+  relocated: boolean;
   /** km entre el GPS y el puesto elegido el día D; null = sin discrepancia */
   divergenceKm: number | null;
   /** Identidad del puesto medido: al cambiar de puesto el aviso cerrado vuelve a salir */
@@ -46,6 +48,7 @@ export function NoticeStack({
   onDonateResolve,
   showBackToMode,
   onBackToMode,
+  relocated,
   divergenceKm,
   divergenceSpotKey,
   onRecalcHere,
@@ -53,6 +56,7 @@ export function NoticeStack({
 }: NoticeStackProps) {
   const [messageHidden, setMessageHidden] = useState(false);
   const [updateHidden, setUpdateHidden] = useState(false);
+  const [relocatedHidden, setRelocatedHidden] = useState(false);
   /** Puesto y distancia con los que se cerró el aviso de divergencia; null = no cerrado */
   const [divergeHidden, setDivergeHidden] = useState<{ key: string; km: number } | null>(null);
 
@@ -75,25 +79,33 @@ export function NoticeStack({
 
   const showMessage = message !== '' && !messageHidden;
   const showUpdate = updateUrl !== '' && !updateHidden;
-  // La divergencia va primero: mientras el puesto no sea el correcto, TODO lo que hay
-  // debajo —cronología, nubes, alertas y el propio modo eclipse— describe otro sitio.
-  // Después, volver al modo: mientras el evento ocurre no hay nada más urgente.
+  // La reubicación manda: el puesto en pantalla no es el que elegiste, y hasta que eso se
+  // explique cada cifra de debajo parece describir un sitio equivocado. Luego la
+  // divergencia, por lo mismo el día D. Después, volver al modo: mientras el evento ocurre
+  // no hay nada más urgente.
   const notice =
-    divergenceKm !== null && !divergeDismissed
-      ? 'diverge'
-      : showBackToMode
-        ? 'mode'
-        : showMessage
-          ? 'info'
-          : showUpdate
-            ? 'update'
-            : showDonate
-              ? 'donate'
-              : null;
+    relocated && !relocatedHidden
+      ? 'relocated'
+      : divergenceKm !== null && !divergeDismissed
+        ? 'diverge'
+        : showBackToMode
+          ? 'mode'
+          : showMessage
+            ? 'info'
+            : showUpdate
+              ? 'update'
+              : showDonate
+                ? 'donate'
+                : null;
   if (notice === null) return null;
 
   return (
     <View style={[s.stack, { top: top + 8 }]} pointerEvents="box-none">
+      {/* Con ✕: es informativo y ya está resuelto. El chip de lugar queda debajo para
+          moverse a otro sitio de la zona, que es la corrección natural desde aquí */}
+      {notice === 'relocated' && (
+        <Notice tone="info" text={t('map.relocated')} onClose={() => setRelocatedHidden(true)} />
+      )}
       {/* Con ✕ porque flota sobre los chips del mapa: dejarlo fijo inutiliza el selector de
           puesto y la brújula justo cuando quieres cambiar de sitio */}
       {notice === 'diverge' && (
