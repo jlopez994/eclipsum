@@ -72,7 +72,7 @@ jobs:
       # Puerta de calidad: si el motor, el catálogo o los tipos se rompen, no sale APK
       - name: Selfcheck + typecheck
         if: steps.v.outputs.skip != 'true'
-        run: npm run selfcheck && npm run typecheck
+        run: npm run selfcheck && npm run typecheck && npm run lint
 
       - name: google-services.json
         if: steps.v.outputs.skip != 'true'

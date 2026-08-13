@@ -55,10 +55,15 @@ async function main() {
     '2026-02-17-annular',
     'Auto cronológico: el anular de feb 2026 va antes que Iberia',
   );
-  const active = getActiveEclipse(new Date('2026-06-01T00:00:00Z'));
+  // Ancla temporal de TODOS los asserts de Iberia 2026: sin fecha explícita, el motor usa
+  // el reloj real y el día después del eclipse el activo rueda al siguiente — el selfcheck
+  // debe pasar igual antes, durante y después de cada evento del catálogo
+  const T0 = new Date('2026-06-01T00:00:00Z');
+  const active = getActiveEclipse(T0);
   assert.equal(active.id, '2026-08-12-iberia', 'Pasado feb 2026, activo = Iberia');
+  const start = new Date(active.searchStart);
   assert.equal(
-    upcomingEclipses(1, new Date('2026-06-01T00:00:00Z'))[0].id,
+    upcomingEclipses(1, T0)[0].id,
     active.id,
     'Lista y activo comparten la definición de «próximo»',
   );
@@ -66,7 +71,7 @@ async function main() {
   assert.ok(ECLIPSES.length >= 1, 'Catálogo no vacío');
 
   // Zaragoza: dentro de la banda de totalidad del eclipse activo
-  const zgz = computeLocalEclipse(41.65, -0.88, 200);
+  const zgz = computeLocalEclipse(41.65, -0.88, 200, start);
   assert.equal(zgz.kind, 'total', 'Zaragoza debe ser total');
   assert.ok(zgz.obscuration > 0.999, 'Obscuración ~100%');
   assert.ok(
@@ -97,19 +102,19 @@ async function main() {
   assert.equal(max.time.toISOString().slice(0, 16), '2026-08-12T18:29', 'Máximo 18:29 UTC (20:29 CEST)');
 
   // Sevilla: fuera de la banda → parcial
-  const svq = computeLocalEclipse(37.39, -5.99, 10);
+  const svq = computeLocalEclipse(37.39, -5.99, 10, start);
   assert.equal(svq.kind, 'partial', 'Sevilla debe ser parcial');
   assert.ok(svq.obscuration < 0.999 && svq.obscuration > 0.5, `Sevilla parcial profunda: ${svq.obscuration}`);
   assert.equal(eventAt(svq, 'C2'), undefined, 'eventAt: un parcial no tiene C2');
 
   // Fuera del footprint del activo el motor contesta con OTRO eclipse: nada que lo pinte
   // puede fiarse de kind/obscuración/duración sin pasar por isActiveEclipse
-  assert.ok(isActiveEclipse(zgz), 'Zaragoza ve el eclipse activo');
-  const syd = computeLocalEclipse(-33.87, 151.21);
+  assert.ok(isActiveEclipse(zgz, T0), 'Zaragoza ve el eclipse activo');
+  const syd = computeLocalEclipse(-33.87, 151.21, 0, start);
   assert.equal(syd.kind, 'total', 'Sídney: el motor devuelve un total… de otro eclipse');
-  assert.ok(!isActiveEclipse(syd), 'Sídney NO ve el eclipse activo (serie de 2028)');
+  assert.ok(!isActiveEclipse(syd, T0), 'Sídney NO ve el eclipse activo (serie de 2028)');
   assert.equal(
-    await findNearestTotality(-37.81, 144.96),
+    await findNearestTotality(-37.81, 144.96, T0),
     null,
     'Melbourne: sin totalidad del activo cerca — no debe ofrecer la banda de 2028',
   );
@@ -137,11 +142,11 @@ async function main() {
   assert.equal(cloudCoverAt(forecast, new Date('2026-08-09T12:00:00Z')), null, 'Día actual → null');
 
   // findNearestTotality desde Sevilla (parcial) — banda queda al norte
-  const dir = await findNearestTotality(37.39, -5.99);
+  const dir = await findNearestTotality(37.39, -5.99, T0);
   assert.ok(dir, 'Sevilla debe encontrar totalidad alcanzable');
   assert.ok(dir!.distanceKm > 100 && dir!.distanceKm < 700, `Distancia plausible: ${dir!.distanceKm} km`);
   assert.ok(['N', 'NE', 'E'].includes(bearingLabel(dir!.bearingDeg)), `Rumbo hacia la banda: ${bearingLabel(dir!.bearingDeg)}`);
-  const check = computeLocalEclipse(dir!.lat, dir!.lon);
+  const check = computeLocalEclipse(dir!.lat, dir!.lon, 0, start);
   assert.equal(check.kind, 'total', 'Punto devuelto realmente es total');
 
   // pushRecent: acumula visitas, ordena por más visitado, tope RECENT_CAP
@@ -212,6 +217,15 @@ async function main() {
   assert.equal(noBand.band, undefined, 'Banda malformada se descarta; la entrada sobrevive');
   assert.equal(bandOf(noBand), null, 'Sin banda RC ni empaquetada → null');
   assert.ok(bandOf(getEclipseById('2026-08-12-iberia')!), 'Entrada empaquetada cae a la banda de bandGeo');
+
+  // Dos entradas remotas del mismo día (copia-pega en RC): solo la primera entra
+  setRemoteCatalog(JSON.stringify([rcEntry, { ...rcEntry, id: '2027-08-02-duplicado' }]));
+  assert.equal(
+    upcomingEclipses(6, new Date('2027-01-01T00:00:00Z')).filter((e) => e.civilDate === '2027-08-02').length,
+    1,
+    'RC: entradas remotas duplicadas por día no duplican la lista',
+  );
+  assert.equal(getEclipseById('2027-08-02-duplicado'), undefined, 'RC: el duplicado no es resoluble');
 
   setRemoteCatalog('[]');
   assert.equal(getEclipseById('2027-08-02-egipto'), undefined, 'Reset del catálogo remoto');
@@ -333,6 +347,30 @@ async function main() {
   const { dictKeys, getLang, setLang, t: tr, LANGS } = await import('../lib/i18n');
   for (const l of LANGS) {
     assert.deepEqual(dictKeys(l), dictKeys('es'), `i18n: paridad de claves es/${l}`);
+  }
+
+  // Claves construidas por plantilla (t(`notif.${key}…` as I18nKey)): el compilador no las
+  // ve y t() degrada a devolver la clave cruda, así que el dominio entero se cubre aquí
+  const dict = new Set(dictKeys('es'));
+  for (const k of ['C1', 'C2', 'MAX', 'C3', 'C4']) {
+    for (const key of [
+      `notif.${k}.title`,
+      `notif.${k}.body`,
+      `notif.${k}.early.title`,
+      `notif.${k}.early.body`,
+      `event.${k}`,
+      `alerts.desc.${k}`,
+      `mode.next.${k}`,
+      `mode.after.${k}`,
+    ]) {
+      assert.ok(dict.has(key), `i18n: clave interpolada ${key} presente`);
+    }
+  }
+  for (const kind of ['total', 'annular', 'partial']) assert.ok(dict.has(`kind.${kind}`), `i18n: kind.${kind}`);
+  for (const kind of ['total', 'annular']) assert.ok(dict.has(`band.word.${kind}`), `i18n: band.word.${kind}`);
+  for (const k of ['C2', 'C3']) assert.ok(dict.has(`mode.warn.${k}`), `i18n: mode.warn.${k}`);
+  for (const lv of ['few', 'mid', 'many']) {
+    assert.ok(dict.has(`map.clouds.${lv}`) && dict.has(`map.clouds.${lv}.word`), `i18n: map.clouds.${lv}`);
   }
   assert.equal(getLang(), 'es', 'i18n: idioma por defecto es');
   const esWest = tr('bearing.W');

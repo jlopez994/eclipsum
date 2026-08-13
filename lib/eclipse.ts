@@ -100,10 +100,10 @@ const SAME_ECLIPSE_DAYS = 1;
  * (Sídney → total de 2028) y sus circunstancias no tienen nada que ver con el nuestro.
  * Todo lo que pinte datos de un puesto debe filtrar por aquí primero.
  */
-export function isActiveEclipse(eclipse: LocalEclipse): boolean {
+export function isActiveEclipse(eclipse: LocalEclipse, now?: Date): boolean {
   const max = eventAt(eclipse, 'MAX');
   if (!max) return false;
-  const activeDay = Date.parse(`${getActiveEclipse().civilDate}T12:00:00Z`);
+  const activeDay = Date.parse(`${getActiveEclipse(now).civilDate}T12:00:00Z`);
   return Math.abs(max.time.getTime() - activeDay) <= (SAME_ECLIPSE_DAYS + 0.5) * 86_400_000;
 }
 

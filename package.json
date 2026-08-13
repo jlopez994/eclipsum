@@ -42,6 +42,7 @@
     "start": "expo start",
     "selfcheck": "tsx scripts/selfcheck.ts",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
     "android": "expo run:android",
     "dev": "bash scripts/dev.sh",
     "apk": "npx expo prebuild --platform android --no-install && cd android && JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ANDROID_HOME=\"$HOME/Library/Android/sdk\" ./gradlew assembleRelease",
