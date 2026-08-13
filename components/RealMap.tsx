@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, memo, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { type BandSlice } from '../lib/bandGeo';
@@ -86,7 +86,7 @@ function tapInfo(lat: number, lon: number): TapInfo {
  * la banda de totalidad dibujada encima y marcadores de puesto y GPS.
  * Los tiles sí requieren red; la librería ya no depende de ningún CDN.
  */
-export const RealMap = forwardRef<RealMapHandle, RealMapProps>(function RealMap(
+const RealMapInner = forwardRef<RealMapHandle, RealMapProps>(function RealMap(
   { spot, here, onSelectPoint }: RealMapProps,
   ref,
 ) {
@@ -156,6 +156,22 @@ export const RealMap = forwardRef<RealMapHandle, RealMapProps>(function RealMap(
     />
   );
 });
+
+const sameMapPoint = (a: MapPoint | null, b: MapPoint | null) =>
+  a === b || (a !== null && b !== null && a.lat === b.lat && a.lon === b.lon && a.label === b.label);
+
+/**
+ * Durante la ventana del modo eclipse el reloj de App pasa a 1 s y todo el árbol del mapa
+ * se re-renderiza con él. El WebView no pinta nada que dependa de la hora: comparar
+ * spot/here por valor (el padre los crea como literales en cada render) lo deja quieto.
+ */
+export const RealMap = memo(
+  RealMapInner,
+  (prev, next) =>
+    prev.onSelectPoint === next.onSelectPoint &&
+    sameMapPoint(prev.spot, next.spot) &&
+    sameMapPoint(prev.here, next.here),
+);
 
 function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | null): string {
   // Eclipse sin banda empaquetada (p. ej. añadido por Remote Config): solo marcadores

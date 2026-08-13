@@ -32,7 +32,7 @@ import { RealMap, type RealMapHandle } from '../RealMap';
 import { CompassChip } from '../map/CompassChip';
 import { SheetDetail } from '../map/SheetDetail';
 import { SunFinderScreen } from './SunFinderScreen';
-import { C, CLOUD_COLOR, F } from '../theme';
+import { C, CARD, CLOUD_COLOR, F } from '../theme';
 
 /** Fallback bajo: mejor recortar un instante que asomar la cronología. */
 const SHEET_MIN_FALLBACK = 140;
@@ -366,13 +366,10 @@ const s = StyleSheet.create({
   },
   chipGroup: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1, minWidth: 0 },
   chipLocation: {
+    ...CARD,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(21,21,30,0.85)',
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 18,
     height: 36,
     paddingHorizontal: 16,
     flexShrink: 1,

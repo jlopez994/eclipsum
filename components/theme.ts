@@ -34,6 +34,14 @@ export const CLOUD_COLOR: Record<'few' | 'mid' | 'many', string> = {
   many: C.danger,
 };
 
+/** Chrome de tarjeta/chip flotante sobre el mapa y el modo eclipse (mismo cristal oscuro) */
+export const CARD = {
+  backgroundColor: 'rgba(21,21,30,0.85)',
+  borderWidth: 1,
+  borderColor: C.border,
+  borderRadius: 18,
+} as const;
+
 /** Familias Space Grotesk cargadas en App vía expo-font */
 export const F = {
   regular: 'SpaceGrotesk_400Regular',

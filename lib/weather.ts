@@ -43,7 +43,7 @@ async function fetchJson(url: string): Promise<unknown> {
  * Nubosidad horaria del día del eclipse vía Open-Meteo (gratis, sin API key).
  * Lanza si no hay red o respuesta inválida — el caller decide cómo degradar.
  */
-export async function fetchCloudCover(lat: number, lon: number): Promise<CloudForecast> {
+async function fetchCloudCover(lat: number, lon: number): Promise<CloudForecast> {
   const day = civilDate();
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +

@@ -19,7 +19,7 @@ import { t, type I18nKey } from '../../lib/i18n';
 import { Countdown } from '../Countdown';
 import { CoronaHero, type HeroLook } from '../mode/CoronaHero';
 import { EclipseTimeline, totalSpanLabel } from '../mode/EclipseTimeline';
-import { C, F } from '../theme';
+import { C, CARD, F } from '../theme';
 
 const WARM = '#FFF7E6';
 const FAINT = '#55525F';
@@ -483,13 +483,10 @@ const s = StyleSheet.create({
   afterLabel: { fontFamily: F.bold, fontSize: 18, marginTop: 5 },
   afterTime: { fontFamily: F.semibold, fontSize: 16, color: C.text, fontVariant: ['tabular-nums'] },
   doneExit: {
+    ...CARD,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(21,21,30,0.85)',
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 18,
     paddingVertical: 15,
     paddingHorizontal: 18,
     marginTop: 16,

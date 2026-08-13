@@ -56,7 +56,9 @@ if (packaged.length > 0) {
 
 if (WRITE) {
   const path = new URL('../remoteconfig.template.json', import.meta.url);
-  const tpl = JSON.parse(readFileSync(path, 'utf8'));
+  const tpl = JSON.parse(readFileSync(path, 'utf8')) as {
+    parameters: Record<string, { defaultValue: { value: string } }>;
+  };
   const current: EclipseEntry[] = parseRemoteCatalog(tpl.parameters.eclipse_catalog.defaultValue.value || '[]');
   // Dedupe por día civil contra template Y empaquetadas: la identidad real es el día
   // (los ids varían entre fuentes; una entrada RC del mismo día que una empaquetada sobra)

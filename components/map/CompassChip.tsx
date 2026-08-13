@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import * as Location from 'expo-location';
+import { useHeading } from '../../hooks/useHeading';
 import { t } from '../../lib/i18n';
 import { bearingLabel } from '../../lib/totality';
-import { C, F } from '../theme';
+import { C, CARD, F } from '../theme';
 
 interface CompassChipProps {
   targetAzimuthDeg: number;
@@ -32,28 +32,8 @@ export function CompassChip({ targetAzimuthDeg, onPress, paused = false }: Compa
   const target = ((targetAzimuthDeg % 360) + 360) % 360;
   const label = bearingLabel(target);
 
-  useEffect(() => {
-    if (paused) return;
-    let sub: Location.LocationSubscription | null = null;
-    let cancelled = false;
-    void (async () => {
-      try {
-        sub = await Location.watchHeadingAsync((h) => {
-          const deg = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
-          if (!cancelled && Number.isFinite(deg)) setHeading(((deg % 360) + 360) % 360);
-        });
-        // Desmontado mientras resolvía: la limpieza ya corrió con sub=null y el
-        // magnetómetro se quedaría suscrito para siempre
-        if (cancelled) sub.remove();
-      } catch {
-        // sin brújula disponible
-      }
-    })();
-    return () => {
-      cancelled = true;
-      sub?.remove();
-    };
-  }, [paused]);
+  // Sin filtro: la aguja del chip es orientativa y el crudo del sensor le vale
+  useHeading(!paused, (deg) => setHeading(deg));
 
   // Con sensor: ángulo relativo (0° = ya miras al sol). Sin sensor: rumbo sobre el diagrama (N arriba).
   const rotateDeg = heading !== null ? target - heading : target;
@@ -83,12 +63,10 @@ export function CompassChip({ targetAzimuthDeg, onPress, paused = false }: Compa
 
 const s = StyleSheet.create({
   compass: {
+    ...CARD,
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(21,21,30,0.85)',
-    borderWidth: 1,
-    borderColor: C.border,
+    borderRadius: 20, // círculo: pisa el radio de CARD
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',

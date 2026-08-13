@@ -74,14 +74,11 @@ export function NoticeLink({
   danger?: boolean;
 }) {
   return (
-    <Text
-      style={[soft ? s.linkSoft : s.link, danger && { color: C.danger }]}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      {label}
-    </Text>
+    // Pressable y no Text-con-onPress: las acciones del aviso (donar, recalcular…) son
+    // pequeñas y el hitSlop les da el objetivo táctil que el resto de la app ya tiene
+    <Pressable onPress={onPress} hitSlop={8} accessibilityRole="button" accessibilityLabel={label}>
+      <Text style={[soft ? s.linkSoft : s.link, danger && { color: C.danger }]}>{label}</Text>
+    </Pressable>
   );
 }
 

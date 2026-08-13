@@ -16,6 +16,7 @@ import { SearchGlobalSolarEclipse } from 'astronomy-engine';
 import { computeLocalEclipse } from '../lib/eclipse';
 import type { BandSlice } from '../lib/bandGeo';
 import { bandOf, parseRemoteCatalog, type EclipseEntry } from '../lib/eclipseCatalog';
+import { refineEdge as refine } from './bandEdge';
 
 const TEMPLATE_URL = new URL('../remoteconfig.template.json', import.meta.url);
 const LON_STEP = 1; // 1° basta para el polígono global y deja la banda en ~2-3 KB
@@ -43,17 +44,6 @@ function makeInBand(entry: EclipseEntry, kind: string) {
   };
 }
 
-/** Borde de banda por bisección entre un lat dentro y uno fuera (~0.01°). */
-function refine(inBand: (lat: number, lon: number) => boolean, lon: number, inside: number, outside: number): number {
-  let a = inside;
-  let b = outside;
-  for (let i = 0; i < 12; i++) {
-    const mid = (a + b) / 2;
-    if (inBand(mid, lon)) a = mid;
-    else b = mid;
-  }
-  return (a + b) / 2;
-}
 
 /** Corte de banda en `lon` buscando alrededor de `hintLat`; null = la banda no pasa por aquí. */
 function sliceAt(

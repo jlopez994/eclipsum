@@ -17,6 +17,7 @@ import { writeFileSync } from 'node:fs';
 import { computeLocalEclipse } from '../lib/eclipse';
 import { bandForEclipse, type BandSlice } from '../lib/bandGeo';
 import { ECLIPSES, getEclipseById, upcomingEclipses, type EclipseEntry } from '../lib/eclipseCatalog';
+import { refineEdge } from './bandEdge';
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -43,17 +44,7 @@ const isTotal = (lat: number, lon: number): boolean => {
   }
 };
 
-/** Refina el borde entre un lat total y uno no total (precisión ~0.01°). */
-function refine(lon: number, inside: number, outside: number): number {
-  let a = inside;
-  let b = outside;
-  for (let i = 0; i < 12; i++) {
-    const mid = (a + b) / 2;
-    if (isTotal(mid, lon)) a = mid;
-    else b = mid;
-  }
-  return (a + b) / 2;
-}
+const refine = (lon: number, inside: number, outside: number) => refineEdge(isTotal, lon, inside, outside);
 
 const rows: BandSlice[] = [];
 for (let lon = LON_FROM; lon <= LON_TO; lon += LON_STEP) {

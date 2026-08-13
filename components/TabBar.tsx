@@ -43,29 +43,26 @@ const TABS: { key: TabKey; labelKey: I18nKey }[] = [
   { key: 'ajustes', labelKey: 'tab.settings' },
 ];
 
-// El map de TABS usa `t` como variable de iteración: alias local para el diccionario
-const i18nLabel = t;
-
 export function TabBar({ active, onChange }: TabBarProps) {
   const insets = useSafeAreaInsets();
   return (
     <View style={[s.bar, { height: 68 + insets.bottom, paddingBottom: insets.bottom }]}>
-      {TABS.map((t) => {
-        const on = active === t.key;
+      {TABS.map((tab) => {
+        const on = active === tab.key;
         const color = on ? C.corona : C.dim;
         return (
           // El estado activo iba SOLO en el color: sin rol ni selected, un lector de pantalla
           // lee las tres pestañas idénticas y no dice en cuál estás
           <Pressable
-            key={t.key}
+            key={tab.key}
             style={s.tab}
-            onPress={() => onChange(t.key)}
+            onPress={() => onChange(tab.key)}
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
-            accessibilityLabel={i18nLabel(t.labelKey)}
+            accessibilityLabel={t(tab.labelKey)}
           >
-            <Icon tab={t.key} color={color} />
-            <Text style={[s.label, { color }]}>{i18nLabel(t.labelKey)}</Text>
+            <Icon tab={tab.key} color={color} />
+            <Text style={[s.label, { color }]}>{t(tab.labelKey)}</Text>
           </Pressable>
         );
       })}

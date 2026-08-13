@@ -4,12 +4,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { DeviceMotion } from 'expo-sensors';
-import * as Location from 'expo-location';
 import { useKeepAwake } from 'expo-keep-awake';
 import {
   cameraBasis,
   fovFor,
-  norm360,
   project,
   skyVector,
   smoothBasis,
@@ -17,6 +15,7 @@ import {
   withCompassBearing,
   type CameraBasis,
 } from '../../lib/skyProjection';
+import { useHeading } from '../../hooks/useHeading';
 import { track } from '../../lib/firebase';
 import { bearingLabel } from '../../lib/totality';
 import { t } from '../../lib/i18n';
@@ -151,36 +150,18 @@ export function SunFinderScreen({
     };
   }, [live]);
 
-  useEffect(() => {
-    if (!live) return;
-    let sub: Location.LocationSubscription | null = null;
-    let cancelled = false;
-    void (async () => {
-      try {
-        sub = await Location.watchHeadingAsync((h) => {
-          const d = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
-          if (cancelled || !Number.isFinite(d)) return;
-          const acc = typeof h.accuracy === 'number' ? h.accuracy : null;
-          // Brújula descalibrada (cargador, coche, altavoz): endurecemos el filtro en vez de
-          // seguirla. Preferimos que la guía derive despacio a que dé bandazos — un error
-          // constante se corrige girando; uno que salta hace la marca inservible.
-          const f = acc !== null && acc < COMPASS_MIN_ACCURACY ? HEADING_SMOOTHING_NOISY : HEADING_SMOOTHING;
-          const next = smoothBearing(headingRef.current, norm360(d), f);
-          headingRef.current = next;
-          setHeading(next);
-          setHeadingAccuracy(acc);
-        });
-        // Cerrado durante el await: la limpieza vio sub=null y nadie soltaría la brújula
-        if (cancelled) sub.remove();
-      } catch {
-        // sin brújula: el guiñado se queda con el de DeviceMotion (relativo, pero usable)
-      }
-    })();
-    return () => {
-      cancelled = true;
-      sub?.remove();
-    };
-  }, [live]);
+  // Sin brújula el hook no emite nunca: el guiñado se queda con el de DeviceMotion
+  // (relativo, pero usable)
+  useHeading(live, (deg, acc) => {
+    // Brújula descalibrada (cargador, coche, altavoz): endurecemos el filtro en vez de
+    // seguirla. Preferimos que la guía derive despacio a que dé bandazos — un error
+    // constante se corrige girando; uno que salta hace la marca inservible.
+    const f = acc !== null && acc < COMPASS_MIN_ACCURACY ? HEADING_SMOOTHING_NOISY : HEADING_SMOOTHING;
+    const next = smoothBearing(headingRef.current, deg, f);
+    headingRef.current = next;
+    setHeading(next);
+    setHeadingAccuracy(acc);
+  });
 
   useEffect(() => {
     if (live) track('sunfinder_open');
