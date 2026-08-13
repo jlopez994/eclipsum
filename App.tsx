@@ -268,11 +268,13 @@ function AppInner() {
     // [PRUEBA] (p. ej. al volver a primer plano, catalogEpoch cambia la identidad de
     // eclipse). Al salir del simulacro el efecto vuelve a entrar y reprograma.
     if (drill) return;
-    scheduleEclipseAlerts(eclipse, ctx.alertsOn, prefs.alertSound, ctx.alertEarly, ctx.c1PlanAlerts).catch((e) => {
-      // El efecto solo entra con permiso concedido: fallar aquí es raro y reportable.
-      // El usuario siempre puede reprogramar desde Alertas.
-      trackError('schedule_alerts', e);
-    });
+    scheduleEclipseAlerts(eclipse, ctx.alertsOn, prefs.alertSound, ctx.alertEarly, ctx.c1PlanAlerts)
+      .then((n) => track('alerts_scheduled', { count: n }))
+      .catch((e) => {
+        // El efecto solo entra con permiso concedido: fallar aquí es raro y reportable.
+        // El usuario siempre puede reprogramar desde Alertas.
+        trackError('schedule_alerts', e);
+      });
     // prefs?.language: el copy de las notificaciones se hornea al programar — reprogramar al cambiar idioma
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eclipse, permissions.notifications, ctx, prefs?.alertSound, prefs?.language, drill]);

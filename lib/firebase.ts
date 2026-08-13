@@ -42,6 +42,15 @@ export interface Sponsor {
   tagline?: string;
 }
 
+/**
+ * Solo URLs https pasan la frontera de RC: todo lo que llega de Remote Config acaba en
+ * Linking.openURL, y un valor mal puesto (intent://, market://…) no debe llegar ahí.
+ * Cualquier otro esquema queda en '' — el mismo valor que ya significa «oculto».
+ */
+function httpsOnly(url: string): string {
+  return url.startsWith('https://') ? url : '';
+}
+
 /** RC `sponsor`: {"name","url","tagline"?}; inválido o vacío → null (nunca rompe). */
 function parseSponsor(json: string): Sponsor | null {
   try {
@@ -49,7 +58,7 @@ function parseSponsor(json: string): Sponsor | null {
     if (typeof raw !== 'object' || raw === null) return null;
     const r = raw as Record<string, unknown>;
     if (typeof r.name !== 'string' || r.name.length === 0) return null;
-    if (typeof r.url !== 'string' || !r.url.startsWith('https://')) return null;
+    if (typeof r.url !== 'string' || httpsOnly(r.url) === '') return null;
     return {
       name: r.name,
       url: r.url,
@@ -129,13 +138,13 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       // seguimos y los leemos igual (arranque en frío offline conserva catálogo y banner)
     }
     const message = getString(rc, 'eclipse_message');
-    const glassesUrl = getString(rc, 'glasses_url');
-    const donateUrl = getString(rc, 'donate_url');
+    const glassesUrl = httpsOnly(getString(rc, 'glasses_url'));
+    const donateUrl = httpsOnly(getString(rc, 'donate_url'));
     const sponsor = parseSponsor(getString(rc, 'sponsor'));
     const latestVersionCode = Number.parseInt(getString(rc, 'latest_version_code'), 10) || 0;
-    const latestApkUrl = getString(rc, 'latest_apk_url');
+    const latestApkUrl = httpsOnly(getString(rc, 'latest_apk_url'));
     const latestBetaVersionCode = Number.parseInt(getString(rc, 'latest_beta_version_code'), 10) || 0;
-    const latestBetaApkUrl = getString(rc, 'latest_beta_apk_url');
+    const latestBetaApkUrl = httpsOnly(getString(rc, 'latest_beta_apk_url'));
     const suggestedSpots = parseSuggestedSpots(getString(rc, 'suggested_spots'));
     // Orden: primero el catálogo extra, luego el id activo (puede apuntar a una entrada remota)
     setRemoteCatalog(getString(rc, 'eclipse_catalog'));
@@ -169,7 +178,7 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
 }
 
 /** Analytics best-effort: nunca rompe la app por telemetría. */
-export function track(event: string, params?: Record<string, string | number>): void {
+export function track(event: string, params?: Record<string, string | number | boolean>): void {
   try {
     logEvent(getAnalytics(), event, params);
   } catch {

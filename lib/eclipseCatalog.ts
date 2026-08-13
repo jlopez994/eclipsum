@@ -182,9 +182,14 @@ export function setRemoteCatalog(json: string): void {
  * Entradas con `kind` salen con labels regenerados en el idioma activo.
  */
 function allEclipses(): EclipseEntry[] {
-  const extras = remoteEntries.filter(
-    (r) => !ECLIPSES.some((e) => e.id === r.id || e.civilDate === r.civilDate),
-  );
+  // El dedupe también aplica ENTRE entradas remotas (un copia-pega en RC no debe duplicar
+  // un eclipse en la UI): la primera del array gana
+  const extras: EclipseEntry[] = [];
+  for (const r of remoteEntries) {
+    if (ECLIPSES.some((e) => e.id === r.id || e.civilDate === r.civilDate)) continue;
+    if (extras.some((e) => e.id === r.id || e.civilDate === r.civilDate)) continue;
+    extras.push(r);
+  }
   return [...ECLIPSES, ...extras]
     .map((e) => (e.kind ? { ...e, ...labelFields(e.kind, new Date(`${e.civilDate}T00:00:00Z`)) } : e))
     .sort((a, b) => a.civilDate.localeCompare(b.civilDate));

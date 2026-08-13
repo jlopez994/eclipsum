@@ -3,14 +3,9 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import { eventShortLabel, type LocalEclipse } from '../../lib/eclipse';
-import {
-  countEclipseAlerts,
-  scheduleEclipseAlerts,
-  sendTestNotification,
-} from '../../lib/notifications';
+import { countEclipseAlerts, sendTestNotification } from '../../lib/notifications';
 import type { AlertEarly, AlertSound, AlertToggles, C1PlanAlerts } from '../../lib/prefs';
 import { ALERT_EARLY_SECONDS } from '../../lib/prefs';
-import { track } from '../../lib/firebase';
 import { fmtHMS } from '../../lib/format';
 import { t, type I18nKey } from '../../lib/i18n';
 import { C, EVENT_ACCENT, F } from '../theme';
@@ -79,38 +74,12 @@ export function AlertsScreen({
     void Notifications.requestPermissionsAsync().catch(() => {});
   }, [notificationsGranted]);
 
-  const reschedule = async (
-    nextToggles: AlertToggles,
-    nextEarly: AlertEarly,
-    nextPlan: C1PlanAlerts,
-  ) => {
-    try {
-      const n = await scheduleEclipseAlerts(eclipse, nextToggles, alertSound, nextEarly, nextPlan);
-      track('alerts_scheduled', { count: n });
-      setFlash(null);
-    } catch (e) {
-      setFlash(e instanceof Error ? e.message : t('alerts.scheduleError'));
-    }
-  };
-
-  const handleToggle = (key: keyof AlertToggles) => {
-    const next = { ...toggles, [key]: !toggles[key] };
-    onToggle(key, !toggles[key]);
-    void reschedule(next, early, c1Plan);
-  };
-
-  const handleEarly = (key: keyof AlertEarly) => {
-    const value = !early[key];
-    const next = { ...early, [key]: value };
-    onEarlyChange(key, value);
-    void reschedule(toggles, next, c1Plan);
-  };
-
-  const handleC1Plan = (key: keyof C1PlanAlerts) => {
-    const next = { ...c1Plan, [key]: !c1Plan[key] };
-    onC1PlanChange(next);
-    void reschedule(toggles, early, next);
-  };
+  // Los toggles SOLO tocan prefs: el cambio de contexto dispara el efecto de App, que es
+  // la única vía de reprogramación. Reprogramar también aquí duplicaba cada operación
+  // (2× cancelAll + reschedule por toque) y el evento alerts_scheduled de analytics.
+  const handleToggle = (key: keyof AlertToggles) => onToggle(key, !toggles[key]);
+  const handleEarly = (key: keyof AlertEarly) => onEarlyChange(key, !early[key]);
+  const handleC1Plan = (key: keyof C1PlanAlerts) => onC1PlanChange({ ...c1Plan, [key]: !c1Plan[key] });
 
   const onTest = async () => {
     if (testing) return;

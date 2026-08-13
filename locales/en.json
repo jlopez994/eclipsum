@@ -114,7 +114,6 @@
   "alerts.testing": "SENDING…",
   "alerts.testSending": "Sending test notification…",
   "alerts.testError": "Test notification failed",
-  "alerts.scheduleError": "Could not schedule alerts",
   "alerts.scheduled": "{n} notifications scheduled",
   "alerts.noPermission": "Notifications aren’t allowed, so nothing is scheduled. Enable them in your system settings.",
   "notif.C1.early.title": "☀️ The eclipse starts in a few seconds",

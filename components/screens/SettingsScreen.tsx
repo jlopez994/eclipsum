@@ -306,7 +306,7 @@ export function SettingsScreen({
               <Pressable
                 onPress={() => {
                   track('donate_click');
-                  Linking.openURL(donateUrl);
+                  Linking.openURL(donateUrl).catch(() => {});
                 }}
               >
                 <Text style={s.linkCta}>{t('settings.support.button')}</Text>

@@ -114,7 +114,6 @@
   "alerts.testing": "ENVIANDO…",
   "alerts.testSending": "Enviando notificación de prueba…",
   "alerts.testError": "Error en notificación de prueba",
-  "alerts.scheduleError": "Error al programar alertas",
   "alerts.scheduled": "{n} avisos programados",
   "alerts.noPermission": "Sin permiso de notificaciones: no hay ningún aviso programado. Actívalo en los ajustes del sistema.",
   "notif.C1.early.title": "☀️ El eclipse empieza en unos segundos",

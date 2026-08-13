@@ -29,20 +29,24 @@ export function useSpotData(active: { lat: number; lon: number } | null, eclipse
 
     setCloud({ pct: null, ageH: null, loading: true });
     const maxEvent = eventAt(eclipse, 'MAX');
-    fetchCloudCoverCached(active.lat, active.lon).then((c) => {
-      if (cancelled) return;
-      animateNextLayout();
-      if (!c || !maxEvent) {
-        setCloud({ pct: null, ageH: null, loading: false });
-        return;
-      }
-      setCloud({
-        pct: cloudCoverAt(c.forecast, maxEvent.time),
-        // Solo marcamos antigüedad si el dato viene de caché con más de media hora
-        ageH: c.ageMs > 30 * 60_000 ? Math.max(1, Math.round(c.ageMs / 3_600_000)) : null,
-        loading: false,
-      });
-    });
+    fetchCloudCoverCached(active.lat, active.lon)
+      .then((c) => {
+        if (cancelled) return;
+        animateNextLayout();
+        if (!c || !maxEvent) {
+          setCloud({ pct: null, ageH: null, loading: false });
+          return;
+        }
+        setCloud({
+          pct: cloudCoverAt(c.forecast, maxEvent.time),
+          // Solo marcamos antigüedad si el dato viene de caché con más de media hora
+          ageH: c.ageMs > 30 * 60_000 ? Math.max(1, Math.round(c.ageMs / 3_600_000)) : null,
+          loading: false,
+        });
+      })
+      // Hoy fetchCloudCoverCached nunca rechaza (traga sus errores); si eso cambia, sin
+      // este catch la carga se quedaría en «loading» para siempre
+      .catch(() => !cancelled && setCloud({ pct: null, ageH: null, loading: false }));
 
     // La totalidad NO se resetea al cambiar de puesto: el punto desliza directo
     // del valor viejo al nuevo al resolver (reset = salto a "lejos" y vuelta)
