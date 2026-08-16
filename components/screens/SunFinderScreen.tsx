@@ -8,6 +8,7 @@ import { useKeepAwake } from 'expo-keep-awake';
 import {
   cameraBasis,
   fovFor,
+  norm360,
   project,
   skyVector,
   smoothBasis,
@@ -15,6 +16,8 @@ import {
   withCompassBearing,
   type CameraBasis,
 } from '../../lib/skyProjection';
+import { calibrate, isCalibrationFresh, type CompassCalibration } from '../../lib/compassCalibration';
+import { sunPosition } from '../../lib/eclipse';
 import { useHeading } from '../../hooks/useHeading';
 import { track } from '../../lib/firebase';
 import { bearingLabel } from '../../lib/totality';
@@ -64,40 +67,77 @@ const COMPASS_MIN_ACCURACY = 2;
  * único que los sensores permiten prometer.
  */
 const AIM_TOLERANCE_DEG = 12;
+/**
+ * Radio con calibración solar vigente: el término dominante (el magnetómetro) está medido
+ * contra el sol real y compensado, así que el círculo puede prometer bastante más. No baja
+ * de ~5°: la calibración se hizo centrando el sol «a ojo» y ese pulso, más la FOV estimada,
+ * también tienen su error.
+ */
+const AIM_TOLERANCE_CAL_DEG = 5;
+/**
+ * Refresco del modo «sol ahora». El sol se mueve ~0,25°/min: a 30 s la marca queda siempre
+ * a <0,15° de la posición real — muy por debajo de lo que la brújula deja distinguir.
+ */
+const SUN_NOW_REFRESH_MS = 30_000;
 
-interface SunFinderScreenProps {
+/**
+ * Muestra del sol de ahora CON su instante: el reloj entra al render como estado, no como
+ * Date.now() suelto (regla de pureza), y la calibración queda fechada con la misma muestra
+ * de sol contra la que se midió.
+ */
+const sunNowSample = (lat: number, lon: number) => {
+  const at = Date.now();
+  return { at, ...sunPosition(lat, lon, 0, new Date(at)) };
+};
+
+/** Posición del sol en un hito del eclipse, con su etiqueta y hora local ya formateadas. */
+export interface SunTarget {
   /** Azimut del sol en el instante buscado, grados horarios desde el norte */
   azimuthDeg: number;
   /** Altura del sol sobre el horizonte, grados */
   altitudeDeg: number;
   /** Hito al que corresponde la posición (p. ej. «MÁXIMO») */
-  momentLabel: string;
+  label: string;
   /** Hora local del hito */
-  momentTime: string;
+  time: string;
+}
+
+interface SunFinderScreenProps {
+  /** Hito del eclipse a proyectar; null ⇒ el visor arranca (y se queda) en «sol ahora» */
+  target: SunTarget | null;
+  /** Posición GPS real: el cielo que calcula el modo live y el ancla de la calibración */
+  gps: { lat: number; lon: number };
   /**
    * Distancia y nombre del puesto elegido cuando el GPS está lejos de él. El visor
    * SIEMPRE pinta el cielo de donde estás; esto evita creer que enseña el del destino.
    * null = estás prácticamente en tu puesto, no hay nada que aclarar.
    */
   awayFromSpot: { km: number; place: string } | null;
+  /** Última calibración solar guardada; la vigencia se reevalúa aquí, no en el llamante */
+  calibration: CompassCalibration | null;
+  /** Calibración recién medida contra el sol real, para persistir */
+  onCalibrate: (cal: CompassCalibration) => void;
   onClose: () => void;
 }
 
 /**
- * Visor: dibuja sobre la cámara dónde estará el sol en el instante del eclipse.
- * Sirve para elegir sitio —¿me tapa ese árbol?—, NO para observar: la advertencia
- * de seguridad es previa y obligatoria, y se repite en pantalla.
+ * Visor: dibuja sobre la cámara dónde estará el sol en el instante del eclipse — o dónde
+ * está AHORA MISMO (modo «sol ahora», pill superior para alternar). Sirve para elegir
+ * sitio —¿me tapa ese árbol?—, NO para observar: la advertencia de seguridad es previa
+ * y obligatoria, y se repite en pantalla.
  *
  * Precisión: el magnetómetro ronda ±10-20° (peor cerca de metal) y expo-camera no
  * expone el campo de visión real, así que se estima. La marca cae en la zona correcta,
  * no clavada al grado; por eso el círculo es amplio y el copy dice «aproximada».
+ * El modo «sol ahora» permite además calibrar: centrando el sol real y pulsando, el error
+ * de brújula queda medido y el círculo puede estrecharse (AIM_TOLERANCE_CAL_DEG).
  */
 export function SunFinderScreen({
-  azimuthDeg,
-  altitudeDeg,
-  momentLabel,
-  momentTime,
+  target,
+  gps,
   awayFromSpot,
+  calibration,
+  onCalibrate,
   onClose,
 }: SunFinderScreenProps) {
   useKeepAwake();
@@ -114,8 +154,19 @@ export function SunFinderScreen({
   const [headingAccuracy, setHeadingAccuracy] = useState<number | null>(null);
   const [sensorsOff, setSensorsOff] = useState(false);
   const degreeUnits = useRef(false);
+  // Modo «sol ahora»: sin hito es el único que existe; con hito se alterna desde la pill
+  const [showNow, setShowNow] = useState(target === null);
+  const [sunNow, setSunNow] = useState(() => sunNowSample(gps.lat, gps.lon));
 
   const live = accepted && permission?.granted === true;
+
+  // El sol de ahora se refresca aunque el modo visible sea el hito: decide si la pill puede
+  // alternar (de noche no) y la calibración lo necesita fresco al pulsar
+  useEffect(() => {
+    if (!live) return;
+    const id = setInterval(() => setSunNow(sunNowSample(gps.lat, gps.lon)), SUN_NOW_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [live, gps.lat, gps.lon]);
 
   useEffect(() => {
     if (!live) return;
@@ -217,13 +268,16 @@ export function SunFinderScreen({
     );
   }
 
+  // Posición proyectada: la del hito, o la del sol de ahora mismo
+  const shown = !showNow && target ? target : sunNow;
+
   // Sol bajo el horizonte en ese instante: no hay nada que señalar y decirlo es la
   // única respuesta honesta — una marca bajo el suelo haría creer que se verá algo.
-  if (altitudeDeg <= 0) {
+  if (shown.altitudeDeg <= 0) {
     return (
       <View style={[s.gate, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}>
         <Text style={s.gateKicker}>{t('sun.title')}</Text>
-        <Text style={s.gateBody}>{t('sun.below')}</Text>
+        <Text style={s.gateBody}>{showNow ? t('sun.below.now') : t('sun.below')}</Text>
         <View style={s.gateActions}>
           <Pressable onPress={onClose} hitSlop={10}>
             <Text style={s.gateDismiss}>{t('sun.close')}</Text>
@@ -234,28 +288,69 @@ export function SunFinderScreen({
   }
 
   // --- Visor ---
-  // El compás manda en el rumbo: en Android el alpha de DeviceMotion es relativo
-  const aimed = basis === null ? null : heading === null ? basis : withCompassBearing(basis, heading);
+  // Vigencia reevaluada con cada muestra del sol (30 s): caduca sola en pantalla, sin
+  // temporizador dedicado, y con margen de sobra frente a un TTL de horas
+  const activeCal = isCalibrationFresh(calibration, sunNow.at, gps.lat, gps.lon) ? calibration : null;
+
+  // El compás manda en el rumbo (en Android el alpha de DeviceMotion es relativo), corregido
+  // con el offset solar ANTES de reanclar: la corrección es del SENSOR, no del objetivo,
+  // así que vale igual apuntando al hito del eclipse que al sol de ahora
+  const aimed =
+    basis === null
+      ? null
+      : heading === null
+        ? basis
+        : withCompassBearing(basis, norm360(heading + (activeCal?.offsetDeg ?? 0)));
 
   const fov = fovFor(size.w, size.h);
   const shot =
-    aimed !== null && size.w > 0 ? project(skyVector(azimuthDeg, altitudeDeg), aimed, fov) : null;
+    aimed !== null && size.w > 0 ? project(skyVector(shown.azimuthDeg, shown.altitudeDeg), aimed, fov) : null;
 
   // Normalizado (−1..1, y hacia arriba) → píxeles (y hacia abajo)
   const markerX = shot ? size.w / 2 + (shot.x * size.w) / 2 : 0;
   const markerY = shot ? size.h / 2 - (shot.y * size.h) / 2 : 0;
-  // El círculo mide la tolerancia REAL, no un tamaño bonito: proyectar AIM_TOLERANCE_DEG con
-  // la misma escala que la marca. Así crece en pantallas anchas y con FOV estrecha, y lo que
-  // se le pide al usuario es apuntar a una zona — no clavar un punto que los sensores no dan.
+  const tolDeg = activeCal ? AIM_TOLERANCE_CAL_DEG : AIM_TOLERANCE_DEG;
+  // El círculo mide la tolerancia REAL vigente (12° a pelo, 5° con calibración solar), no un
+  // tamaño bonito: proyectar tolDeg con la misma escala que la marca. Así crece en pantallas
+  // anchas y con FOV estrecha, y lo que se le pide al usuario es apuntar a una zona — no
+  // clavar un punto que los sensores no dan. El suelo visual baja con calibración: con los
+  // 44 px de siempre el círculo apenas encogería y la precisión ganada no se vería.
   const markerR = Math.max(
-    44,
+    activeCal ? 26 : 44,
     Math.min(
       120,
-      ((size.w / 2) * Math.tan((AIM_TOLERANCE_DEG * Math.PI) / 180)) /
+      ((size.w / 2) * Math.tan((tolDeg * Math.PI) / 180)) /
         Math.tan((fov.horizontalDeg * Math.PI) / 360),
     ),
   );
   const noisyCompass = headingAccuracy !== null && headingAccuracy < COMPASS_MIN_ACCURACY;
+
+  // «Centrar en el sol»: solo con el sol REAL a la vista (modo live y dentro del encuadre)
+  // y con brújula — sin ella no hay rumbo que corregir. Se mide contra la base reanclada a
+  // la brújula CRUDA, sin el offset vigente: recalibrar sustituye, no acumula.
+  const canCalibrate = showNow && heading !== null && shot?.inFrame === true;
+  const handleCalibrate = () => {
+    if (basis === null || heading === null) return;
+    const cal = calibrate(
+      sunNow.azimuthDeg,
+      sunNow.altitudeDeg,
+      withCompassBearing(basis, heading),
+      fov.verticalDeg,
+      sunNow.at,
+      gps.lat,
+      gps.lon,
+    );
+    // null = por cabeceo el sol no podía estar encuadrado (p. ej. mirando al suelo con la
+    // brújula mintiendo en el azimut): mejor sin calibrar que calibrado con basura
+    if (cal) {
+      track('sunfinder_calibrated');
+      onCalibrate(cal);
+    }
+  };
+
+  // Alternar hacia «sol ahora» exige sol sobre el horizonte: si no, se aterrizaría en la
+  // pantalla de «es de noche» sin camino de vuelta al hito
+  const canToggle = target !== null && (showNow || sunNow.altitudeDeg > 0);
 
   return (
     <View style={s.root} onLayout={onLayout}>
@@ -264,7 +359,7 @@ export function SunFinderScreen({
       {shot?.inFrame && (
         <>
           <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
-            {/* El círculo ES la tolerancia (±AIM_TOLERANCE_DEG): señala una zona, no un punto */}
+            {/* El círculo ES la tolerancia vigente (±tolDeg): señala una zona, no un punto */}
             <Circle cx={markerX} cy={markerY} r={markerR} stroke={C.corona} strokeWidth={2} fill="none" />
             <Circle
               cx={markerX}
@@ -282,7 +377,8 @@ export function SunFinderScreen({
           </Svg>
           <View style={[s.markerLabel, { left: markerX - 60, top: markerY + markerR + 28 }]} pointerEvents="none">
             <Text style={s.markerLabelText}>{t('sun.marker')}</Text>
-            <Text style={s.markerApprox}>{t('sun.approx')}</Text>
+            {/* Sutil a propósito: el círculo encogido ya es el aviso; esto solo le pone nombre */}
+            <Text style={s.markerApprox}>{activeCal ? t('sun.calibrated') : t('sun.approx')}</Text>
           </View>
         </>
       )}
@@ -299,7 +395,7 @@ export function SunFinderScreen({
             {shot.offAxisDeg > 120 ? t('sun.behind') : t('sun.turnBy', { deg: Math.round(shot.offAxisDeg) })}
           </Text>
           <Text style={s.awayText}>
-            {t('sun.turnTo', { dir: bearingLabel(azimuthDeg), alt: Math.round(altitudeDeg) })}
+            {t('sun.turnTo', { dir: bearingLabel(shown.azimuthDeg), alt: Math.round(shown.altitudeDeg) })}
           </Text>
         </View>
       )}
@@ -311,17 +407,38 @@ export function SunFinderScreen({
       )}
 
       <View style={[s.top, { paddingTop: insets.top + 12 }]} pointerEvents="box-none">
-        <View style={s.targetPill}>
-          <Text style={s.targetText}>{t('sun.target', { label: momentLabel, time: momentTime })}</Text>
+        {/* La pill es el conmutador de modo: hito del eclipse ⇄ sol de ahora mismo */}
+        <Pressable
+          style={s.targetPill}
+          onPress={canToggle ? () => setShowNow((v) => !v) : undefined}
+          disabled={!canToggle}
+          accessibilityRole={canToggle ? 'button' : 'text'}
+          accessibilityLabel={canToggle ? t('sun.switchTarget') : undefined}
+        >
+          <View style={s.targetRow}>
+            <Text style={s.targetText}>
+              {!showNow && target ? t('sun.target', { label: target.label, time: target.time }) : t('sun.now')}
+            </Text>
+            {canToggle && <Text style={s.targetSwap}>⇄</Text>}
+          </View>
           {/* Permanente: la hora y la posición son las de aquí, no las del puesto elegido */}
           <Text style={s.targetFromHere} numberOfLines={2}>
             {awayFromSpot ? t('sun.awayFromSpot', awayFromSpot) : t('sun.fromHere')}
           </Text>
-        </View>
+        </Pressable>
         <Pressable style={s.closeBtn} onPress={onClose} hitSlop={10} accessibilityLabel={t('sun.close')}>
           <Text style={s.closeBtnText}>✕</Text>
         </Pressable>
       </View>
+
+      {/* Con el sol real encuadrado: céntralo en el círculo y pulsa — el error de brújula queda medido */}
+      {canCalibrate && (
+        <View style={[s.calWrap, { bottom: insets.bottom + 76 }]} pointerEvents="box-none">
+          <Pressable style={s.calBtn} onPress={handleCalibrate} hitSlop={8}>
+            <Text style={s.calBtnText}>{t('sun.calibrate.cta')}</Text>
+          </Pressable>
+        </View>
+      )}
 
       <View style={[s.bottom, { paddingBottom: insets.bottom + 16 }]} pointerEvents="none">
         {noisyCompass && <Text style={s.calibrate}>{t('sun.calibrate')}</Text>}
@@ -402,8 +519,20 @@ const s = StyleSheet.create({
     paddingVertical: 8,
     flexShrink: 1,
   },
+  targetRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   targetText: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1.2, color: C.text },
+  targetSwap: { fontFamily: F.bold, fontSize: 12, color: C.dim },
   targetFromHere: { fontFamily: F.medium, fontSize: 10.5, lineHeight: 14, color: C.corona, marginTop: 2 },
+  calWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  calBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 99,
+    borderWidth: 1,
+    borderColor: 'rgba(255,184,77,0.6)',
+    backgroundColor: 'rgba(11,11,16,0.75)',
+  },
+  calBtnText: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1.4, color: C.corona },
   closeBtn: {
     width: 38,
     height: 38,

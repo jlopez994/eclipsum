@@ -507,6 +507,10 @@ function AppInner() {
               onSelectMapPoint={selectMapPoint}
               sponsor={remote.sponsor}
               glassesUrl={remote.glassesUrl}
+              compassCal={prefs.compassCal}
+              // Forma funcional: la calibración llega desde el visor tras un rato abierto y
+              // no debe pisar prefs escritas entre medias
+              onCalibrate={(cal) => onPrefsChange((prev) => ({ ...prev, compassCal: cal }))}
               // Salto desde «Eclipses desde aquí»: el puesto viaja con el eclipse elegido
               // (el contexto es per-día y sin esto la siembra lo pisaría con el GPS)
               onSelectEclipseDay={(day) => {

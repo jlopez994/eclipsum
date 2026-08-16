@@ -84,6 +84,24 @@ function computeLocalEclipseUncached(
 }
 
 /**
+ * Azimut y altura del sol desde unas coordenadas en un instante cualquiera. Mismo motor
+ * que los contactos (Equator+Horizon con refracción normal): el modo «sol ahora» del visor
+ * y la calibración solar comparten efemérides con el resto de la app — si difirieran,
+ * calibrar contra el sol real corregiría hacia un sol distinto del que pinta el visor.
+ */
+export function sunPosition(
+  lat: number,
+  lon: number,
+  elevationM: number,
+  date: Date,
+): { azimuthDeg: number; altitudeDeg: number } {
+  const observer = new Observer(lat, lon, elevationM);
+  const eq = Equator(Body.Sun, date, observer, true, true);
+  const hor = Horizon(date, observer, eq.ra, eq.dec, 'normal');
+  return { azimuthDeg: hor.azimuth, altitudeDeg: hor.altitude };
+}
+
+/**
  * Tolerancia al comparar el día del máximo LOCAL con el día civil del pico GLOBAL.
  * El máximo local se separa hasta ~2 h del global, así que con el pico global cerca de
  * medianoche UTC hay observadores que lo ven al día siguiente (anular 2035-03-09, pico

@@ -8,7 +8,14 @@ import {
   isActiveEclipse,
   nextEvent,
   sunCoverage,
+  sunPosition,
 } from '../lib/eclipse';
+import {
+  calibrate,
+  CALIBRATION_MAX_AGE_MS,
+  isCalibrationFresh,
+  type CompassCalibration,
+} from '../lib/compassCalibration';
 import { BAR_GAP, barLayout, SLIVER_MAX, SLIVER_MIN } from '../lib/eclipseBar';
 import {
   bandOf,
@@ -585,6 +592,45 @@ async function main() {
     lookAt(180),
     'base filtrada: un giro de 180° en una muestra no se interpola',
   );
+
+  // --- Sol ahora (modo live del visor) ---
+  // Mismas efemérides que los contactos: en el instante del máximo debe dar SU posición
+  const sunAtMax = sunPosition(41.65, -0.88, 200, max.time);
+  assert.ok(Math.abs(sunAtMax.azimuthDeg - max.azimuth) < 0.01, 'sol ahora: azimut del máximo clavado');
+  assert.ok(Math.abs(sunAtMax.altitudeDeg - max.altitude) < 0.1, 'sol ahora: altura del máximo coherente');
+  // Mediodía solar de agosto en Zaragoza: sol al sur y alto; de madrugada, bajo el horizonte
+  const noon = sunPosition(41.65, -0.88, 200, new Date('2026-08-12T12:00:00Z'));
+  assert.ok(Math.abs(noon.azimuthDeg - 180) < 10, `sol ahora: mediodía al sur (${noon.azimuthDeg.toFixed(1)}°)`);
+  assert.ok(noon.altitudeDeg > 50, `sol ahora: alto en verano (${noon.altitudeDeg.toFixed(1)}°)`);
+  assert.ok(
+    sunPosition(41.65, -0.88, 200, new Date('2026-08-12T02:00:00Z')).altitudeDeg < 0,
+    'sol ahora: de madrugada bajo el horizonte',
+  );
+
+  // --- Calibración de brújula con el sol real ---
+  // Base sintética mirando a `bearing` con cabeceo `pitch`; calibrate solo lee forward
+  const aimAt = (bearing: number, pitch: number): CameraBasis => ({
+    forward: skyVector(bearing, pitch),
+    right: skyVector(bearing + 90, 0),
+    up: { x: 0, y: 0, z: 1 },
+  });
+  const vFov = fovFor(1080, 1920).verticalDeg;
+  const calOk = calibrate(110, 40, aimAt(100, 40), vFov, 0, 41.65, -0.88);
+  assert.ok(calOk !== null && Math.abs(calOk.offsetDeg - 10) < 1e-9, 'calibración: brújula 10° corta → offset +10');
+  const calWrap = calibrate(350, 40, aimAt(10, 40), vFov, 0, 41.65, -0.88);
+  assert.ok(calWrap !== null && Math.abs(calWrap.offsetDeg + 20) < 1e-9, 'calibración: cruza el norte por el lado corto');
+  assert.equal(calibrate(110, -5, aimAt(100, -5), vFov, 0, 41.65, -0.88), null, 'calibración: sol bajo el horizonte → descartada');
+  // El cabeceo lo fija la gravedad: mirando al suelo el sol NO puede estar encuadrado
+  assert.equal(calibrate(110, 40, aimAt(100, -20), vFov, 0, 41.65, -0.88), null, 'calibración: cabeceo incompatible → descartada');
+
+  // Vigencia: caduca por edad, por alejarse ~1 km del punto o con el reloj hacia atrás
+  const cal0: CompassCalibration = { offsetDeg: 10, at: 0, lat: 41.65, lon: -0.88 };
+  assert.ok(isCalibrationFresh(cal0, 3_600_000, 41.65, -0.88), 'vigencia: 1 h y mismo sitio → vale');
+  assert.ok(isCalibrationFresh(cal0, 1000, 41.655, -0.88), 'vigencia: a ~500 m sigue valiendo');
+  assert.ok(!isCalibrationFresh(cal0, CALIBRATION_MAX_AGE_MS + 1, 41.65, -0.88), 'vigencia: pasadas 2 h caduca');
+  assert.ok(!isCalibrationFresh(cal0, 1000, 41.66, -0.88), 'vigencia: a ~1,1 km el campo local ya es otro');
+  assert.ok(!isCalibrationFresh(cal0, -1000, 41.65, -0.88), 'vigencia: reloj hacia atrás → recalibrar');
+  assert.ok(!isCalibrationFresh(null, 0, 41.65, -0.88), 'vigencia: sin calibración no hay nada vigente');
 
   console.log('selfcheck OK — Zaragoza total', zgz.totalityDurationSec + 's, máximo', max.time.toISOString());
   console.log(

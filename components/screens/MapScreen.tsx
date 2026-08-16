@@ -18,8 +18,10 @@ import {
   eventShortLabel,
   isActiveEclipse,
   nextEvent,
+  sunPosition,
   type LocalEclipse,
 } from '../../lib/eclipse';
+import type { CompassCalibration } from '../../lib/compassCalibration';
 import { bandOf, getActiveEclipse } from '../../lib/eclipseCatalog';
 import { fmtDur, fmtHM } from '../../lib/format';
 import { fmtFixed1, t, type I18nKey } from '../../lib/i18n';
@@ -72,6 +74,10 @@ interface MapScreenProps {
   glassesUrl?: string;
   /** Salta a otro eclipse (día civil) conservando el puesto pintado; abre «Eclipses desde aquí» */
   onSelectEclipseDay?: (day: string) => void;
+  /** Calibración solar de la brújula persistida; null = nunca calibrado */
+  compassCal: CompassCalibration | null;
+  /** Persiste una calibración recién medida en el visor */
+  onCalibrate: (cal: CompassCalibration) => void;
 }
 
 export function MapScreen({
@@ -92,6 +98,8 @@ export function MapScreen({
   sponsor,
   glassesUrl,
   onSelectEclipseDay,
+  compassCal,
+  onCalibrate,
 }: MapScreenProps) {
   const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
@@ -159,7 +167,31 @@ export function MapScreen({
   // La brújula tolera el respaldo del puesto (es orientativa); el visor no: solo abre con
   // posición real y sol por encima del horizonte
   const compassTarget = sunHere ?? maxEvent ?? null;
-  const canOpenFinder = sunHere !== null && sunHere.altitude > 0;
+
+  /**
+   * ¿Está el sol de AHORA sobre el horizonte aquí? Es la puerta del modo «sol ahora» del
+   * visor: sin hito del eclipse visible (histórico, fuera del footprint) el chip abría en
+   * vano. Memo al minuto: el sol se mueve ~0,25°/min y `now` tica cada segundo.
+   */
+  const minuteTick = Math.floor(now.getTime() / 60_000);
+  const sunNowUp = useMemo(() => {
+    if (!gpsCoords) return false;
+    return sunPosition(gpsCoords.lat, gpsCoords.lon, 0, new Date(minuteTick * 60_000)).altitudeDeg > 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gpsCoords?.lat, gpsCoords?.lon, minuteTick]);
+
+  // Hito proyectable: azimut/altura del máximo SOBRE TI, solo con el sol en alto entonces
+  const finderTarget =
+    sunHere !== null && sunHere.altitude > 0
+      ? {
+          azimuthDeg: sunHere.azimuth,
+          altitudeDeg: sunHere.altitude,
+          label: t('event.MAX').toUpperCase(),
+          time: fmtHM(sunHere.time),
+        }
+      : null;
+  // Sin hito, el visor sigue teniendo sentido en modo «sol ahora» (y para calibrar)
+  const canOpenFinder = gpsCoords !== null && (finderTarget !== null || sunNowUp);
 
   // A partir de unos km los obstáculos de aquí no dicen nada de los de allí: se avisa
   const awayFromSpot = (() => {
@@ -267,8 +299,9 @@ export function MapScreen({
               toque de más antes de lo único que se quería hacer. */}
           <CompassChip
             targetAzimuthDeg={compassTarget?.azimuth ?? 270}
-            // El visor exige posición REAL: sin GPS no sabemos qué cielo hay sobre la cámara,
-            // y con el sol bajo el horizonte no hay nada que señalar. Sin eso, chip inerte.
+            // El visor exige posición REAL: sin GPS no sabemos qué cielo hay sobre la cámara.
+            // Basta con que haya algo que señalar — el hito del eclipse o el sol de ahora;
+            // solo de noche y sin hito el chip queda inerte.
             onPress={canOpenFinder ? () => setFinderOpen(true) : undefined}
             // El visor tapa el chip pero NO desmonta el mapa: sin esto quedan dos brújulas
             // vivas y al cerrarlo el sensor se apaga para las dos (ver CompassChip)
@@ -341,8 +374,6 @@ export function MapScreen({
         />
       </Animated.View>
       </Animated.View>
-      {/* Encima de todo, incluida la hoja: el visor es pantalla completa */}
-      {/* Siempre con sunHere: azimut, altura y hora son los de DONDE ESTÁS */}
       {onSelectEclipseDay && (
         <SpotEclipses
           visible={historyOpen}
@@ -354,13 +385,16 @@ export function MapScreen({
           onSelectDay={onSelectEclipseDay}
         />
       )}
-      {finderOpen && sunHere && (
+      {/* Encima de todo, incluida la hoja: el visor es pantalla completa */}
+      {/* Siempre sobre el GPS: azimut, altura y hora son los de DONDE ESTÁS; sin hito
+          proyectable (histórico, fuera del footprint) abre directamente en «sol ahora» */}
+      {finderOpen && gpsCoords && (
         <SunFinderScreen
-          azimuthDeg={sunHere.azimuth}
-          altitudeDeg={sunHere.altitude}
-          momentLabel={t('event.MAX').toUpperCase()}
-          momentTime={fmtHM(sunHere.time)}
+          target={finderTarget}
+          gps={gpsCoords}
           awayFromSpot={awayFromSpot}
+          calibration={compassCal}
+          onCalibrate={onCalibrate}
           onClose={() => setFinderOpen(false)}
         />
       )}

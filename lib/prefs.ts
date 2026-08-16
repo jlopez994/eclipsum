@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { CompassCalibration } from './compassCalibration';
 import type { EclipseEvent } from './eclipse';
 import type { Lang } from './i18n';
 import { sameCoords, type Spot } from './spots';
@@ -73,6 +74,12 @@ export interface Prefs {
   donateOpens: number;
   /** Tutorial de bienvenida ya visto (o saltado); se repite a mano desde Ajustes */
   tourSeen: boolean;
+  /**
+   * Última calibración de brújula medida contra el sol real; null = nunca. Se guarda
+   * aunque caduque (la vigencia se evalúa al usarla, lib/compassCalibration): así el
+   * criterio de caducidad puede cambiar sin migrar lo persistido.
+   */
+  compassCal: CompassCalibration | null;
 }
 
 /** Centinela de `donateOpens`: el aviso ya no volverá a aparecer */
@@ -115,6 +122,7 @@ export const DEFAULT_PREFS: Prefs = {
   language: '',
   donateOpens: 0,
   tourSeen: false,
+  compassCal: null,
 };
 
 /** Contexto del eclipse con día civil `day`; defaults si aún no tiene nada guardado. */
@@ -162,6 +170,14 @@ function parseC1PlanAlerts(raw: unknown): C1PlanAlerts {
     before24h: src.before24h === true,
     before1h: src.before1h === true,
   };
+}
+
+function parseCalibration(raw: unknown): CompassCalibration | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const c = raw as Record<string, unknown>;
+  const nums = [c.offsetDeg, c.at, c.lat, c.lon];
+  if (!nums.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+  return { offsetDeg: c.offsetDeg as number, at: c.at as number, lat: c.lat as number, lon: c.lon as number };
 }
 
 const SPOT_ORIGINS: Spot['origin'][] = ['gps', 'city', 'nearest', 'manual'];
@@ -239,6 +255,7 @@ export async function loadPrefs(migrationDay: string): Promise<Prefs> {
       donateOpens: typeof parsed.donateOpens === 'number' ? parsed.donateOpens : 0,
       // Ausente = prefs anteriores al tutorial: se enseña una vez tras actualizar
       tourSeen: parsed.tourSeen === true,
+      compassCal: parseCalibration(parsed.compassCal),
     };
   } catch {
     return DEFAULT_PREFS;
