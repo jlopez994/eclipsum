@@ -164,6 +164,11 @@ export function SunFinderScreen({
   // alternar (de noche no) y la calibración lo necesita fresco al pulsar
   useEffect(() => {
     if (!live) return;
+    // Muestra inmediata al hacerse live: los gates previos (aviso de seguridad, permiso de
+    // cámara) retienen el mount un tiempo arbitrario y setInterval no dispara hasta su
+    // primer tick — sin esto, la primera pantalla y una calibración temprana usarían un
+    // sol de hace minutos (0,25°/min contra un círculo que promete 5°).
+    setSunNow(sunNowSample(gps.lat, gps.lon));
     const id = setInterval(() => setSunNow(sunNowSample(gps.lat, gps.lon)), SUN_NOW_REFRESH_MS);
     return () => clearInterval(id);
   }, [live, gps.lat, gps.lon]);
@@ -326,15 +331,23 @@ export function SunFinderScreen({
   const noisyCompass = headingAccuracy !== null && headingAccuracy < COMPASS_MIN_ACCURACY;
 
   // «Centrar en el sol»: solo con el sol REAL a la vista (modo live y dentro del encuadre)
-  // y con brújula — sin ella no hay rumbo que corregir. Se mide contra la base reanclada a
-  // la brújula CRUDA, sin el offset vigente: recalibrar sustituye, no acumula.
-  const canCalibrate = showNow && heading !== null && shot?.inFrame === true;
+  // y con brújula — sin ella no hay rumbo que corregir. Gate Y medición van contra la base
+  // reanclada a la brújula CRUDA, sin el offset vigente: recalibrar sustituye, no acumula.
+  // El gate NO puede derivar de `shot` (que lleva el offset): una calibración pasada muy
+  // mala sacaría la marca del encuadre justo cuando el usuario apunta bien al sol real, y
+  // el botón para arreglarla no aparecería hasta que caducase sola (2 h / 1 km).
+  const rawAimed = basis !== null && heading !== null ? withCompassBearing(basis, heading) : null;
+  const rawShot =
+    rawAimed !== null && size.w > 0
+      ? project(skyVector(sunNow.azimuthDeg, sunNow.altitudeDeg), rawAimed, fov)
+      : null;
+  const canCalibrate = showNow && rawShot?.inFrame === true;
   const handleCalibrate = () => {
-    if (basis === null || heading === null) return;
+    if (rawAimed === null) return;
     const cal = calibrate(
       sunNow.azimuthDeg,
       sunNow.altitudeDeg,
-      withCompassBearing(basis, heading),
+      rawAimed,
       fov.verticalDeg,
       sunNow.at,
       gps.lat,
