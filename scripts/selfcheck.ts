@@ -173,18 +173,28 @@ async function main() {
     0,
     'Terreno: NaN del API ignorado',
   );
-  // Veredicto: C1 con el sol a 2° tras un terreno de 5° → posiblemente oculto;
-  // C4 ya bajo el horizonte real no cuenta (no se ve con o sin monte)
+  // Veredicto: cada contacto contra el terreno de SU azimut — C1 con el sol a 2° tras
+  // un terreno de 5° hacia su rumbo → posiblemente oculto, aunque hacia el máximo el
+  // horizonte sea de 1°; C4 ya bajo el horizonte real no cuenta (no se ve con o sin monte)
   const terrainEvents = [
-    { key: 'C1', altitude: 2 },
-    { key: 'MAX', altitude: 12 },
-    { key: 'C4', altitude: -3 },
+    { key: 'C1', altitude: 2, horizonDeg: 5 },
+    { key: 'MAX', altitude: 12, horizonDeg: 1 },
+    { key: 'C4', altitude: -3, horizonDeg: 8 },
   ];
-  const blockedVerdict = terrainVerdict(5, terrainEvents)!;
-  assert.deepEqual(blockedVerdict.blockedKeys, ['C1'], 'Veredicto: obstrucción clara solo en C1');
+  const blockedVerdict = terrainVerdict(terrainEvents)!;
+  assert.deepEqual(blockedVerdict.blockedKeys, ['C1'], 'Veredicto: obstrucción solo en C1, con su azimut');
   assert.equal(blockedVerdict.sunAltDeg, 12, 'Veredicto: altura del sol en el máximo');
-  assert.deepEqual(terrainVerdict(1.5, terrainEvents)!.blockedKeys, [], 'Veredicto: terreno bajo → despejado');
-  assert.equal(terrainVerdict(3, [{ key: 'MAX', altitude: -5 }]), null, 'Veredicto: sin sol en el máximo → sin aviso');
+  assert.equal(blockedVerdict.horizonDeg, 1, 'Veredicto: el copy enseña el horizonte hacia el máximo');
+  assert.deepEqual(
+    terrainVerdict(terrainEvents.map((e) => ({ ...e, horizonDeg: 1.5 })))!.blockedKeys,
+    [],
+    'Veredicto: terreno bajo en todos los rumbos → despejado',
+  );
+  assert.equal(
+    terrainVerdict([{ key: 'MAX', altitude: -5, horizonDeg: 3 }]),
+    null,
+    'Veredicto: sin sol en el máximo → sin aviso',
+  );
 
   // findNearestTotality desde Sevilla (parcial) — banda queda al norte
   const dir = await findNearestTotality(37.39, -5.99, T0);

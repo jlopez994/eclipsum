@@ -21,7 +21,8 @@ import { fetchJson } from './weather';
  * donde importa. 24 muestras + el propio puesto = 25 puntos, una sola llamada (el API
  * admite hasta 100).
  * ponytail: 20 km de tope cubre el «¿me tapa ese monte?» típico; una cordillera lejana
- * con el sol muy bajo queda fuera — subir FAR_KM si algún día importa.
+ * con el sol muy bajo queda fuera — subir FAR_KM si algún día importa. Por debajo de
+ * 0,2 km ya no es orografía sino edificios o árboles, que la rejilla de ~90 m ni ve.
  */
 const NEAR_KM = 0.2;
 const FAR_KM = 20;
@@ -60,7 +61,7 @@ export function horizonAngleDeg(
 }
 
 export interface TerrainVerdict {
-  /** Ángulo de horizonte del terreno hacia el sol, en grados (≥0) */
+  /** Ángulo de horizonte del terreno hacia el azimut del MÁXIMO (lo que pinta el diagrama) */
   horizonDeg: number;
   /** Altura del sol en el máximo: la referencia del copy «sol a X°» */
   sunAltDeg: number;
@@ -68,24 +69,31 @@ export interface TerrainVerdict {
   blockedKeys: string[];
 }
 
+/** Hito con el horizonte del terreno muestreado hacia SU azimut, no el del máximo. */
+export interface EventTerrain {
+  key: string;
+  altitude: number;
+  horizonDeg: number;
+}
+
 /**
  * Veredicto por hito: sol por debajo del ángulo del terreno en un contacto visible ⇒
- * ese contacto posiblemente oculto tras el relieve. Los hitos ya bajo el horizonte real
- * (altitude < 0) no cuentan — no se ven con o sin monte y la cronología ya los marca.
+ * ese contacto posiblemente oculto tras el relieve. Cada contacto se compara contra el
+ * horizonte de SU azimut: entre C1 y C4 el sol se corre hasta ~30° de rumbo y el monte
+ * que tapa uno puede no pintar nada en otro — con un solo perfil el aviso mentiría con
+ * nombre y apellido de contacto. Los hitos ya bajo el horizonte real (altitude < 0) no
+ * cuentan — no se ven con o sin monte y la cronología ya los marca.
  * null si el máximo no es visible: sin sol no hay nada que tapar. La altura del sol
  * lleva la refracción de astronomy-engine y el terreno la suya (R efectiva): comparar
  * ambas directamente es coherente al nivel de precisión de la rejilla.
  */
-export function terrainVerdict(
-  horizonDeg: number,
-  events: readonly { key: string; altitude: number }[],
-): TerrainVerdict | null {
+export function terrainVerdict(events: readonly EventTerrain[]): TerrainVerdict | null {
   const max = events.find((e) => e.key === 'MAX');
   if (!max || max.altitude <= 0) return null;
   return {
-    horizonDeg,
+    horizonDeg: max.horizonDeg,
     sunAltDeg: max.altitude,
-    blockedKeys: events.filter((e) => e.altitude > 0 && e.altitude < horizonDeg).map((e) => e.key),
+    blockedKeys: events.filter((e) => e.altitude > 0 && e.altitude < e.horizonDeg).map((e) => e.key),
   };
 }
 
@@ -94,8 +102,10 @@ const CACHE_PREFIX = 'eclipsum:horizon:v1:';
 /**
  * El terreno no cambia: caché primero (AsyncStorage, sin caducidad) y red solo la
  * primera vez por puesto+azimut — al revés que la meteo, que es red-primero porque su
- * dato envejece. La clave lleva el azimut redondeado: dos eclipses con el sol en el
- * mismo rumbo comparten perfil. Promesa memoizada en memoria como findNearestTotality;
+ * dato envejece. La clave lleva el azimut redondeado (dos hitos o eclipses con el sol
+ * en el mismo rumbo comparten perfil) y el puesto a 3 decimales: ~111 m, la propia
+ * rejilla del modelo de elevación — dos puestos más juntos que eso ven el mismo dato.
+ * Promesa memoizada en memoria como findNearestTotality;
  * un fallo (sin red) se olvida para poder reintentar en la siguiente consulta.
  * ponytail: la caché crece ~20 bytes por puesto consultado; poda si algún día pesa.
  */
@@ -158,7 +168,9 @@ async function fetchElevations(points: { lat: number; lon: number }[]): Promise<
   if (!Array.isArray(elevation) || elevation.length !== points.length) {
     throw new Error('Respuesta de elevación inesperada');
   }
-  const values = elevation.map(Number);
+  // Number(null) es 0, no NaN: sin esta guarda un punto sin dato pasaría por nivel del
+  // mar y podría suprimir una obstrucción real (o colar un observador sin elevación)
+  const values = elevation.map((v) => (v === null ? NaN : Number(v)));
   if (!Number.isFinite(values[0])) throw new Error('Elevación del observador sin dato');
   return values;
 }
