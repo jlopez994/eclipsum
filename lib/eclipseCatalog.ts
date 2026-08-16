@@ -86,15 +86,43 @@ export function setRemoteActiveEclipseId(id: string): void {
  * catálogo («2026-08-12-iberia») o autogenerado («2026-08-12-total») según de dónde salga.
  */
 let userSelectedDay = '';
+/**
+ * true = el usuario eligió un eclipse YA pasado (modo consulta): se respeta aunque su día
+ * quede atrás. false = selección de futuro normal, que al pasar rueda al siguiente como
+ * siempre. Persistido en prefs (`selectedEclipsePast`): sin él, reabrir la app tras pasar
+ * el eclipse elegido no distinguiría «consulto el histórico» de «mi eclipse ya fue».
+ */
+let userSelectedPast = false;
 let userSelected: EclipseEntry | null = null;
 /** Idioma con el que se hornearon los labels de userSelected; distinto → re-resolver. */
 let userSelectedLang = '';
+
+/** Rango en el que confiamos en el motor para navegar el catálogo (ampliable). */
+const HISTORY_MIN_CIVIL = '1900-01-01';
+const HISTORY_MAX_CIVIL = '2199-12-31';
+
+/**
+ * Entrada para un día civil arbitrario, calculada con el motor: primer eclipse global
+ * tras «día − 2», que si existe uno ese día es él (dos eclipses distan ≥29 días).
+ * Cubre los días que no están ni en catálogo ni en las listas: histórico y futuro lejano.
+ */
+function resolveByEngine(day: string): EclipseEntry | null {
+  if (day < HISTORY_MIN_CIVIL || day > HISTORY_MAX_CIVIL) return null;
+  const t = Date.parse(`${day}T00:00:00Z`);
+  if (Number.isNaN(t)) return null;
+  try {
+    const entry = entryFromGlobalEclipse(SearchGlobalSolarEclipse(new Date(t - 2 * DAY_MS)));
+    return entry.civilDate === day ? entry : null;
+  } catch {
+    return null;
+  }
+}
 
 function resolveByDay(day: string): EclipseEntry | null {
   return (
     allEclipses().find((e) => e.civilDate === day) ??
     upcomingEclipses(UPCOMING_HORIZON).find((e) => e.civilDate === day) ??
-    null
+    resolveByEngine(day)
   );
 }
 
@@ -107,10 +135,11 @@ export function eclipseForDay(day: string): EclipseEntry | null {
 }
 
 /** Resuelve una vez por cambio real de selección; llamadas repetidas con el mismo día son no-op. */
-export function setUserSelectedEclipseDay(day: string): void {
+export function setUserSelectedEclipseDay(day: string, past = false): void {
   const trimmed = day.trim();
-  if (trimmed === userSelectedDay) return;
+  if (trimmed === userSelectedDay && past === userSelectedPast) return;
   userSelectedDay = trimmed;
+  userSelectedPast = past;
   userSelected = trimmed ? resolveByDay(trimmed) : null;
   userSelectedLang = getLang();
 }
@@ -249,8 +278,8 @@ export function entryFromGlobalEclipse(ev: GlobalSolarEclipseInfo): EclipseEntry
   };
 }
 
-/** Horizonte de generación con el motor; también tope de `upcomingEclipses`. */
-const UPCOMING_HORIZON = 12;
+/** Horizonte de generación con el motor; también tope de `upcomingEclipses` (~8 años). */
+const UPCOMING_HORIZON = 20;
 /** Se recalcula al cambiar de día civil o de catálogo RC (~12 pasos del motor, una vez). */
 let catalogVersion = 0;
 let upcomingCache: { key: string; list: EclipseEntry[] } | null = null;
@@ -282,16 +311,57 @@ export function upcomingEclipses(count: number, now: Date = new Date()): Eclipse
   return upcomingCache.list.slice(0, count);
 }
 
+/** Tope del histórico navegable (~25 años); subirlo = subir la constante. */
+const PAST_HORIZON = 60;
+/** Ritmo medio real: 2–5 eclipses solares al año; sirve para dimensionar la siembra. */
+const ECLIPSES_PER_YEAR = 2.4;
+const YEAR_MS = 365.25 * DAY_MS;
+let pastCache: { key: string; list: EclipseEntry[] } | null = null;
+
+/**
+ * Eclipses ya pasados, del más reciente al más antiguo (máx. PAST_HORIZON), catálogo ∪
+ * motor con dedupe por día civil (gana el catálogo: conserva banda y label propios).
+ * El motor solo busca hacia DELANTE, así que se siembra con margen en el pasado y se
+ * itera hasta hoy; se calcula una vez por día/catálogo/idioma, y solo si alguien lo pide.
+ */
+export function pastEclipses(count: number, now: Date = new Date()): EclipseEntry[] {
+  if (count <= 0) return [];
+  const key = `${now.toISOString().slice(0, 10)}:${catalogVersion}:${getLang()}`;
+  if (pastCache?.key !== key) {
+    const t = now.getTime();
+    const out = allEclipses().filter((e) => eclipseEndMs(e) < t);
+    try {
+      const seedMs = Math.max(
+        Date.parse(`${HISTORY_MIN_CIVIL}T00:00:00Z`),
+        t - (PAST_HORIZON / ECLIPSES_PER_YEAR + 1) * YEAR_MS,
+      );
+      let ev = SearchGlobalSolarEclipse(new Date(seedMs));
+      while (ev.peak.date.getTime() < t) {
+        const entry = entryFromGlobalEclipse(ev);
+        if (eclipseEndMs(entry) < t && !out.some((e) => e.civilDate === entry.civilDate)) out.push(entry);
+        ev = NextGlobalSolarEclipse(ev.peak);
+      }
+    } catch {
+      // motor fallando: lista con lo que haya en catálogo
+    }
+    pastCache = {
+      key,
+      list: out.sort((a, b) => b.civilDate.localeCompare(a.civilDate)).slice(0, PAST_HORIZON),
+    };
+  }
+  return pastCache.list.slice(0, count);
+}
+
 /** Memo del automático hasta que pase (monótono en el tiempo; setRemoteCatalog lo invalida). */
 let autoCache: EclipseEntry | null = null;
 let autoCacheLang = '';
 
 /**
- * Eclipse activo, por prioridad: selección del usuario (si sigue vigente) →
- * override RC → el más próximo (misma regla que la lista de upcomingEclipses).
+ * Eclipse activo, por prioridad: selección del usuario (si sigue vigente, o pasada
+ * elegida a propósito) → override RC → el más próximo (misma regla que upcomingEclipses).
  */
 export function getActiveEclipse(now: Date = new Date()): EclipseEntry {
-  if (userSelected && eclipseEndMs(userSelected) >= now.getTime()) {
+  if (userSelected && (userSelectedPast || eclipseEndMs(userSelected) >= now.getTime())) {
     if (userSelectedLang !== getLang()) {
       // Labels horneados al resolver: cambio de idioma → re-resuelve la misma selección
       userSelected = resolveByDay(userSelectedDay) ?? userSelected;

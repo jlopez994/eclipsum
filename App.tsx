@@ -49,6 +49,7 @@ import { SpotSelector, localityName } from './components/SpotSelector';
 import { MapScreen } from './components/screens/MapScreen';
 import { AlertsScreen } from './components/screens/AlertsScreen';
 import { SettingsScreen } from './components/screens/SettingsScreen';
+import { EclipsesScreen } from './components/screens/EclipsesScreen';
 import { EclipseModeScreen } from './components/screens/EclipseModeScreen';
 import { C, F } from './components/theme';
 
@@ -200,6 +201,13 @@ function AppInner() {
    * motor cambiaría en cada render y recalcularía (~10-30 ms) sin parar.
    */
   const todayKey = now.toISOString().slice(0, 10);
+  /**
+   * Consulta del histórico: el activo ya pasó. El mapa y la cronología funcionan igual
+   * (el motor calcula cualquier fecha) y las nubes salen del archivo de Open-Meteo;
+   * lo único que se apaga son las alertas (scheduleEclipseAlerts ya filtra hitos
+   * pasados y aquí la pestaña lo explica).
+   */
+  const isPastActive = activeCatalog.civilDate < todayKey;
   const nextHere = useMemo(() => {
     if (!outOfZone || !active) return null;
     try {
@@ -405,7 +413,9 @@ function AppInner() {
           track('eclipse_selected', { day: otherEclipse.civilDate, from: 'out_of_zone' });
           onPrefsChange(
             withContext(
-              { ...prefs, selectedEclipseDay: otherEclipse.civilDate },
+              // El destino siempre es futuro (nextHere busca desde hoy): si venías de una
+              // consulta del histórico, el salto la termina y vuelve el rollover normal
+              { ...prefs, selectedEclipseDay: otherEclipse.civilDate, selectedEclipsePast: false },
               otherEclipse.civilDate,
               { spot: chosenSpot },
             ),
@@ -497,6 +507,18 @@ function AppInner() {
               onSelectMapPoint={selectMapPoint}
               sponsor={remote.sponsor}
               glassesUrl={remote.glassesUrl}
+              // Salto desde «Eclipses desde aquí»: el puesto viaja con el eclipse elegido
+              // (el contexto es per-día y sin esto la siembra lo pisaría con el GPS)
+              onSelectEclipseDay={(day) => {
+                track('eclipse_selected', { day, from: 'spot_history', past: day < todayKey });
+                onPrefsChange(
+                  withContext(
+                    { ...prefs, selectedEclipseDay: day, selectedEclipsePast: day < todayKey },
+                    day,
+                    { spot: shown.spot },
+                  ),
+                );
+              }}
             />
           ) : outOfZoneNotice ? (
             // Fuera de zona el aviso ES la pantalla: dice por qué no hay mapa y ofrece las
@@ -521,7 +543,7 @@ function AppInner() {
             </View>
           ))}
         {tab === 'alertas' &&
-          (eclipse ? (
+          (eclipse && !isPastActive ? (
             <AlertsScreen
               eclipse={eclipse}
               notificationsGranted={permissions.notifications}
@@ -546,21 +568,32 @@ function AppInner() {
           ) : (
             <View style={s.loading}>
               <Text style={s.loadingText}>
-                {outOfZone && active
-                  ? t('app.outOfZone', {
-                      place: cleanPlaceLabel(active.place),
-                      date: activeCatalog.shortDateLabel,
-                    })
-                  : t('app.chooseSpotFirst')}
+                {isPastActive
+                  ? t('alerts.pastEclipse')
+                  : outOfZone && active
+                    ? t('app.outOfZone', {
+                        place: cleanPlaceLabel(active.place),
+                        date: activeCatalog.shortDateLabel,
+                      })
+                    : t('app.chooseSpotFirst')}
               </Text>
             </View>
           ))}
+        {tab === 'eclipses' && (
+          <EclipsesScreen
+            activeEclipse={activeCatalog}
+            onSelectEclipse={(day) => {
+              const past = day !== '' && day < todayKey;
+              track('eclipse_selected', { day: day || 'auto', past });
+              onPrefsChange({ ...prefs, selectedEclipseDay: day, selectedEclipsePast: past });
+            }}
+          />
+        )}
         {tab === 'ajustes' && (
           <SettingsScreen
             permissions={permissions}
             onRequestPermission={(kind) => void requestPermission(kind)}
             alertSound={prefs.alertSound}
-            activeEclipse={activeCatalog}
             donateUrl={remote.donateUrl}
             // El efecto de alertas reprograma solo al cambiar alertSound
             onSoundChange={(sound) => onPrefsChange({ ...prefs, alertSound: sound })}
@@ -569,10 +602,6 @@ function AppInner() {
             onDemoEclipse={() => setDemoAt(new Date())}
             language={prefs.language}
             onLanguageChange={(lang) => onPrefsChange({ ...prefs, language: lang })}
-            onSelectEclipse={(day) => {
-              track('eclipse_selected', { day: day || 'auto' });
-              onPrefsChange({ ...prefs, selectedEclipseDay: day });
-            }}
             onStartDrill={startDrill}
             onShowTour={() => setTourOpen(true)}
           />

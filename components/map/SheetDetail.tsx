@@ -20,6 +20,8 @@ interface SheetDetailProps {
   sponsor?: Sponsor | null;
   /** URL de gafas certificadas (afiliado); vacío = solo el aviso, sin enlace */
   glassesUrl?: string;
+  /** Abre «Eclipses desde aquí» (histórico y próximos del puesto pintado) */
+  onShowHistory?: () => void;
 }
 
 /**
@@ -36,6 +38,7 @@ export function SheetDetail({
   onOpenMaps,
   sponsor,
   glassesUrl,
+  onShowHistory,
 }: SheetDetailProps) {
   const maxEvent = eventAt(eclipse, 'MAX');
   // Cronología con el ocaso intercalado; los contactos bajo el horizonte no se ven
@@ -73,6 +76,11 @@ export function SheetDetail({
           <Text style={[s.cronoTime, e.belowHorizon && { color: C.dim }]}>{fmtHMS(e.time)}</Text>
         </View>
       ))}
+      {onShowHistory && (
+        <Pressable onPress={onShowHistory} hitSlop={8} accessibilityRole="button">
+          <Text style={s.historyLink}>{t('map.history')}</Text>
+        </Pressable>
+      )}
       {maxEvent && maxEvent.altitude > 0 && (
         <>
           <View style={s.divider} />
@@ -156,6 +164,13 @@ const s = StyleSheet.create({
   },
   cronoLabel: { fontFamily: F.semibold, fontSize: 14, color: C.text },
   cronoTime: { fontFamily: F.medium, fontSize: 14, color: C.dim, fontVariant: ['tabular-nums'] },
+  historyLink: {
+    fontFamily: F.bold,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    color: C.corona,
+    paddingVertical: 12,
+  },
   safetyCard: {
     marginTop: 18,
     padding: 18,

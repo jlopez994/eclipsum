@@ -27,6 +27,23 @@ function civilDate(): string {
   return getActiveEclipse().civilDate;
 }
 
+/**
+ * Día ya pasado → API de archivo (reanálisis ERA5) en vez del forecast: para una consulta
+ * del histórico la pregunta es «¿estuvo nublado?», y el forecast no llega hacia atrás.
+ * El archivo va con ~2-5 días de retraso: un pasado muy reciente degrada a «sin dato».
+ */
+function isPastDay(day: string): boolean {
+  return day < new Date().toISOString().slice(0, 10);
+}
+
+/** URL de nubosidad horaria del día: forecast (con modelo Windy) o archivo según el día. */
+function cloudUrl(day: string, lats: string, lons: string): string {
+  const common = `latitude=${lats}&longitude=${lons}&hourly=cloud_cover&start_date=${day}&end_date=${day}&timezone=UTC`;
+  return isPastDay(day)
+    ? `https://archive-api.open-meteo.com/v1/archive?${common}`
+    : `https://api.open-meteo.com/v1/forecast?${common}&models=${MODEL}`;
+}
+
 async function fetchJson(url: string): Promise<unknown> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
@@ -45,9 +62,7 @@ async function fetchJson(url: string): Promise<unknown> {
  */
 async function fetchCloudCover(lat: number, lon: number): Promise<CloudForecast> {
   const day = civilDate();
-  const url =
-    `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-    `&hourly=cloud_cover&start_date=${day}&end_date=${day}&timezone=UTC&models=${MODEL}`;
+  const url = cloudUrl(day, String(lat), String(lon));
   const json = (await fetchJson(url)) as { hourly?: { time?: unknown; cloud_cover?: unknown } } | null;
   const times: unknown = json?.hourly?.time;
   const covers: unknown = json?.hourly?.cloud_cover;
@@ -71,10 +86,7 @@ export async function fetchCloudCoverBatch(
     return [await fetchCloudCover(points[0].lat, points[0].lon).catch(() => null)];
   }
   const day = civilDate();
-  const url =
-    `https://api.open-meteo.com/v1/forecast?latitude=${points.map((p) => p.lat).join(',')}` +
-    `&longitude=${points.map((p) => p.lon).join(',')}` +
-    `&hourly=cloud_cover&start_date=${day}&end_date=${day}&timezone=UTC&models=${MODEL}`;
+  const url = cloudUrl(day, points.map((p) => p.lat).join(','), points.map((p) => p.lon).join(','));
   const list: unknown = await fetchJson(url);
   if (!Array.isArray(list) || list.length !== points.length) {
     throw new Error('Respuesta Open-Meteo por lote inesperada');

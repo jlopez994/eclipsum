@@ -16,11 +16,13 @@ import {
   getActiveEclipse,
   getEclipseById,
   parseRemoteCatalog,
+  pastEclipses,
   setRemoteCatalog,
   setUserSelectedEclipseDay,
   upcomingEclipses,
 } from '../lib/eclipseCatalog';
 import { cloudCoverAt } from '../lib/weather';
+import { eclipsesFromSpot } from '../lib/spotEclipses';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
 import type { Spot } from '../lib/spots';
 import {
@@ -323,7 +325,7 @@ async function main() {
     '2027-08-02-total',
     'Selección: gana al automático y resuelve entradas autogeneradas',
   );
-  setUserSelectedEclipseDay('2026-02-17'); // ya pasado a fecha de hoy → irresoluble
+  setUserSelectedEclipseDay('2026-02-17'); // ya pasado y SIN marca de consulta → rollover
   assert.equal(
     getActiveEclipse(new Date('2026-09-01T00:00:00Z')).id,
     '2027-02-06-annular',
@@ -336,6 +338,53 @@ async function main() {
     'Selección irresoluble → automático',
   );
   setUserSelectedEclipseDay('');
+
+  // Histórico: día arbitrario resuelto con el motor y marcado como consulta → se respeta
+  setUserSelectedEclipseDay('2017-08-21', true);
+  const great = getActiveEclipse(new Date('2026-06-01T00:00:00Z'));
+  assert.equal(great.id, '2017-08-21-total', 'Histórico: día fuera de catálogo resuelto con el motor');
+  const nash = computeLocalEclipse(36.16, -86.78, 0, new Date(great.searchStart));
+  assert.equal(nash.kind, 'total', 'Histórico: Nashville vio la totalidad de 2017');
+  assert.ok(
+    isActiveEclipse(nash, new Date('2026-06-01T00:00:00Z')),
+    'Histórico: la serie calculada es la del eclipse consultado',
+  );
+  // Mismo día pero como selección normal → rollover (el memo del automático es monótono:
+  // se comprueba en 2027, coherente con los saltos de tiempo de los asserts anteriores)
+  setUserSelectedEclipseDay('2017-08-21');
+  assert.equal(
+    getActiveEclipse(new Date('2027-01-01T00:00:00Z')).id,
+    '2027-02-06-annular',
+    'Histórico: sin marca de consulta, lo pasado rueda al automático',
+  );
+  setUserSelectedEclipseDay('');
+
+  // pastEclipses: descendente, todo anterior al ancla, sin duplicados por día
+  const past = pastEclipses(6, new Date('2026-06-01T00:00:00Z'));
+  assert.equal(past.length, 6, 'Histórico: seis entradas');
+  assert.equal(past[0].civilDate, '2026-02-17', 'Histórico: el más reciente primero');
+  assert.ok(past.every((e) => e.civilDate < '2026-06-01'), 'Histórico: todos anteriores al ancla');
+  assert.ok(
+    past.every((e, i) => i === 0 || past[i - 1].civilDate > e.civilDate),
+    'Histórico: orden descendente estricto (sin duplicados)',
+  );
+  assert.equal(pastEclipses(0, new Date('2026-06-01T00:00:00Z')).length, 0, 'Histórico: 0 pedidos, 0 calculados');
+
+  // Eclipses desde un puesto: Zaragoza debe listar el total de 2026 y el parcial de 2025,
+  // con día civil GLOBAL (identidad de selección) y en orden cronológico
+  const zgzHits = await eclipsesFromSpot(41.65, -0.88);
+  assert.ok(zgzHits.length >= 5, `Puesto: Zaragoza ve varios eclipses en ±rango (${zgzHits.length})`);
+  const zgz2026 = zgzHits.find((h) => h.civilDate === '2026-08-12');
+  assert.ok(zgz2026 && zgz2026.kind === 'total', 'Puesto: el total de 2026 aparece como total');
+  assert.ok(zgzHits.some((h) => h.civilDate === '2025-03-29'), 'Puesto: el parcial de marzo 2025 aparece');
+  assert.ok(
+    zgzHits.every((h, i) => i === 0 || zgzHits[i - 1].civilDate < h.civilDate),
+    'Puesto: orden cronológico sin duplicados',
+  );
+  assert.ok(
+    zgzHits.every((h) => h.obscuration > 0 && h.obscuration <= 1),
+    'Puesto: obscuración local en (0, 1]',
+  );
 
   // Catálogo agotado → la app genera sola el siguiente eclipse global con el motor
   const auto = getActiveEclipse(new Date('2030-01-01T00:00:00Z'));

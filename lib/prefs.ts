@@ -49,6 +49,11 @@ export interface Prefs {
   /** Día civil (YYYY-MM-DD) del eclipse elegido; '' = automático (el más próximo) */
   selectedEclipseDay: string;
   /**
+   * true = la selección era un eclipse YA pasado (consulta de histórico): se mantiene al
+   * reabrir. false = selección de futuro, que al pasar rueda al siguiente como siempre.
+   */
+  selectedEclipsePast: boolean;
+  /**
    * Contexto por eclipse, clave = día civil (los ids varían entre catálogo y motor);
    * los pasados se conservan como histórico
    */
@@ -102,6 +107,7 @@ const DEFAULT_ECLIPSE_CONTEXT: EclipseContext = {
 
 export const DEFAULT_PREFS: Prefs = {
   selectedEclipseDay: '',
+  selectedEclipsePast: false,
   byEclipse: {},
   recentSpots: [],
   alertSound: 'eclipse',
@@ -223,6 +229,7 @@ export async function loadPrefs(migrationDay: string): Promise<Prefs> {
     }
     return {
       selectedEclipseDay: typeof parsed.selectedEclipseDay === 'string' ? parsed.selectedEclipseDay : '',
+      selectedEclipsePast: parsed.selectedEclipsePast === true,
       byEclipse,
       recentSpots,
       alertSound: parsed.alertSound === 'default' ? 'default' : 'eclipse',

@@ -4,7 +4,7 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import { t, type I18nKey } from '../lib/i18n';
 import { C, F } from './theme';
 
-export type TabKey = 'mapa' | 'alertas' | 'ajustes';
+export type TabKey = 'mapa' | 'eclipses' | 'alertas' | 'ajustes';
 
 interface TabBarProps {
   active: TabKey;
@@ -17,6 +17,15 @@ function Icon({ tab, color }: { tab: TabKey; color: string }) {
       <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2}>
         <Path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z" />
         <Circle cx={12} cy={10} r={2.4} />
+      </Svg>
+    );
+  }
+  if (tab === 'eclipses') {
+    // Sol eclipsado: disco con la luna (relleno de fondo) mordiéndolo desde el NE
+    return (
+      <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2}>
+        <Circle cx={12} cy={12} r={7} />
+        <Circle cx={17} cy={7} r={5.5} fill={C.bg} stroke={color} />
       </Svg>
     );
   }
@@ -39,6 +48,7 @@ function Icon({ tab, color }: { tab: TabKey; color: string }) {
 
 const TABS: { key: TabKey; labelKey: I18nKey }[] = [
   { key: 'mapa', labelKey: 'tab.map' },
+  { key: 'eclipses', labelKey: 'tab.eclipses' },
   { key: 'alertas', labelKey: 'tab.alerts' },
   { key: 'ajustes', labelKey: 'tab.settings' },
 ];

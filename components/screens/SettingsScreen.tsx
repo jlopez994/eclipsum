@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { bandOf, upcomingEclipses, type EclipseEntry } from '../../lib/eclipseCatalog';
 import { alertSoundOptions, sendTestNotification } from '../../lib/notifications';
 import { previewAlertSound } from '../../lib/soundPreview';
 import { track } from '../../lib/firebase';
@@ -29,8 +28,6 @@ interface SettingsScreenProps {
   /** Pide un permiso desde aquí; cada pantalla que lo use sigue pidiéndolo por su cuenta */
   onRequestPermission: (kind: PermissionKind) => void;
   alertSound: AlertSound;
-  /** Entrada activa resuelta por App (única fuente de verdad; no leer el catálogo aquí) */
-  activeEclipse: EclipseEntry;
   /** URL de donaciones (Buy Me a Coffee, vía Remote Config); vacío = sección oculta */
   donateUrl?: string;
   onSoundChange: (sound: AlertSound) => void;
@@ -41,27 +38,10 @@ interface SettingsScreenProps {
   /** Idioma elegido; '' = automático (sistema) */
   language: Lang | '';
   onLanguageChange: (lang: Lang | '') => void;
-  /** Recibe el día civil elegido; '' = automático */
-  onSelectEclipse: (day: string) => void;
   /** Arranca el simulacro (modo eclipse + avisos [PRUEBA]); devuelve mensaje de resultado */
   onStartDrill: () => Promise<string>;
   /** Reabre el tutorial de bienvenida */
   onShowTour: () => void;
-}
-
-const UPCOMING_COUNT = 5;
-
-function fmtCountdown(civilDate: string): string {
-  const d = Math.max(0, Math.ceil((Date.parse(`${civilDate}T00:00:00Z`) - Date.now()) / 86_400_000));
-  return d === 0 ? t('settings.upcoming.today') : d === 1 ? t('settings.upcoming.tomorrow') : t('settings.upcoming.inDays', { n: d });
-}
-
-/** «Pico 41°N 3°O» a partir del pico global (solo entradas autogeneradas). */
-function fmtPeak(e: EclipseEntry): string | null {
-  if (e.peakLat === undefined || e.peakLon === undefined) return null;
-  const lat = `${Math.abs(e.peakLat).toFixed(0)}°${e.peakLat >= 0 ? t('bearing.N') : t('bearing.S')}`;
-  const lon = `${Math.abs(e.peakLon).toFixed(0)}°${e.peakLon >= 0 ? t('bearing.E') : t('bearing.W')}`;
-  return t('settings.upcoming.peak', { lat, lon });
 }
 
 /** Chips del selector de idioma: «Automático» localizado + endónimo de cada idioma (LANG_META). */
@@ -83,27 +63,12 @@ export function SettingsScreen({
   onDemoEclipse,
   language,
   onLanguageChange,
-  activeEclipse,
-  onSelectEclipse,
   onStartDrill,
   onShowTour,
 }: SettingsScreenProps) {
   const insets = useSafeAreaInsets();
   const [drillMsg, setDrillMsg] = useState<string | null>(null);
   const missingPermission = PERMISSION_ROWS.some((r) => !permissions[r.kind]);
-  // Sin memo: upcomingEclipses ya cachea por día+catálogo, y así un catálogo RC
-  // recién activado refresca la lista sin esperar a remontar la pantalla
-  const nextFew = upcomingEclipses(UPCOMING_COUNT);
-  /**
-   * El activo SIEMPRE en la lista. Se puede llegar a uno más lejano que los UPCOMING_COUNT
-   * primeros (p. ej. desde el aviso de «aquí no se ve»), y sin su fila no habría ninguna
-   * marcada como activa ni forma de volver a otro desde aquí.
-   */
-  const upcoming = nextFew.some((e) => e.civilDate === activeEclipse.civilDate)
-    ? nextFew
-    : [...nextFew, activeEclipse].sort((a, b) => a.civilDate.localeCompare(b.civilDate));
-  // Elegir el más próximo (fila 0) equivale al modo automático; misma regla que getActiveEclipse
-  const isManualSelection = activeEclipse.civilDate !== upcoming[0]?.civilDate;
 
   const runDrill = () => {
     onStartDrill()
@@ -124,38 +89,6 @@ export function SettingsScreen({
       <Text style={[s.title, { paddingTop: insets.top + 14 }]}>{t('settings.title')}</Text>
       <ScrollView style={s.body} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 22, paddingBottom: 36 }}>
         <Text style={s.hint}>{t('settings.hint')}</Text>
-
-        <View>
-          <Text style={s.section}>{t('settings.upcoming')}</Text>
-          <View style={s.card}>
-            {upcoming.map((e, i) => {
-              const on = e.civilDate === activeEclipse.civilDate;
-              const sub = [fmtCountdown(e.civilDate), fmtPeak(e), bandOf(e) ? t('settings.upcoming.band') : null]
-                .filter(Boolean)
-                .join(' · ');
-              return (
-                <Pressable
-                  key={e.civilDate}
-                  style={[s.rowItem, i < upcoming.length - 1 && s.rowDivider]}
-                  onPress={() => onSelectEclipse(e.civilDate === upcoming[0]?.civilDate ? '' : e.civilDate)}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
-                  accessibilityLabel={`${e.label}. ${sub}`}
-                >
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={s.rowTitle}>{e.label}</Text>
-                    <Text style={s.soundHint}>{sub}</Text>
-                  </View>
-                  {on && <Text style={s.upcomingActive}>{t('settings.upcoming.active')}</Text>}
-                  <View style={[s.radio, on && s.radioOn, { marginLeft: 10 }]}>{on && <View style={s.radioDot} />}</View>
-                </Pressable>
-              );
-            })}
-          </View>
-          <Text style={s.upcomingNote}>
-            {t('settings.upcoming.note', { manual: isManualSelection ? t('settings.upcoming.noteManual') : '' })}
-          </Text>
-        </View>
 
         <View>
           <Text style={s.section}>{t('settings.sound')}</Text>
@@ -456,7 +389,6 @@ const s = StyleSheet.create({
   linkCta: { fontFamily: F.bold, fontSize: 13, letterSpacing: 1, color: C.corona, marginTop: 12 },
   aboutValue: { fontFamily: F.medium, fontSize: 13, color: C.dim },
   tourAction: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1.5, color: C.corona },
-  upcomingActive: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 2, color: C.corona },
   upcomingNote: { fontFamily: F.regular, fontSize: 11, lineHeight: 16, color: C.dim, marginTop: 8 },
   aboutNote: { fontFamily: F.regular, fontSize: 13, lineHeight: 19, color: C.dim },
 });

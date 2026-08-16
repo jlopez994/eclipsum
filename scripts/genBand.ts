@@ -9,14 +9,14 @@
  *   npx tsx scripts/genBand.ts --id <id> --rc   # imprime la entrada con banda para eclipse_catalog (RC)
  *
  * Sin args usa el primer eclipse del catálogo empaquetado; --id acepta también entradas
- * autogeneradas (próximos 12 del motor). Los rangos por defecto son Iberia; para otros
+ * autogeneradas (próximos Y anteriores del motor). Los rangos por defecto son Iberia; para otros
  * continentes centrar con el pico lat/lon que imprime scripts/genEclipse.ts (o el propio
  * peakLat/peakLon de la entrada). LAT_MAX=60 recorta bandas polares: subir el tope si aplica.
  */
 import { writeFileSync } from 'node:fs';
 import { computeLocalEclipse } from '../lib/eclipse';
 import { bandForEclipse, type BandSlice } from '../lib/bandGeo';
-import { ECLIPSES, getEclipseById, upcomingEclipses, type EclipseEntry } from '../lib/eclipseCatalog';
+import { ECLIPSES, getEclipseById, pastEclipses, upcomingEclipses, type EclipseEntry } from '../lib/eclipseCatalog';
 import { refineEdge } from './bandEdge';
 
 function arg(name: string): string | undefined {
@@ -25,8 +25,14 @@ function arg(name: string): string | undefined {
 }
 
 const id = arg('--id');
+// 999 = «todas las que haya»: ambas listas capan en su horizonte interno y así el script
+// no repite constantes que puedan desincronizarse del catálogo
 const entry: EclipseEntry =
-  (id ? getEclipseById(id) ?? upcomingEclipses(12).find((e) => e.id === id) : undefined) ?? ECLIPSES[0];
+  (id
+    ? getEclipseById(id) ??
+      upcomingEclipses(999).find((e) => e.id === id) ??
+      pastEclipses(999).find((e) => e.id === id)
+    : undefined) ?? ECLIPSES[0];
 const searchStart = new Date(entry.searchStart);
 const RC_MODE = process.argv.includes('--rc');
 

@@ -19,7 +19,7 @@ The only component with global state (~500 lines). No external store.
 | `permissions` | re-read on launch and on every `AppState → active` | location + notifications, without re-prompting |
 | `remoteMsg`, `glassesUrl`, `sponsor`, `updateUrl`, `suggestedSpots` | `fetchRemoteExtras()` | Remote Config values |
 | `catalogEpoch` | counter | invalidates the eclipse memo when RC changes the catalog |
-| `tab` | `'mapa' \| 'alertas' \| 'ajustes'` | active tab |
+| `tab` | `'mapa' \| 'eclipses' \| 'alertas' \| 'ajustes'` | active tab |
 | `demo` | bool | demo mode (1.5 s long-press on *About*, in Settings) |
 | `drill` | `{eclipse, ids} \| null` | active drill + ids of its `[PRUEBA]` notifications |
 | `now`, `fineClock` | clock | 30 s tick normally, 1 s during demo/drill/eclipse window |
@@ -54,15 +54,16 @@ Reschedules all notifications when the spot, toggles, sound, language or permiss
 |---|---|---|
 | `eclipse.ts` | Local circumstances: C1–C4, maximum, obscuration, totality duration, sunset | In-RAM memo (`Map`, max 400 entries). `nextEvent`, `currentPhase`. `sunCoverage(eclipse, now)` = live obscuration from piecewise-linear centre separation + equal-disc overlap area (~2 % off the real value, and valid for the synthetic drill too) |
 | `eclipseBar.ts` | Geometry of the eclipse-mode timeline | True-to-scale legs, totality sliver clamped to `SLIVER_MIN = 7`…`SLIVER_MAX = 24` px, and `xAt(t)` mapping instant → pixel leg by leg. Pure — asserted in selfcheck |
-| `eclipseCatalog.ts` | Catalog and active eclipse | Merge: bundled (`ECLIPSES`, today only `2026-08-12-iberia`) + RC (`eclipse_catalog`) + engine-generated up to 12 upcoming. Dedupe by **civil day** (bundled entry wins). Active priority: user selection → `active_eclipse_id` (RC) → the nearest. User selection persists by civil day, not id. Labels regenerated per language when the entry has `kind` |
+| `eclipseCatalog.ts` | Catalog and active eclipse | Merge: bundled (`ECLIPSES`, today only `2026-08-12-iberia`) + RC (`eclipse_catalog`) + engine-generated: up to 20 upcoming (`upcomingEclipses`) and 60 past (`pastEclipses`, computed only on demand). Any real civil day 1900–2199 resolves via a single global engine search (`resolveByEngine`). Dedupe by **civil day** (bundled entry wins). Active priority: user selection → `active_eclipse_id` (RC) → the nearest. User selection persists by civil day, not id; `selectedEclipsePast` marks a deliberate archive query so it survives restarts without breaking the normal rollover. Labels regenerated per language when the entry has `kind` |
 | `totality.ts` | Nearest totality | 8 bearings × probes `[25,50,100,200,400,700] km` + bisection to 2 km; duration measured 5 km inside the edge. RAM cache by `searchStart:lat,lon` |
 | `prefs.ts` | Preferences + per-eclipse context + migrations | AsyncStorage `eclipsum:prefs`. `contextFor`/`withContext` provide spot, alerts and recents **per eclipse civil day**. `ALERT_EARLY_SECONDS = 15`, `RECENT_CAP = 3` |
-| `weather.ts` | Open-Meteo clouds | Fixed model `ecmwf_ifs025` (matches Windy). AsyncStorage cache `eclipsum:clouds:v3:{day}:{lat},{lon}` (2 decimals) with pruning of old days/versions. 10 s timeout |
+| `weather.ts` | Open-Meteo clouds | Forecast API with fixed model `ecmwf_ifs025` (matches Windy); **past days route to the ERA5 archive API** (real cloud cover for archive mode; ~2–5 day lag degrades the very recent past to "no data"). AsyncStorage cache `eclipsum:clouds:v3:{day}:{lat},{lon}` (2 decimals) with pruning of old days/versions. 10 s timeout |
 | `notifications.ts` | Local alerts | `opQueue` serializes every operation. Android channels `eclipse-alerts-v4-{eclipse\|default}` (deletes legacy v3). `scheduleEclipseAlerts` cancels everything and reschedules; `scheduleFakeEclipseAlerts` is additive and returns ids |
 | `firebase.ts` | RC + Analytics + Crashlytics | Everything best-effort (the app works without Firebase). RC fetch: 0 in dev, 1 h in release. `track`/`trackError` |
 | `i18n.ts` | Languages (today es/en, extensible) | `LANGS` + `LANG_META` (endonym, BCP-47 tag, decimal separator) + flat JSON dictionaries in `locales/<lang>.json` (months = `month.0–11` keys, `monthShort` helper). `I18nKey = keyof typeof es` — completeness enforced by the compiler and parity verified in selfcheck for every language. `t(key, vars)` with `{var}`; unknown key → returns the key. No dependencies; the language lives in `prefs.language` (`''` = auto: Spanish system → es, everything else → en, resolved in `usePrefs`). Format directly compatible with Crowdin/Weblate/Tolgee. How to add a language: [README](../README.md#adding-a-language) |
 | `drill.ts` | Synthetic drill eclipse | Fixed legs `DRILL_PARTIAL_SEC = 30`, `DRILL_TOTALITY_SEC = 45` — minimums that keep the 15 s early alerts in order (asserted in selfcheck) |
-| `bandGeo.ts` | Bundled paths (**generated** by `scripts/genBand.ts`, do not edit by hand) | Today only the Iberia 2026 path (66 slices) |
+| `bandGeo.ts` | Bundled path pack (**generated** by `scripts/genBandPack.ts`, do not edit by hand) | Every total/annular path in the browsable window (~50 paths, ~240 KB) — offline and zero-maintenance; history never changes. Shared walker in `scripts/bandWalk.ts` (fine 0.25° seeding for thin hybrid/annular paths) |
+| `spotEclipses.ts` | Eclipses visible from one spot | Iterates `SearchLocalSolarEclipse`/`NextLocalSolarEclipse` ±25/8 years, drops below-horizon series, canonicalizes each hit to the **global** peak's civil day (the local maximum can fall ±1 day). Promise cache per rounded coordinate; ~0.5 s per sweep, yielding between engine steps |
 | `spots.ts` | `Spot`/`SpotOption` types | No logic |
 | `maps.ts`, `anim.ts`, `soundPreview.ts` | RN utilities (open Maps, LayoutAnimation, sound preview) | Import react-native — outside the engine |
 | `leafletVendor.ts` | Vendored Leaflet 1.9.4 (JS+CSS as strings) | The real map does not depend on a CDN |
@@ -73,14 +74,15 @@ Reschedules all notifications when the spot, toggles, sound, language or permiss
 
 - `MapScreen` — main: real map, chips (place/compass), GPS recenter button, draggable bottom sheet with countdown, stats, clouds chip → Windy, timeline, horizon, sponsor.
 - `AlertsScreen` — C1–C4 milestones with switches, +15 s early warning, +1 h/+24 h reminders (C1 only), "after sunset" mark, test notification, scheduled counter.
-- `SettingsScreen` — eye safety (IGN + affiliate), permissions, 5 selectable upcoming eclipses, sound, drill, language, support (Buy Me a Coffee via RC `donate_url`), *About*.
+- `EclipsesScreen` — eclipse browser: paginated upcoming (~8 years) and past (~25 years) lists, radio selection ('' = automatic). Picking a past one = archive mode (alerts off, archive clouds, map says "finished").
+- `SettingsScreen` — eye safety (IGN + affiliate), permissions, sound, drill, language, support (Buy Me a Coffee via RC `donate_url`), *About*.
 - `EclipseModeScreen` — event screen: full-bleed corona, safety status, giant countdown (two huge digits in the last 60 s before C2 and 15 s before C3), live sun coverage, true-to-scale timeline, NEXT card, `useKeepAwake()`. Six states: before C1 · partial · imminent · totality · after C3 · finished. During a drill it adds the C1–C4 jump chips.
 
 **Eclipse mode** (`components/mode/`): `CoronaHero` (the corona bleeds off the top edge; the JPEG is cut with an SVG radial mask because RN has no `mix-blend-mode`; sky, opacity and motion change per state), `EclipseTimeline` (the bar from `lib/eclipseBar`, veil over what has not happened yet, "you are here" marker).
 
 **Map** (`components/map/`): `CompassChip` (needle at the sun's azimuth, relative to device heading when a sensor exists), `HorizonDiagram` (sun altitude to scale, "fists" reference ≈ 10°).
 
-**Root**: `RealMap` (Leaflet WebView + Carto dark tiles; path, markers, taps resolved in RN; `forwardRef` handle `flyTo` for the GPS button; framing = path stretch within `BAND_LON_SPAN` degrees of longitude around the spot), `SpotSelector` (text or `lat, lon` search, sections with batched clouds — including the curated `suggested_spots` from RC, filtered to those inside the active eclipse's band and hidden when none qualify), `TabBar`, `Countdown` (own 1 s tick, isolated from the tree), `theme.ts` (`C` palette + `F` fonts).
+**Root**: `RealMap` (Leaflet WebView + Carto dark tiles; path, markers, taps resolved in RN; `forwardRef` handle `flyTo` for the GPS button; framing = path stretch within `BAND_LON_SPAN` degrees of longitude around the spot), `SpotSelector` (text or `lat, lon` search, sections with batched clouds — including the curated `suggested_spots` from RC, filtered to those inside the active eclipse's band and hidden when none qualify), `SpotEclipses` ("eclipses from here" modal, opened from the map sheet; jumping keeps the current spot), `TabBar`, `Countdown` (own 1 s tick, isolated from the tree), `theme.ts` (`C` palette + `F` fonts).
 
 **Hooks**: `useGeo` (one-shot GPS: last known → fresh fix, race-safe geocoder), `usePrefs` (load/save + language + eclipse selection), `useSheet` (draggable sheet with `Animated` + `PanResponder`), `useSpotData` (clouds + totality + projected GPS).
 

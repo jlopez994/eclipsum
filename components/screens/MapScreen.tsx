@@ -31,6 +31,7 @@ import { Countdown } from '../Countdown';
 import { RealMap, type RealMapHandle } from '../RealMap';
 import { CompassChip } from '../map/CompassChip';
 import { SheetDetail } from '../map/SheetDetail';
+import { SpotEclipses } from '../SpotEclipses';
 import { SunFinderScreen } from './SunFinderScreen';
 import { C, CARD, CLOUD_COLOR, F } from '../theme';
 
@@ -68,6 +69,8 @@ interface MapScreenProps {
   sponsor?: Sponsor | null;
   /** URL de gafas certificadas (afiliado, vía Remote Config); vacío = solo el aviso, sin enlace */
   glassesUrl?: string;
+  /** Salta a otro eclipse (día civil) conservando el puesto pintado; abre «Eclipses desde aquí» */
+  onSelectEclipseDay?: (day: string) => void;
 }
 
 export function MapScreen({
@@ -87,11 +90,13 @@ export function MapScreen({
   onSelectMapPoint,
   sponsor,
   glassesUrl,
+  onSelectEclipseDay,
 }: MapScreenProps) {
   const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
   const [sheetMin, setSheetMin] = useState(SHEET_MIN_FALLBACK);
   const [finderOpen, setFinderOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   /**
    * Tocar cualquier control de la app cierra el globo del mapa. Va en la fase de captura
@@ -180,6 +185,8 @@ export function MapScreen({
 
   // Dato de caché sin red: se marca la antigüedad para no fiarse de nubes viejas
   const activeEclipseMeta = getActiveEclipse();
+  // Consulta del histórico: Windy solo enseña pronóstico, un enlace a «su» día mentiría
+  const isPastEclipse = activeEclipseMeta.civilDate < now.toISOString().slice(0, 10);
   const cloudStale = cloudAgeHours !== null ? ` · ${cloudAgeHours}h` : '';
   const level = cloudLevel(cloudPct);
   const cloud =
@@ -302,11 +309,15 @@ export function MapScreen({
               <Pressable
                 style={[s.cloudChip, { borderColor: cloud.color + '66' }]}
                 hitSlop={6}
-                accessibilityLabel={t('map.clouds.openWindy', { a11y: cloud.a11y })}
-                onPress={() => {
-                  const when = maxEvent?.time ?? new Date(activeEclipseMeta.windyFallbackMax);
-                  Linking.openURL(windyEclipseCloudsUrl(spotCoords.lat, spotCoords.lon, when)).catch(() => {});
-                }}
+                accessibilityLabel={isPastEclipse ? cloud.a11y : t('map.clouds.openWindy', { a11y: cloud.a11y })}
+                onPress={
+                  isPastEclipse
+                    ? undefined
+                    : () => {
+                        const when = maxEvent?.time ?? new Date(activeEclipseMeta.windyFallbackMax);
+                        Linking.openURL(windyEclipseCloudsUrl(spotCoords.lat, spotCoords.lon, when)).catch(() => {});
+                      }
+                }
               >
                 <View style={[s.cloudDot, { backgroundColor: cloud.color, shadowColor: cloud.color }]} />
                 <Text style={s.cloudText}>{cloud.label}</Text>
@@ -322,11 +333,23 @@ export function MapScreen({
           onOpenMaps={onOpenMaps}
           sponsor={sponsor}
           glassesUrl={glassesUrl}
+          onShowHistory={onSelectEclipseDay ? () => setHistoryOpen(true) : undefined}
         />
       </Animated.View>
       </Animated.View>
       {/* Encima de todo, incluida la hoja: el visor es pantalla completa */}
       {/* Siempre con sunHere: azimut, altura y hora son los de DONDE ESTÁS */}
+      {onSelectEclipseDay && (
+        <SpotEclipses
+          visible={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          lat={spotCoords.lat}
+          lon={spotCoords.lon}
+          place={place}
+          activeCivilDate={activeEclipseMeta.civilDate}
+          onSelectDay={onSelectEclipseDay}
+        />
+      )}
       {finderOpen && sunHere && (
         <SunFinderScreen
           azimuthDeg={sunHere.azimuth}

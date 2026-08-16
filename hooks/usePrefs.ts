@@ -31,7 +31,7 @@ export function usePrefs() {
   const apply = useCallback((next: Prefs) => {
     // Idioma primero: la resolución del eclipse hornea labels con getLang()
     setLang(resolveLang(next.language));
-    setUserSelectedEclipseDay(next.selectedEclipseDay);
+    setUserSelectedEclipseDay(next.selectedEclipseDay, next.selectedEclipsePast);
     latest.current = next;
     setPrefs(next);
   }, []);
