@@ -291,6 +291,8 @@
   "horizon.fist.n": "about {n} fists",
   "horizon.note": "By eye: {fist} at arm’s length above the horizon (one fist ≈ 10°).",
   "horizon.noteLow": " Find a completely clear {dir} horizon.",
+  "horizon.terrain.clear": "Terrain toward the sun: ~{h}° · sun at {alt}° → clear (estimated)",
+  "horizon.terrain.blocked": "Terrain toward the sun: ~{h}° — may hide {keys} (estimated)",
   "real.noEclipse": "NO ECLIPSE HERE",
   "real.nothingVisible": "Nothing visible on {date}",
   "real.maxAt": "Maximum at {time}",

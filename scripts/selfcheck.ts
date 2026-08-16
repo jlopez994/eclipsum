@@ -22,6 +22,7 @@ import {
   upcomingEclipses,
 } from '../lib/eclipseCatalog';
 import { cloudCoverAt } from '../lib/weather';
+import { horizonAngleDeg, SAMPLE_DISTANCES_KM, terrainVerdict } from '../lib/horizon';
 import { eclipsesFromSpot } from '../lib/spotEclipses';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
 import type { Spot } from '../lib/spots';
@@ -142,6 +143,48 @@ async function main() {
   assert.equal(cloudCoverAt(forecast, new Date('2026-08-12T18:30:00Z')), 40, 'Interpolación lineal');
   assert.equal(cloudCoverAt(forecast, new Date('2026-08-12T22:00:00Z')), 60, 'Hora cercana del día del eclipse');
   assert.equal(cloudCoverAt(forecast, new Date('2026-08-09T12:00:00Z')), null, 'Día actual → null');
+
+  // Horizonte del terreno (sin red): muestreo, ángulo con curvatura y veredicto
+  assert.equal(SAMPLE_DISTANCES_KM.length, 24, 'Terreno: 24 muestras — con el puesto, una sola llamada');
+  assert.ok(
+    Math.abs(SAMPLE_DISTANCES_KM[0] - 0.2) < 1e-9 && Math.abs(SAMPLE_DISTANCES_KM[23] - 20) < 1e-9,
+    'Terreno: muestreo de 0,2 a 20 km',
+  );
+  assert.ok(
+    SAMPLE_DISTANCES_KM.every((d, i) => i === 0 || d > SAMPLE_DISTANCES_KM[i - 1]),
+    'Terreno: distancias estrictamente crecientes',
+  );
+  // Todo el perfil por debajo del observador (mar, valle): nada tapa → 0°
+  assert.equal(
+    horizonAngleDeg(50, SAMPLE_DISTANCES_KM.map((d) => ({ distKm: d, elevM: 0 }))),
+    0,
+    'Terreno: el mar no tapa (mínimo 0°)',
+  );
+  // Monte 500 m por encima a 3 km: atan(500/3000) ≈ 9,45° (la caída a 3 km es <1 m)
+  const hill = horizonAngleDeg(200, [{ distKm: 3, elevM: 700 }]);
+  assert.ok(Math.abs(hill - 9.45) < 0.1, `Terreno: monte claro ≈ 9,5° (${hill})`);
+  // Curvatura+refracción: a 20 km una loma de 100 m «pierde» ~27 m → ángulo menor que el plano
+  const farAngle = horizonAngleDeg(0, [{ distKm: 20, elevM: 100 }]);
+  const flatAngle = (Math.atan2(100, 20_000) * 180) / Math.PI;
+  assert.ok(farAngle > 0 && farAngle < flatAngle, `Terreno: la curvatura rebaja lo lejano (${farAngle} < ${flatAngle})`);
+  // Muestras sin dato del API se ignoran en vez de romper el máximo
+  assert.equal(
+    horizonAngleDeg(0, [{ distKm: 1, elevM: NaN }, { distKm: 2, elevM: -50 }]),
+    0,
+    'Terreno: NaN del API ignorado',
+  );
+  // Veredicto: C1 con el sol a 2° tras un terreno de 5° → posiblemente oculto;
+  // C4 ya bajo el horizonte real no cuenta (no se ve con o sin monte)
+  const terrainEvents = [
+    { key: 'C1', altitude: 2 },
+    { key: 'MAX', altitude: 12 },
+    { key: 'C4', altitude: -3 },
+  ];
+  const blockedVerdict = terrainVerdict(5, terrainEvents)!;
+  assert.deepEqual(blockedVerdict.blockedKeys, ['C1'], 'Veredicto: obstrucción clara solo en C1');
+  assert.equal(blockedVerdict.sunAltDeg, 12, 'Veredicto: altura del sol en el máximo');
+  assert.deepEqual(terrainVerdict(1.5, terrainEvents)!.blockedKeys, [], 'Veredicto: terreno bajo → despejado');
+  assert.equal(terrainVerdict(3, [{ key: 'MAX', altitude: -5 }]), null, 'Veredicto: sin sol en el máximo → sin aviso');
 
   // findNearestTotality desde Sevilla (parcial) — banda queda al norte
   const dir = await findNearestTotality(37.39, -5.99, T0);

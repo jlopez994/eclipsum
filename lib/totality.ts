@@ -29,7 +29,7 @@ const PRECISION_KM = 2;
 const BEARINGS = [0, 45, 90, 135, 180, 225, 270, 315];
 
 /** Punto destino desde (lat,lon) siguiendo un rumbo una distancia dada (fórmula esférica). */
-function destination(lat: number, lon: number, bearingDeg: number, distKm: number): { lat: number; lon: number } {
+export function destination(lat: number, lon: number, bearingDeg: number, distKm: number): { lat: number; lon: number } {
   const δ = distKm / EARTH_R;
   const θ = (bearingDeg * Math.PI) / 180;
   const φ1 = (lat * Math.PI) / 180;

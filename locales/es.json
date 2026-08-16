@@ -291,6 +291,8 @@
   "horizon.fist.n": "unos {n} puños",
   "horizon.note": "A ojo: {fist} con el brazo estirado sobre el horizonte (un puño ≈ 10°).",
   "horizon.noteLow": " Busca horizonte {dir} totalmente despejado.",
+  "horizon.terrain.clear": "Terreno hacia el sol: ~{h}° · sol a {alt}° → despejado (estimado)",
+  "horizon.terrain.blocked": "Terreno hacia el sol: ~{h}° — podría tapar {keys} (estimado)",
   "real.noEclipse": "SIN ECLIPSE AQUÍ",
   "real.nothingVisible": "Nada visible el {date}",
   "real.maxAt": "Máximo a las {time}",

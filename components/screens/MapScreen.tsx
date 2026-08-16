@@ -27,6 +27,7 @@ import { bearingLabel, haversineKm, type TotalityDirection } from '../../lib/tot
 import type { Sponsor } from '../../lib/firebase';
 import { cloudLevel, windyEclipseCloudsUrl } from '../../lib/weather';
 import { useSheet } from '../../hooks/useSheet';
+import { useTerrainHorizon } from '../../hooks/useHorizon';
 import { Countdown } from '../Countdown';
 import { RealMap, type RealMapHandle } from '../RealMap';
 import { CompassChip } from '../map/CompassChip';
@@ -134,6 +135,8 @@ export function MapScreen({
   const isTotal = eclipse.kind === 'total';
   const upcoming = nextEvent(eclipse, now);
   const maxEvent = eventAt(eclipse, 'MAX');
+  // Horizonte del terreno hacia el sol del puesto pintado (aviso bajo el diagrama de la hoja)
+  const terrain = useTerrainHorizon(spotCoords, eclipse);
 
   /**
    * Máximo SOBRE TI, no sobre el puesto elegido. La brújula y el visor son instrumentos
@@ -330,6 +333,7 @@ export function MapScreen({
           place={place}
           dateLabel={activeEclipseMeta.shortDateLabel}
           now={now}
+          terrain={terrain}
           onOpenMaps={onOpenMaps}
           sponsor={sponsor}
           glassesUrl={glassesUrl}

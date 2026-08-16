@@ -1,7 +1,8 @@
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { eventAt, eventShortLabel, type LocalEclipse } from '../../lib/eclipse';
 import { fmtHMS } from '../../lib/format';
-import { t, type I18nKey } from '../../lib/i18n';
+import type { TerrainVerdict } from '../../lib/horizon';
+import { fmtFixed1, t, type I18nKey } from '../../lib/i18n';
 import { track, type Sponsor } from '../../lib/firebase';
 import { HorizonDiagram } from './HorizonDiagram';
 import { C, EVENT_ACCENT, F } from '../theme';
@@ -22,6 +23,8 @@ interface SheetDetailProps {
   glassesUrl?: string;
   /** Abre «Eclipses desde aquí» (histórico y próximos del puesto pintado) */
   onShowHistory?: () => void;
+  /** Horizonte del terreno hacia el sol; null = cargando o sin dato (no se pinta nada) */
+  terrain?: TerrainVerdict | null;
 }
 
 /**
@@ -39,6 +42,7 @@ export function SheetDetail({
   sponsor,
   glassesUrl,
   onShowHistory,
+  terrain,
 }: SheetDetailProps) {
   const maxEvent = eventAt(eclipse, 'MAX');
   // Cronología con el ocaso intercalado; los contactos bajo el horizonte no se ven
@@ -87,6 +91,24 @@ export function SheetDetail({
           <Text style={s.cronoTitle}>{t('map.sunAtMax')}</Text>
           {/* El aviso de sol bajo lo da el propio diagrama (horizon.noteLow) */}
           <HorizonDiagram altitudeDeg={maxEvent.altitude} azimuthDeg={maxEvent.azimuth} />
+          {/* Horizonte del terreno hacia el sol: grado entero — la rejilla de ~90 m del
+              modelo de elevación no da para décimas (por eso el copy dice «estimado») */}
+          {terrain &&
+            (terrain.blockedKeys.length > 0 ? (
+              <Text style={[s.terrainNote, { color: C.corona }]}>
+                {t('horizon.terrain.blocked', {
+                  h: Math.round(terrain.horizonDeg),
+                  keys: terrain.blockedKeys.map(eventShortLabel).join(', '),
+                })}
+              </Text>
+            ) : (
+              <Text style={s.terrainNote}>
+                {t('horizon.terrain.clear', {
+                  h: Math.round(terrain.horizonDeg),
+                  alt: fmtFixed1(terrain.sunAltDeg),
+                })}
+              </Text>
+            ))}
         </>
       )}
       {/* Cierre de la cronología: cuándo mirar ya está resuelto arriba; aquí, cómo mirar */}
@@ -164,6 +186,8 @@ const s = StyleSheet.create({
   },
   cronoLabel: { fontFamily: F.semibold, fontSize: 14, color: C.text },
   cronoTime: { fontFamily: F.medium, fontSize: 14, color: C.dim, fontVariant: ['tabular-nums'] },
+  /** Pegado a la nota del diagrama (que trae marginBottom propio): mismo cuerpo de texto */
+  terrainNote: { fontFamily: F.regular, fontSize: 11, lineHeight: 16, color: C.dim, marginTop: -8 },
   historyLink: {
     fontFamily: F.bold,
     fontSize: 11,

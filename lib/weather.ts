@@ -44,7 +44,8 @@ function cloudUrl(day: string, lats: string, lons: string): string {
     : `https://api.open-meteo.com/v1/forecast?${common}&models=${MODEL}`;
 }
 
-async function fetchJson(url: string): Promise<unknown> {
+/** GET JSON de Open-Meteo con tope de espera; lo comparte el perfil de elevación (lib/horizon). */
+export async function fetchJson(url: string): Promise<unknown> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
