@@ -325,7 +325,7 @@ export function MapScreen({
               <Text style={s.chipChevron}>▾</Text>
             </Pressable>
             {/* Qué eclipse está activo, siempre a la vista; tocarlo abre «Eclipses desde
-                aquí». El enlace del fondo de la hoja sigue, pero ya no es la única entrada.
+                aquí» — única entrada (el enlace que había al fondo de la hoja duplicaba).
                 El año solo cuando no es el corriente: «21 AGO» de un histórico engañaría. */}
             {onSelectEclipseDay && (
               <Pressable
@@ -420,7 +420,6 @@ export function MapScreen({
           onOpenMaps={onOpenMaps}
           sponsor={sponsor}
           glassesUrl={glassesUrl}
-          onShowHistory={onSelectEclipseDay ? () => setHistoryOpen(true) : undefined}
           // Panorama 3D del puesto (PeakFinder, web): mirando al azimut del máximo
           onOpenPanorama={() => {
             track('panorama_open');

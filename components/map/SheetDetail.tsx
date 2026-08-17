@@ -22,8 +22,6 @@ interface SheetDetailProps {
   sponsor?: Sponsor | null;
   /** URL de gafas certificadas (afiliado); vacío = solo el aviso, sin enlace */
   glassesUrl?: string;
-  /** Abre «Eclipses desde aquí» (histórico y próximos del puesto pintado) */
-  onShowHistory?: () => void;
   /** Horizonte del terreno hacia el sol; null = cargando o sin dato (no se pinta nada) */
   terrain?: TerrainVerdict | null;
   /** Abre el panorama 3D del puesto (PeakFinder) en el navegador */
@@ -44,7 +42,6 @@ export function SheetDetail({
   onOpenMaps,
   sponsor,
   glassesUrl,
-  onShowHistory,
   terrain,
   onOpenPanorama,
 }: SheetDetailProps) {
@@ -84,47 +81,51 @@ export function SheetDetail({
           <Text style={[s.cronoTime, e.belowHorizon && { color: C.dim }]}>{fmtHMS(e.time)}</Text>
         </View>
       ))}
-      {onShowHistory && (
-        <Pressable onPress={onShowHistory} hitSlop={8} accessibilityRole="button">
-          <Text style={s.historyLink}>{t('map.history')}</Text>
-        </Pressable>
-      )}
       {maxEvent && maxEvent.altitude > 0 && (
         <>
           <View style={s.divider} />
           <Text style={s.cronoTitle}>{t('map.sunAtMax')}</Text>
           {/* El aviso de sol bajo lo da el propio diagrama (horizon.noteLow) */}
           <HorizonDiagram altitudeDeg={maxEvent.altitude} azimuthDeg={maxEvent.azimuth} />
-          {/* Horizonte del terreno hacia el sol: grado entero — la rejilla de ~90 m del
-              modelo de elevación no da para décimas (por eso el copy dice «estimado») */}
-          {terrain &&
-            (terrain.blockedKeys.length > 0 ? (
-              <Text style={[s.terrainNote, { color: C.corona }]}>
-                {t('horizon.terrain.blocked', {
-                  h: Math.round(terrain.horizonDeg),
-                  keys: terrain.blockedKeys.map(eventShortLabel).join(', '),
-                })}
-              </Text>
-            ) : (
-              <Text style={s.terrainNote}>
-                {t('horizon.terrain.clear', {
-                  h: Math.round(terrain.horizonDeg),
-                  alt: fmtFixed1(terrain.sunAltDeg),
-                })}
-              </Text>
-            ))}
-          {/* La silueta pinta el mismo perfil del veredicto: el monte del aviso, visible */}
-          {terrain?.profile && terrain.profile.length > 1 && (
-            <TerrainProfile
-              points={terrain.profile}
-              sunAltDeg={terrain.sunAltDeg}
-              horizonDeg={terrain.horizonDeg}
-            />
-          )}
-          {onOpenPanorama && (
-            <Pressable onPress={onOpenPanorama} hitSlop={8} accessibilityRole="link">
-              <Text style={s.historyLink}>{t('map.panorama')}</Text>
-            </Pressable>
+          {/* Sección aparte del diagrama del sol: son dos preguntas distintas («¿a qué
+              altura estará?» vs «¿me lo tapa el relieve?») y juntas saturaban la hoja.
+              Grado entero en el veredicto — la rejilla de ~90 m del modelo de elevación
+              no da para décimas (por eso el copy dice «estimado») */}
+          {terrain && (
+            <>
+              <View style={[s.divider, { marginTop: 18 }]} />
+              <Text style={s.cronoTitle}>{t('horizon.profile.title')}</Text>
+              {terrain.blockedKeys.length > 0 ? (
+                <Text style={[s.terrainNote, { color: C.corona }]}>
+                  {t('horizon.terrain.blocked', {
+                    h: Math.round(terrain.horizonDeg),
+                    keys: terrain.blockedKeys.map(eventShortLabel).join(', '),
+                  })}
+                </Text>
+              ) : (
+                <Text style={s.terrainNote}>
+                  {t('horizon.terrain.clear', {
+                    h: Math.round(terrain.horizonDeg),
+                    alt: fmtFixed1(terrain.sunAltDeg),
+                  })}
+                </Text>
+              )}
+              {/* La silueta pinta el mismo perfil del veredicto: el monte del aviso, visible */}
+              {terrain.profile && terrain.profile.length > 1 && (
+                <TerrainProfile
+                  points={terrain.profile}
+                  sunAltDeg={terrain.sunAltDeg}
+                  horizonDeg={terrain.horizonDeg}
+                />
+              )}
+              {/* Dentro de la sección de terreno: sin dato de terreno tampoco hay red
+                  para cargar PeakFinder */}
+              {onOpenPanorama && (
+                <Pressable onPress={onOpenPanorama} hitSlop={8} accessibilityRole="link">
+                  <Text style={s.panoramaLink}>{t('map.panorama')}</Text>
+                </Pressable>
+              )}
+            </>
           )}
         </>
       )}
@@ -203,9 +204,8 @@ const s = StyleSheet.create({
   },
   cronoLabel: { fontFamily: F.semibold, fontSize: 14, color: C.text },
   cronoTime: { fontFamily: F.medium, fontSize: 14, color: C.dim, fontVariant: ['tabular-nums'] },
-  /** Pegado a la nota del diagrama (que trae marginBottom propio): mismo cuerpo de texto */
-  terrainNote: { fontFamily: F.regular, fontSize: 11, lineHeight: 16, color: C.dim, marginTop: -8 },
-  historyLink: {
+  terrainNote: { fontFamily: F.regular, fontSize: 11, lineHeight: 16, color: C.dim },
+  panoramaLink: {
     fontFamily: F.bold,
     fontSize: 11,
     letterSpacing: 1.5,

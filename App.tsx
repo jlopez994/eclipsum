@@ -19,7 +19,7 @@ import {
   shiftEclipse,
   type LocalEclipse,
 } from './lib/eclipse';
-import { eclipseForDay, getActiveEclipse, visiblePointFor } from './lib/eclipseCatalog';
+import { eclipseForDay, getActiveEclipse, upcomingEclipses, visiblePointFor } from './lib/eclipseCatalog';
 import { haversineKm } from './lib/totality';
 import { openInMaps } from './lib/maps';
 import { cleanPlaceLabel, DIVERGENCE_KM, REAL_PLACE_KM, sameCoords, type Spot } from './lib/spots';
@@ -286,6 +286,14 @@ function AppInner() {
     // prefs?.language: el copy de las notificaciones se hornea al programar — reprogramar al cambiar idioma
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eclipse, permissions.notifications, ctx, prefs?.alertSound, prefs?.language, drill]);
+
+  // Primera página de la pestaña Eclipses (PAGE+1 = 6) precalentada en un respiro tras
+  // arrancar: la primera llamada del día al motor tarda varios frames y la pestaña
+  // abría con un retardo perceptible al primer toque
+  useEffect(() => {
+    const id = setTimeout(() => upcomingEclipses(6), 1500);
+    return () => clearTimeout(id);
+  }, []);
 
   /**
    * Línea base del efecto de reubicación (más abajo). Tres estados: null = prefs sin
