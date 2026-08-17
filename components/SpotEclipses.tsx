@@ -91,10 +91,11 @@ export function SpotEclipses({ visible, onClose, lat, lon, place, activeCivilDat
 }
 
 const s = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
+  // Mismo velo/panel que SpotSelector: el mapa se intuye detrás
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
   panel: {
     maxHeight: '78%',
-    backgroundColor: C.surface,
+    backgroundColor: 'rgba(21,21,30,0.92)',
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
     borderWidth: 1,

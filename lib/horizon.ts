@@ -40,11 +40,20 @@ export const SAMPLE_DISTANCES_KM: readonly number[] = Array.from(
 const R_EFF_KM = 6371 / (1 - 0.13);
 
 /**
- * Ángulo de horizonte (grados, ≥0) que impone el perfil de elevaciones al observador.
- * Por muestra: atan((elev − elevObservador − caída) / dist), con caída por curvatura y
- * refracción `d²/(2·R_efectiva)`. Muestras sin dato del API (NaN) se ignoran. Mínimo 0°:
- * el mar o un valle por debajo del observador no tapan el sol, y un horizonte deprimido
- * solo adelantaría el ocaso unos segundos — nada que avisar.
+ * Ángulo aparente (grados, con signo) que un punto del terreno subtiende desde el
+ * observador: atan((elev − elevObservador − caída) / dist), con caída por curvatura y
+ * refracción `d²/(2·R_efectiva)`. Negativo = por debajo de la horizontal del observador.
+ */
+export function apparentAngleDeg(observerElevM: number, distKm: number, elevM: number): number {
+  const dropM = (distKm * distKm * 1000) / (2 * R_EFF_KM);
+  return (Math.atan2(elevM - observerElevM - dropM, distKm * 1000) * 180) / Math.PI;
+}
+
+/**
+ * Ángulo de horizonte (grados, ≥0) que impone el perfil de elevaciones al observador:
+ * el máximo de los ángulos aparentes. Muestras sin dato del API (NaN) se ignoran.
+ * Mínimo 0°: el mar o un valle por debajo del observador no tapan el sol, y un horizonte
+ * deprimido solo adelantaría el ocaso unos segundos — nada que avisar.
  */
 export function horizonAngleDeg(
   observerElevM: number,
@@ -53,11 +62,23 @@ export function horizonAngleDeg(
   let best = 0;
   for (const s of samples) {
     if (!Number.isFinite(s.elevM) || s.distKm <= 0) continue;
-    const dropM = (s.distKm * s.distKm * 1000) / (2 * R_EFF_KM);
-    const angle = (Math.atan2(s.elevM - observerElevM - dropM, s.distKm * 1000) * 180) / Math.PI;
+    const angle = apparentAngleDeg(observerElevM, s.distKm, s.elevM);
     if (angle > best) best = angle;
   }
   return best;
+}
+
+/** Perfil de elevaciones hacia un azimut, alineado con SAMPLE_DISTANCES_KM (NaN = sin dato). */
+export interface TerrainProfile {
+  obsElevM: number;
+  elevM: number[];
+}
+
+/** Silueta del perfil para pintar: ángulo aparente por muestra, sin las que no traen dato. */
+export function profileAngles(p: TerrainProfile): { distKm: number; angleDeg: number }[] {
+  return SAMPLE_DISTANCES_KM.flatMap((d, i) =>
+    Number.isFinite(p.elevM[i]) ? [{ distKm: d, angleDeg: apparentAngleDeg(p.obsElevM, d, p.elevM[i]) }] : [],
+  );
 }
 
 export interface TerrainVerdict {
@@ -67,6 +88,8 @@ export interface TerrainVerdict {
   sunAltDeg: number;
   /** Hitos con el sol sobre el horizonte astronómico pero por debajo del relieve */
   blockedKeys: string[];
+  /** Silueta hacia el azimut del máximo (profileAngles); ausente si el perfil no llegó */
+  profile?: { distKm: number; angleDeg: number }[];
 }
 
 /** Hito con el horizonte del terreno muestreado hacia SU azimut, no el del máximo. */
@@ -97,7 +120,9 @@ export function terrainVerdict(events: readonly EventTerrain[]): TerrainVerdict 
   };
 }
 
-const CACHE_PREFIX = 'eclipsum:horizon:v1:';
+// v1 guardaba solo el ángulo final; el perfil pide el dato entero. Las entradas v1
+// quedan huérfanas (~20 B por puesto consultado): no compensa migrarlas ni borrarlas.
+const CACHE_PREFIX = 'eclipsum:horizon:v2:';
 
 /**
  * El terreno no cambia: caché primero (AsyncStorage, sin caducidad) y red solo la
@@ -107,15 +132,15 @@ const CACHE_PREFIX = 'eclipsum:horizon:v1:';
  * rejilla del modelo de elevación — dos puestos más juntos que eso ven el mismo dato.
  * Promesa memoizada en memoria como findNearestTotality;
  * un fallo (sin red) se olvida para poder reintentar en la siguiente consulta.
- * ponytail: la caché crece ~20 bytes por puesto consultado; poda si algún día pesa.
+ * ponytail: la caché crece ~250 bytes por puesto consultado; poda si algún día pesa.
  */
-const MEM = new Map<string, Promise<number | null>>();
+const MEM = new Map<string, Promise<TerrainProfile | null>>();
 
-export function terrainHorizonDeg(lat: number, lon: number, azimuthDeg: number): Promise<number | null> {
+export function terrainProfile(lat: number, lon: number, azimuthDeg: number): Promise<TerrainProfile | null> {
   const key = `${lat.toFixed(3)},${lon.toFixed(3)}:${Math.round(azimuthDeg)}`;
   let p = MEM.get(key);
   if (!p) {
-    p = loadOrFetchHorizon(lat, lon, azimuthDeg, CACHE_PREFIX + key).then((v) => {
+    p = loadOrFetchProfile(lat, lon, azimuthDeg, CACHE_PREFIX + key).then((v) => {
       if (v === null) MEM.delete(key);
       return v;
     });
@@ -124,16 +149,33 @@ export function terrainHorizonDeg(lat: number, lon: number, azimuthDeg: number):
   return p;
 }
 
-async function loadOrFetchHorizon(
+/** Ángulo de horizonte hacia un azimut; null = sin red y sin caché. */
+export function terrainHorizonDeg(lat: number, lon: number, azimuthDeg: number): Promise<number | null> {
+  return terrainProfile(lat, lon, azimuthDeg).then((p) =>
+    p === null
+      ? null
+      : horizonAngleDeg(
+          p.obsElevM,
+          SAMPLE_DISTANCES_KM.map((d, i) => ({ distKm: d, elevM: p.elevM[i] })),
+        ),
+  );
+}
+
+/** Forma persistida: {o: elevación observador, e: elevaciones por muestra, null = sin dato}. */
+async function loadOrFetchProfile(
   lat: number,
   lon: number,
   azimuthDeg: number,
   storageKey: string,
-): Promise<number | null> {
+): Promise<TerrainProfile | null> {
   try {
     const raw = await AsyncStorage.getItem(storageKey);
-    const cached = raw === null ? NaN : Number(raw);
-    if (Number.isFinite(cached)) return cached;
+    if (raw !== null) {
+      const c = JSON.parse(raw) as { o?: unknown; e?: unknown };
+      if (typeof c.o === 'number' && Number.isFinite(c.o) && Array.isArray(c.e) && c.e.length === N_SAMPLES) {
+        return { obsElevM: c.o, elevM: c.e.map((v) => (typeof v === 'number' ? v : NaN)) };
+      }
+    }
   } catch {
     // Caché ilegible: se sigue a red como si no existiera
   }
@@ -141,12 +183,13 @@ async function loadOrFetchHorizon(
     // El puesto va de primer punto: su elevación sale de la misma llamada
     const points = [{ lat, lon }, ...SAMPLE_DISTANCES_KM.map((d) => destination(lat, lon, azimuthDeg, d))];
     const elevations = await fetchElevations(points);
-    const deg = horizonAngleDeg(
-      elevations[0],
-      SAMPLE_DISTANCES_KM.map((d, i) => ({ distKm: d, elevM: elevations[i + 1] })),
-    );
-    AsyncStorage.setItem(storageKey, String(deg)).catch(() => {});
-    return deg;
+    const profile: TerrainProfile = { obsElevM: elevations[0], elevM: elevations.slice(1) };
+    AsyncStorage.setItem(
+      storageKey,
+      // NaN no sobrevive a JSON.stringify (sale null): la vuelta ya lo reconvierte
+      JSON.stringify({ o: profile.obsElevM, e: profile.elevM.map((v) => (Number.isFinite(v) ? v : null)) }),
+    ).catch(() => {});
+    return profile;
   } catch {
     // Sin red o respuesta inválida: null y silencio — el aviso simplemente no aparece
     return null;

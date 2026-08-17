@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bandOf, pastEclipses, upcomingEclipses, type EclipseEntry } from '../../lib/eclipseCatalog';
 import { fmtRelativeDay } from '../../lib/format';
@@ -15,6 +15,9 @@ interface EclipsesScreenProps {
 
 /** Tamaño de página de ambas listas; cada «Ver más» añade otra. */
 const PAGE = 5;
+
+/** Sin tildes y en minúsculas: «Anular» casa con «anular», «AGO» con «ago». */
+const norm = (v: string) => v.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 /** «Pico 41°N 3°O» a partir del pico global (solo entradas autogeneradas). */
 function fmtPeak(e: EclipseEntry): string | null {
@@ -61,6 +64,25 @@ export function EclipsesScreen({ activeEclipse, onSelectEclipse }: EclipsesScree
   // Elegir el más próximo (fila 0) equivale al modo automático; misma regla que getActiveEclipse
   const isManualSelection = activeEclipse.civilDate !== upcoming[0]?.civilDate;
 
+  const [query, setQuery] = useState('');
+  const tokens = norm(query.trim()).split(/\s+/).filter(Boolean);
+  /**
+   * Búsqueda sobre todo el rango que el motor expone (los horizontes capan dentro, ~8 años
+   * de próximos y ~25 de histórico). El campo es label localizado + civilDate ISO («Total ·
+   * 12 ago 2026 2026-08-12»), y cada palabra debe aparecer: «total 2027» cruza tipo Y año,
+   * que como substring única no casaría. Dedupe por día civil: en la cola de ~6 h tras un
+   * eclipse las dos cachés pueden traer el mismo. null = sin query, no se calcula nada.
+   */
+  const seen = new Set<string>();
+  const results = tokens.length
+    ? [...upcomingEclipses(999), ...pastEclipses(999)].filter((e) => {
+        if (seen.has(e.civilDate)) return false;
+        seen.add(e.civilDate);
+        const hay = norm(`${e.label} ${e.civilDate}`);
+        return tokens.every((tok) => hay.includes(tok));
+      })
+    : null;
+
   /** Fila compartida por próximos e histórico; solo cambia la regla del modo automático. */
   const eclipseRow = (e: EclipseEntry, hasDivider: boolean, isPastRow: boolean) => {
     const on = e.civilDate === activeEclipse.civilDate;
@@ -86,47 +108,103 @@ export function EclipsesScreen({ activeEclipse, onSelectEclipse }: EclipsesScree
     );
   };
 
+  /** Filas del histórico con cabecera al cambiar de año: 25 años de lista piden ancla. */
+  const pastRows = past.flatMap((e, i) => {
+    const year = e.civilDate.slice(0, 4);
+    const header =
+      year !== past[i - 1]?.civilDate.slice(0, 4)
+        ? [
+            <Text key={`y-${year}`} style={s.yearHeader}>
+              {year}
+            </Text>,
+          ]
+        : [];
+    return [...header, eclipseRow(e, i < past.length - 1, true)];
+  });
+
   return (
     <View style={s.root}>
       <Text style={[s.title, { paddingTop: insets.top + 14 }]}>{t('eclipses.title')}</Text>
-      <ScrollView style={s.body} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 22, paddingBottom: 36 }}>
-        <View>
-          <Text style={s.section}>{t('settings.upcoming')}</Text>
-          <View style={s.card}>
-            {upcoming.map((e, i) => eclipseRow(e, i < upcoming.length - 1, false))}
-            {hasMoreFuture && (
-              <Pressable
-                style={s.moreBtn}
-                onPress={() => setFutureCount((n) => n + PAGE)}
-                accessibilityRole="button"
-                accessibilityLabel={t('settings.more')}
-              >
-                <Text style={s.moreBtnTxt}>{t('settings.more')}</Text>
-              </Pressable>
-            )}
+      <View style={s.searchRow}>
+        <TextInput
+          style={s.searchInput}
+          placeholder={t('eclipses.search')}
+          placeholderTextColor={C.dim}
+          value={query}
+          onChangeText={setQuery}
+          // La caché de 25 años de histórico se paga al enfocar, no en el primer tecleo:
+          // el motor tarda varios frames la primera vez y pararía el teclado
+          onFocus={() => setTimeout(() => pastEclipses(999), 0)}
+          autoCorrect={false}
+          returnKeyType="search"
+        />
+        {query !== '' && (
+          <Pressable
+            style={s.searchClear}
+            onPress={() => setQuery('')}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t('eclipses.searchClear')}
+          >
+            <Text style={s.searchClearTxt}>✕</Text>
+          </Pressable>
+        )}
+      </View>
+      <ScrollView
+        style={s.body}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ gap: 22, paddingBottom: 36 }}
+      >
+        {results !== null ? (
+          <View>
+            <Text style={s.section}>{t('eclipses.results', { n: results.length })}</Text>
+            <View style={s.card}>
+              {results.length === 0 && <Text style={s.emptyTxt}>{t('eclipses.searchEmpty')}</Text>}
+              {results.map((e, i) => eclipseRow(e, i < results.length - 1, e.civilDate < todayKey))}
+            </View>
           </View>
-          <Text style={s.note}>
-            {t('settings.upcoming.note', { manual: isManualSelection ? t('settings.upcoming.noteManual') : '' })}
-          </Text>
-        </View>
+        ) : (
+          <>
+            <View>
+              <Text style={s.section}>{t('settings.upcoming')}</Text>
+              <View style={s.card}>
+                {upcoming.map((e, i) => eclipseRow(e, i < upcoming.length - 1, false))}
+                {hasMoreFuture && (
+                  <Pressable
+                    style={s.moreBtn}
+                    onPress={() => setFutureCount((n) => n + PAGE)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('settings.more')}
+                  >
+                    <Text style={s.moreBtnTxt}>{t('settings.more')}</Text>
+                  </Pressable>
+                )}
+              </View>
+              <Text style={s.note}>
+                {t('settings.upcoming.note', { manual: isManualSelection ? t('settings.upcoming.noteManual') : '' })}
+              </Text>
+            </View>
 
-        <View>
-          <Text style={s.section}>{t('settings.past')}</Text>
-          <View style={s.card}>
-            {past.map((e, i) => eclipseRow(e, i < past.length - 1, true))}
-            {(pastCount === 0 || hasMorePast) && (
-              <Pressable
-                style={[s.moreBtn, past.length === 0 && s.moreBtnFirst]}
-                onPress={() => setPastCount((n) => n + PAGE)}
-                accessibilityRole="button"
-                accessibilityLabel={pastCount === 0 ? t('settings.past.show') : t('settings.more')}
-              >
-                <Text style={s.moreBtnTxt}>{pastCount === 0 ? t('settings.past.show') : t('settings.more')}</Text>
-              </Pressable>
-            )}
-          </View>
-          {past.length > 0 && <Text style={s.note}>{t('settings.past.note')}</Text>}
-        </View>
+            <View>
+              <Text style={s.section}>{t('settings.past')}</Text>
+              <View style={s.card}>
+                {pastRows}
+                {(pastCount === 0 || hasMorePast) && (
+                  <Pressable
+                    style={[s.moreBtn, past.length === 0 && s.moreBtnFirst]}
+                    onPress={() => setPastCount((n) => n + PAGE)}
+                    accessibilityRole="button"
+                    accessibilityLabel={pastCount === 0 ? t('settings.past.show') : t('settings.more')}
+                  >
+                    <Text style={s.moreBtnTxt}>{pastCount === 0 ? t('settings.past.show') : t('settings.more')}</Text>
+                  </Pressable>
+                )}
+              </View>
+              {past.length > 0 && <Text style={s.note}>{t('settings.past.note')}</Text>}
+            </View>
+          </>
+        )}
       </ScrollView>
     </View>
   );
@@ -143,6 +221,33 @@ const s = StyleSheet.create({
     paddingBottom: 8,
   },
   body: { flex: 1, paddingHorizontal: 24, paddingTop: 8 },
+  searchRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingBottom: 6 },
+  searchInput: {
+    flex: 1,
+    backgroundColor: C.surface,
+    color: C.text,
+    borderRadius: 12,
+    padding: 13,
+    // Hueco del ✕ superpuesto: sin él, el final del texto queda debajo del botón
+    paddingRight: 40,
+    fontSize: 15,
+    fontFamily: F.medium,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  /** Encima del extremo derecho del input, no al lado: el campo conserva todo el ancho */
+  searchClear: { position: 'absolute', right: 32, padding: 8 },
+  searchClearTxt: { fontFamily: F.bold, fontSize: 14, color: C.dim },
+  yearHeader: {
+    fontFamily: F.semibold,
+    fontSize: 10,
+    letterSpacing: 2,
+    color: C.dim,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 2,
+  },
+  emptyTxt: { fontFamily: F.regular, fontSize: 13, color: C.dim, padding: 16 },
   section: { fontFamily: F.semibold, fontSize: 11, letterSpacing: 2.5, color: C.dim, marginBottom: 10 },
   card: {
     backgroundColor: C.surface,

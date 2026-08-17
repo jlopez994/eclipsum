@@ -19,6 +19,11 @@ const STEPS: { tab: I18nKey; title: I18nKey; bullets: I18nKey[] }[] = [
     bullets: ['tour.map.b1', 'tour.map.b2', 'tour.map.b3', 'tour.map.b4'],
   },
   {
+    tab: 'tab.eclipses',
+    title: 'tour.eclipses.title',
+    bullets: ['tour.eclipses.b1', 'tour.eclipses.b2', 'tour.eclipses.b3'],
+  },
+  {
     tab: 'tab.alerts',
     title: 'tour.alerts.title',
     bullets: ['tour.alerts.b1', 'tour.alerts.b2', 'tour.alerts.b3'],

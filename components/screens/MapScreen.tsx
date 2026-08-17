@@ -26,7 +26,7 @@ import { bandOf, getActiveEclipse } from '../../lib/eclipseCatalog';
 import { fmtDur, fmtHM } from '../../lib/format';
 import { fmtFixed1, t, type I18nKey } from '../../lib/i18n';
 import { bearingLabel, haversineKm, type TotalityDirection } from '../../lib/totality';
-import type { Sponsor } from '../../lib/firebase';
+import { track, type Sponsor } from '../../lib/firebase';
 import { cloudLevel, windyEclipseCloudsUrl } from '../../lib/weather';
 import { useSheet } from '../../hooks/useSheet';
 import { useTerrainHorizon } from '../../hooks/useHorizon';
@@ -106,6 +106,8 @@ export function MapScreen({
   const [sheetMin, setSheetMin] = useState(SHEET_MIN_FALLBACK);
   const [finderOpen, setFinderOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  /** Base de relieve del mapa; vive aquí y no en RealMap para sobrevivir a sus remounts */
+  const [terrainOn, setTerrainOn] = useState(false);
 
   /**
    * Tocar cualquier control de la app cierra el globo del mapa. Va en la fase de captura
@@ -254,8 +256,37 @@ export function MapScreen({
         key={`${activeEclipseMeta.id}${bandOf(activeEclipseMeta) ? ':band' : ''}`}
         spot={{ ...spotCoords, label: place }}
         here={hereCoords ? { ...hereCoords, label: hereLabel ?? t('map.you') } : null}
+        terrain={terrainOn}
         onSelectPoint={onSelectMapPoint}
       />
+
+      {/* Conmutador de relieve: encima del botón GPS (o en su hueco si no hay GPS) */}
+      <Pressable
+        style={[
+          s.terrainBtn,
+          { bottom: sheetMin + 14 + (gpsCoords ? 54 : 0) },
+          terrainOn && s.terrainBtnOn,
+        ]}
+        onPress={() => {
+          mapRef.current?.closePopup();
+          setTerrainOn((v) => !v);
+        }}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityState={{ selected: terrainOn }}
+        accessibilityLabel={t('map.terrain')}
+      >
+        <Svg
+          width={20}
+          height={20}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={terrainOn ? C.corona : C.text}
+          strokeWidth={2}
+        >
+          <Path d="M3 18 L9 8 L13 13 L16 9 L21 18 Z" strokeLinejoin="round" />
+        </Svg>
+      </Pressable>
 
       {/* Botón GPS: recentra el mapa en la posición actual */}
       {gpsCoords && (
@@ -293,6 +324,25 @@ export function MapScreen({
               </Text>
               <Text style={s.chipChevron}>▾</Text>
             </Pressable>
+            {/* Qué eclipse está activo, siempre a la vista; tocarlo abre «Eclipses desde
+                aquí». El enlace del fondo de la hoja sigue, pero ya no es la única entrada.
+                El año solo cuando no es el corriente: «21 AGO» de un histórico engañaría. */}
+            {onSelectEclipseDay && (
+              <Pressable
+                style={s.chipDate}
+                onPress={() => setHistoryOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel={t('map.eclipseChip.a11y', { label: activeEclipseMeta.label })}
+              >
+                <Text style={s.chipDateText}>
+                  {activeEclipseMeta.shortDateLabel}
+                  {activeEclipseMeta.civilDate.slice(0, 4) !== String(now.getFullYear())
+                    ? ` ${activeEclipseMeta.civilDate.slice(0, 4)}`
+                    : ''}
+                </Text>
+                <Text style={s.chipChevron}>▾</Text>
+              </Pressable>
+            )}
           </View>
           {/* La brújula abre el visor directamente. El panel intermedio que había aquí solo
               repetía la altura del sol —que ya está en el diagrama de la hoja— y metía un
@@ -371,6 +421,14 @@ export function MapScreen({
           sponsor={sponsor}
           glassesUrl={glassesUrl}
           onShowHistory={onSelectEclipseDay ? () => setHistoryOpen(true) : undefined}
+          // Panorama 3D del puesto (PeakFinder, web): mirando al azimut del máximo
+          onOpenPanorama={() => {
+            track('panorama_open');
+            const azi = maxEvent ? Math.round(maxEvent.azimuth) : 180;
+            Linking.openURL(
+              `https://www.peakfinder.com/?lat=${spotCoords.lat.toFixed(5)}&lng=${spotCoords.lon.toFixed(5)}&azi=${azi}`,
+            ).catch(() => {});
+          }}
         />
       </Animated.View>
       </Animated.View>
@@ -418,12 +476,29 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 2,
   },
+  terrainBtn: {
+    position: 'absolute',
+    right: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(21,21,30,0.9)',
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  terrainBtnOn: { borderColor: 'rgba(255,184,77,0.5)' },
   topOverlay: { position: 'absolute', left: 0, right: 0, gap: 12, zIndex: 2 },
   chipsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
+    // Con nombres largos el grupo llena el hueco: sin este aire el chip de fecha queda
+    // pegado a la brújula y su hitSlop roba los toques
+    gap: 12,
   },
   chipGroup: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1, minWidth: 0 },
   chipLocation: {
@@ -439,6 +514,16 @@ const s = StyleSheet.create({
   },
   chipText: { fontFamily: F.semibold, fontSize: 13, color: C.text, flexShrink: 1 },
   chipChevron: { fontFamily: F.semibold, fontSize: 12, color: C.dim, marginLeft: 2 },
+  /** No encoge: ante estrechez cede el nombre del lugar, que ya trae numberOfLines */
+  chipDate: {
+    ...CARD,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 36,
+    paddingHorizontal: 12,
+  },
+  chipDateText: { fontFamily: F.bold, fontSize: 13, color: C.corona, letterSpacing: 0.5 },
   sheet: {
     position: 'absolute',
     left: 0,

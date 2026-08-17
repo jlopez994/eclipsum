@@ -18,6 +18,8 @@ interface MapPoint {
 interface RealMapProps {
   spot: MapPoint;
   here: MapPoint | null;
+  /** Base de relieve (hillshade) en vez de la base oscura lisa */
+  terrain: boolean;
   /** Punto tocado en el mapa elegido como puesto de observación */
   onSelectPoint: (p: { lat: number; lon: number }) => void;
 }
@@ -87,7 +89,7 @@ function tapInfo(lat: number, lon: number): TapInfo {
  * Los tiles sí requieren red; la librería ya no depende de ningún CDN.
  */
 const RealMapInner = forwardRef<RealMapHandle, RealMapProps>(function RealMap(
-  { spot, here, onSelectPoint }: RealMapProps,
+  { spot, here, terrain, onSelectPoint }: RealMapProps,
   ref,
 ) {
   const webRef = useRef<WebView>(null);
@@ -121,6 +123,13 @@ const RealMapInner = forwardRef<RealMapHandle, RealMapProps>(function RealMap(
     // reinyectarían el mapa continuamente
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, spot.lat, spot.lon, spot.label, here?.lat, here?.lon, here?.label]);
+
+  // La base de relieve se inyecta (no va horneada en el HTML): así sobrevive al remount
+  // por cambio de eclipse — el padre conserva el estado y lo reaplica al cargar
+  useEffect(() => {
+    if (!ready) return;
+    webRef.current?.injectJavaScript(`window.eclipsumSetTerrain && window.eclipsumSetTerrain(${terrain}); true;`);
+  }, [ready, terrain]);
 
   const onMessage = (e: WebViewMessageEvent) => {
     try {
@@ -169,6 +178,7 @@ export const RealMap = memo(
   RealMapInner,
   (prev, next) =>
     prev.onSelectPoint === next.onSelectPoint &&
+    prev.terrain === next.terrain &&
     sameMapPoint(prev.spot, next.spot) &&
     sameMapPoint(prev.here, next.here),
 );
@@ -213,10 +223,24 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
 <script>
   var D = ${data};
   var map = L.map('map', { zoomControl: false, attributionControl: true });
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  var baseDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     maxZoom: 18,
     attribution: '&copy; OSM &copy; CARTO',
   }).addTo(map);
+  // Modo relieve: hillshade oscuro de Esri (sin API key) + solo-etiquetas de Carto encima.
+  // maxNativeZoom 15: más cerca Esri ya no sirve teselas y Leaflet sobreamplía las últimas.
+  var terrainBase = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade_Dark/MapServer/tile/{z}/{y}/{x}',
+    { maxNativeZoom: 15, maxZoom: 18, zIndex: 1, attribution: '&copy; Esri' }
+  );
+  var terrainLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
+    // Atribución propia: en modo relieve la base oscura (que la traía) no está en el mapa
+    maxZoom: 18, zIndex: 2, attribution: '&copy; OSM &copy; CARTO',
+  });
+  window.eclipsumSetTerrain = function (on) {
+    if (on) { map.removeLayer(baseDark); terrainBase.addTo(map); terrainLabels.addTo(map); }
+    else { map.removeLayer(terrainBase); map.removeLayer(terrainLabels); baseDark.addTo(map); }
+  };
 
   if (D.polygon) {
     // Marca fija y tenue, sin interacción: el tap pasa limpio al mapa (popup)

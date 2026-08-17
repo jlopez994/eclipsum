@@ -5,6 +5,7 @@ import type { TerrainVerdict } from '../../lib/horizon';
 import { fmtFixed1, t, type I18nKey } from '../../lib/i18n';
 import { track, type Sponsor } from '../../lib/firebase';
 import { HorizonDiagram } from './HorizonDiagram';
+import { TerrainProfile } from './TerrainProfile';
 import { C, EVENT_ACCENT, F } from '../theme';
 
 const IGN_URL = 'https://eclipses.ign.es/como-observar-eclipses.html';
@@ -25,6 +26,8 @@ interface SheetDetailProps {
   onShowHistory?: () => void;
   /** Horizonte del terreno hacia el sol; null = cargando o sin dato (no se pinta nada) */
   terrain?: TerrainVerdict | null;
+  /** Abre el panorama 3D del puesto (PeakFinder) en el navegador */
+  onOpenPanorama?: () => void;
 }
 
 /**
@@ -43,6 +46,7 @@ export function SheetDetail({
   glassesUrl,
   onShowHistory,
   terrain,
+  onOpenPanorama,
 }: SheetDetailProps) {
   const maxEvent = eventAt(eclipse, 'MAX');
   // Cronología con el ocaso intercalado; los contactos bajo el horizonte no se ven
@@ -109,6 +113,19 @@ export function SheetDetail({
                 })}
               </Text>
             ))}
+          {/* La silueta pinta el mismo perfil del veredicto: el monte del aviso, visible */}
+          {terrain?.profile && terrain.profile.length > 1 && (
+            <TerrainProfile
+              points={terrain.profile}
+              sunAltDeg={terrain.sunAltDeg}
+              horizonDeg={terrain.horizonDeg}
+            />
+          )}
+          {onOpenPanorama && (
+            <Pressable onPress={onOpenPanorama} hitSlop={8} accessibilityRole="link">
+              <Text style={s.historyLink}>{t('map.panorama')}</Text>
+            </Pressable>
+          )}
         </>
       )}
       {/* Cierre de la cronología: cuándo mirar ya está resuelto arriba; aquí, cómo mirar */}

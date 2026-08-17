@@ -238,6 +238,7 @@ export function SpotSelector({
       const lo = parseFloat(m[2]);
       if (Math.abs(la) <= 90 && Math.abs(lo) <= 180) {
         onSelect({ name: q, lat: la, lon: lo, origin: 'manual' });
+        setQuery('');
         onClose();
         return;
       }
@@ -345,10 +346,11 @@ export function SpotSelector({
 }
 
 const s = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
+  // Velo ligero y panel a C.surface con algo de aire: el mapa se intuye detrás
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
   panel: {
     maxHeight: '78%',
-    backgroundColor: C.surface,
+    backgroundColor: 'rgba(21,21,30,0.92)',
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
     borderWidth: 1,

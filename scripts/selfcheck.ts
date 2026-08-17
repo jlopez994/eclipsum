@@ -29,7 +29,7 @@ import {
   upcomingEclipses,
 } from '../lib/eclipseCatalog';
 import { cloudCoverAt } from '../lib/weather';
-import { horizonAngleDeg, SAMPLE_DISTANCES_KM, terrainVerdict } from '../lib/horizon';
+import { apparentAngleDeg, horizonAngleDeg, profileAngles, SAMPLE_DISTANCES_KM, terrainVerdict } from '../lib/horizon';
 import { eclipsesFromSpot } from '../lib/spotEclipses';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
 import type { Spot } from '../lib/spots';
@@ -179,6 +179,18 @@ async function main() {
     horizonAngleDeg(0, [{ distKm: 1, elevM: NaN }, { distKm: 2, elevM: -50 }]),
     0,
     'Terreno: NaN del API ignorado',
+  );
+  // Silueta: mismo cálculo por muestra que el máximo del horizonte, y sin las vacías
+  assert.ok(
+    Math.abs(apparentAngleDeg(200, 3, 700) - horizonAngleDeg(200, [{ distKm: 3, elevM: 700 }])) < 1e-9,
+    'Silueta: el ángulo por muestra coincide con el horizonte de una sola muestra',
+  );
+  const profElev = SAMPLE_DISTANCES_KM.map((_, i) => (i === 3 ? NaN : 50));
+  const prof = profileAngles({ obsElevM: 0, elevM: profElev });
+  assert.equal(prof.length, SAMPLE_DISTANCES_KM.length - 1, 'Silueta: muestras sin dato fuera');
+  assert.ok(
+    prof.every((p, i) => i === 0 || p.angleDeg < prof[i - 1].angleDeg),
+    'Silueta: misma loma cada vez más lejos → ángulo aparente decreciente',
   );
   // Veredicto: cada contacto contra el terreno de SU azimut — C1 con el sol a 2° tras
   // un terreno de 5° hacia su rumbo → posiblemente oculto, aunque hacia el máximo el

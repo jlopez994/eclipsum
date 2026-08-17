@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
 import { eventAt, type LocalEclipse } from '../lib/eclipse';
-import { terrainHorizonDeg, terrainVerdict, type EventTerrain, type TerrainVerdict } from '../lib/horizon';
+import {
+  profileAngles,
+  terrainHorizonDeg,
+  terrainProfile,
+  terrainVerdict,
+  type EventTerrain,
+  type TerrainVerdict,
+} from '../lib/horizon';
 
 /**
  * Horizonte del terreno hacia el sol para el puesto pintado: perfil de elevaciones
@@ -24,18 +31,24 @@ export function useTerrainHorizon(
     // sol se corre hasta ~30° de rumbo. La caché por azimut redondeado deduplica de sobra
     // (C2/C3 suelen caer en el perfil del máximo) y todo va en paralelo.
     const visible = eclipse.events.filter((e) => e.altitude > 0);
-    void Promise.all(
-      visible.map((e) =>
-        terrainHorizonDeg(spot.lat, spot.lon, e.azimuth).then(
-          (deg): EventTerrain | null =>
-            deg === null ? null : { key: e.key, altitude: e.altitude, horizonDeg: deg },
+    void Promise.all([
+      Promise.all(
+        visible.map((e) =>
+          terrainHorizonDeg(spot.lat, spot.lon, e.azimuth).then(
+            (deg): EventTerrain | null =>
+              deg === null ? null : { key: e.key, altitude: e.altitude, horizonDeg: deg },
+          ),
         ),
       ),
-    ).then((list) => {
+      // Perfil hacia el máximo para la silueta: misma promesa memoizada que su ángulo,
+      // así que no añade red
+      terrainProfile(spot.lat, spot.lon, max.azimuth),
+    ]).then(([list, prof]) => {
       if (cancelled) return;
       // Contacto sin dato (red caída a medias) queda fuera de la lista: mejor callar que
       // adivinar. Sin el del máximo, terrainVerdict devuelve null y no se pinta nada.
-      setVerdict(terrainVerdict(list.filter((x): x is EventTerrain => x !== null)));
+      const v = terrainVerdict(list.filter((x): x is EventTerrain => x !== null));
+      setVerdict(v && prof ? { ...v, profile: profileAngles(prof) } : v);
     });
     return () => {
       cancelled = true;

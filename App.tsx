@@ -287,9 +287,19 @@ function AppInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eclipse, permissions.notifications, ctx, prefs?.alertSound, prefs?.language, drill]);
 
+  /**
+   * Línea base del efecto de reubicación (más abajo). Tres estados: null = prefs sin
+   * cargar (su llegada NO es un cambio de eclipse); día ≠ activo = cambio de eclipse
+   * pendiente de evaluar; día = activo = al día.
+   */
+  const prevEclipseDayRef = useRef<string | null>(null);
+
   const selectSpot = useCallback(
     (spot: Spot) => {
       if (!prefs) return;
+      // Elegir un puesto a mano consume cualquier cambio de eclipse pendiente: esa
+      // elección es del usuario y el efecto de reubicación no debe deshacerla
+      prevEclipseDayRef.current = activeCatalog.civilDate;
       animateNextLayout();
       const recentSpots = spot.origin === 'gps' ? prefs.recentSpots : pushRecent(prefs.recentSpots, spot);
       onPrefsChange({ ...withContext(prefs, activeCatalog.civilDate, { spot }), recentSpots });
@@ -329,33 +339,54 @@ function AppInner() {
   }, [geo, selectSpot]);
 
   /**
-   * Puesto fuera de zona → lo movemos solos a la banda del eclipse elegido.
+   * Reubicación SOLO al cambiar de eclipse. Elegir uno en la pestaña Eclipses es decir
+   * «quiero ver ESTE»: si tu puesto no lo ve, el mapa se pinta en su banda con cifras
+   * reales y desde ahí se ajusta. Sin punto conocido (eclipse sin banda ni pico) no se
+   * toca nada.
    *
-   * Elegir un eclipse en Ajustes es decir «quiero ver ESTE», y quedarse mirando un aviso
-   * desde un sitio que no lo ve no lleva a ninguna parte: sin saber por dónde pasa, tampoco
-   * puedes buscar un puesto válido. Así el mapa se pinta siempre, con la banda a la vista y
-   * cifras reales, y desde ahí se ajusta.
+   * Un puesto buscado o tocado a mano que queda fuera NO se toca nunca: la pestaña Mapa
+   * pasa al aviso de fuera de zona, con las dos salidas (otro puesto dentro, o saltar al
+   * eclipse que sí se ve desde ahí). Antes este efecto también reubicaba la primera
+   * búsqueda fuera de banda —una por eclipse y sesión— y la segunda sí se respetaba: el
+   * mismo gesto hacía dos cosas distintas según cuántas veces lo repitieras.
    *
-   * Marcado por día civil: reubicar una sola vez por eclipse. Si vuelves a poner un puesto
-   * que no lo ve, es tu decisión y se respeta —queda el aviso de fuera de zona—; sin esto
-   * el efecto lo desharía a cada render. Sin punto conocido (eclipse sin banda ni pico) no
-   * se toca nada.
+   * Guardas de la línea base (prevEclipseDayRef, declarado junto a selectSpot):
+   * — Sin prefs no se toca: la selección persistida entra con la carga y tratarla como
+   *   cambio reubicaría en cada arranque un puesto fuera de banda dejado a propósito.
+   * — Sin puesto evaluable (localEclipse null: GPS pendiente, día recién sembrado) el
+   *   cambio queda PENDIENTE — el ref no avanza— y se evalúa cuando la siembra llegue;
+   *   si entre medias el usuario elige puesto a mano, selectSpot lo consume.
    */
-  const relocatedDayRef = useRef<string | null>(null);
-  const [relocatedDay, setRelocatedDay] = useState<string | null>(null);
+  /**
+   * Identidad del aviso por MUDANZA («día#n»), no por día civil: NoticeStack silencia el
+   * descarte por valor exacto, y una segunda reubicación del mismo eclipse (ida y vuelta
+   * por la tab con un puesto fuera puesto a mano entre medias) debe reabrirlo.
+   */
+  const relocSeq = useRef(0);
+  const [relocatedTag, setRelocatedTag] = useState<string | null>(null);
   useEffect(() => {
-    if (!outOfZone || relocatedDayRef.current === activeCatalog.civilDate) return;
+    if (!prefs) return;
+    if (prevEclipseDayRef.current === null) {
+      // Primera pasada con prefs: línea base, nunca un cambio que evaluar
+      prevEclipseDayRef.current = activeCatalog.civilDate;
+      return;
+    }
+    if (localEclipse === null) return;
+    const eclipseChanged = prevEclipseDayRef.current !== activeCatalog.civilDate;
+    prevEclipseDayRef.current = activeCatalog.civilDate;
+    if (!eclipseChanged || !outOfZone) return;
     const point = visiblePointFor(activeCatalog);
     if (!point) return;
-    relocatedDayRef.current = activeCatalog.civilDate;
-    setRelocatedDay(activeCatalog.civilDate);
+    relocSeq.current += 1;
+    setRelocatedTag(`${activeCatalog.civilDate}#${relocSeq.current}`);
     track('spot_relocated', { day: activeCatalog.civilDate });
     selectMapPoint(point);
-  }, [outOfZone, activeCatalog, selectMapPoint]);
+  }, [prefs, localEclipse, outOfZone, activeCatalog, selectMapPoint]);
 
   // El aviso pertenece al eclipse que provocó la mudanza: con otro activo no viene a cuento,
   // y comparar aquí evita tener que apagarlo con un efecto al cambiar de eclipse
-  const relocated = relocatedDay === activeCatalog.civilDate ? relocatedDay : null;
+  const relocated =
+    relocatedTag !== null && relocatedTag.startsWith(`${activeCatalog.civilDate}#`) ? relocatedTag : null;
 
   const demoEclipse = demoAt && eclipse ? buildDemoEclipse(eclipse, demoAt) : null;
   const activeEclipse = drill?.eclipse ?? demoEclipse ?? eclipse;
