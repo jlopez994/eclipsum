@@ -21,7 +21,6 @@ import {
   sunPosition,
   type LocalEclipse,
 } from '../../lib/eclipse';
-import type { CompassCalibration } from '../../lib/compassCalibration';
 import { bandOf, getActiveEclipse } from '../../lib/eclipseCatalog';
 import { fmtDur, fmtHM } from '../../lib/format';
 import { fmtFixed1, t, type I18nKey } from '../../lib/i18n';
@@ -74,10 +73,6 @@ interface MapScreenProps {
   glassesUrl?: string;
   /** Salta a otro eclipse (día civil) conservando el puesto pintado; abre «Eclipses desde aquí» */
   onSelectEclipseDay?: (day: string) => void;
-  /** Calibración solar de la brújula persistida; null = nunca calibrado */
-  compassCal: CompassCalibration | null;
-  /** Persiste una calibración recién medida en el visor */
-  onCalibrate: (cal: CompassCalibration) => void;
 }
 
 export function MapScreen({
@@ -98,8 +93,6 @@ export function MapScreen({
   sponsor,
   glassesUrl,
   onSelectEclipseDay,
-  compassCal,
-  onCalibrate,
 }: MapScreenProps) {
   const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
@@ -452,8 +445,6 @@ export function MapScreen({
           target={finderTarget}
           gps={gpsCoords}
           awayFromSpot={awayFromSpot}
-          calibration={compassCal}
-          onCalibrate={onCalibrate}
           onClose={() => setFinderOpen(false)}
         />
       )}

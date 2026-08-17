@@ -6,17 +6,18 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { DeviceMotion } from 'expo-sensors';
 import { useKeepAwake } from 'expo-keep-awake';
 import {
+  bearingOf,
   cameraBasis,
   fovFor,
   norm360,
   project,
+  shortDelta,
   skyVector,
   smoothBasis,
   smoothBearing,
   withCompassBearing,
   type CameraBasis,
 } from '../../lib/skyProjection';
-import { calibrate, isCalibrationFresh, type CompassCalibration } from '../../lib/compassCalibration';
 import { sunPosition } from '../../lib/eclipse';
 import { useHeading } from '../../hooks/useHeading';
 import { track } from '../../lib/firebase';
@@ -33,16 +34,18 @@ const MOTION_INTERVAL_MS = 50;
  */
 const MOTION_SMOOTHING = 0.18;
 /**
- * La brújula es el sensor MÁS ruidoso (±10-20°, peor cerca de metal) y `withCompassBearing`
- * mete su ruido en toda la escena, así que se filtra bastante más fuerte que la orientación.
+ * Filtro del OFFSET de guiñado, no del guiñado. La brújula es el sensor más ruidoso
+ * (±10-20°, peor cerca de metal) pero lo que mide —cuánto se aleja del norte el guiñado
+ * relativo del giroscopio— varía despacio, así que se puede filtrar muy fuerte: quita el
+ * ruido entero sin frenar el paneo, que sigue viniendo del giroscopio sin filtrar.
  */
-const HEADING_SMOOTHING = 0.06;
+const YAW_OFFSET_SMOOTHING = 0.06;
 /**
  * Filtro para cuando el sistema declara la brújula mal calibrada: casi congelada. Con más de
  * ~35° de error, seguir cada muestra sería perseguir ruido; así la guía queda estable y
  * derivando despacio, que es un error que el usuario puede corregir girando el móvil.
  */
-const HEADING_SMOOTHING_NOISY = 0.015;
+const YAW_OFFSET_SMOOTHING_NOISY = 0.015;
 /**
  * expo-sensors documenta `rotation` en GRADOS, pero algunas versiones han devuelto
  * radianes. En cuanto vemos una magnitud imposible en radianes (>2π) fijamos grados;
@@ -67,13 +70,6 @@ const COMPASS_MIN_ACCURACY = 2;
  * único que los sensores permiten prometer.
  */
 const AIM_TOLERANCE_DEG = 12;
-/**
- * Radio con calibración solar vigente: el término dominante (el magnetómetro) está medido
- * contra el sol real y compensado, así que el círculo puede prometer bastante más. No baja
- * de ~5°: la calibración se hizo centrando el sol «a ojo» y ese pulso, más la FOV estimada,
- * también tienen su error.
- */
-const AIM_TOLERANCE_CAL_DEG = 5;
 /**
  * Refresco del modo «sol ahora». El sol se mueve ~0,25°/min: a 30 s la marca queda siempre
  * a <0,15° de la posición real — muy por debajo de lo que la brújula deja distinguir.
@@ -113,10 +109,6 @@ interface SunFinderScreenProps {
    * null = estás prácticamente en tu puesto, no hay nada que aclarar.
    */
   awayFromSpot: { km: number; place: string } | null;
-  /** Última calibración solar guardada; la vigencia se reevalúa aquí, no en el llamante */
-  calibration: CompassCalibration | null;
-  /** Calibración recién medida contra el sol real, para persistir */
-  onCalibrate: (cal: CompassCalibration) => void;
   onClose: () => void;
 }
 
@@ -163,14 +155,7 @@ function Gate({ insets, primaryAction, onClose, children }: GateProps) {
  * El modo «sol ahora» permite además calibrar: centrando el sol real y pulsando, el error
  * de brújula queda medido y el círculo puede estrecharse (AIM_TOLERANCE_CAL_DEG).
  */
-export function SunFinderScreen({
-  target,
-  gps,
-  awayFromSpot,
-  calibration,
-  onCalibrate,
-  onClose,
-}: SunFinderScreenProps) {
+export function SunFinderScreen({ target, gps, awayFromSpot, onClose }: SunFinderScreenProps) {
   useKeepAwake();
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
@@ -180,8 +165,9 @@ export function SunFinderScreen({
   // cada muestra se acumule sobre la anterior en vez de recalcularse desde cero
   const [basis, setBasis] = useState<CameraBasis | null>(null);
   const basisRef = useRef<CameraBasis | null>(null);
-  const [heading, setHeading] = useState<number | null>(null);
-  const headingRef = useRef<number | null>(null);
+  // Cuánto hay que girar el guiñado del giroscopio para que apunte al norte real
+  const [yawOffset, setYawOffset] = useState<number | null>(null);
+  const yawOffsetRef = useRef<number | null>(null);
   const [headingAccuracy, setHeadingAccuracy] = useState<number | null>(null);
   const [sensorsOff, setSensorsOff] = useState(false);
   const degreeUnits = useRef(false);
@@ -237,16 +223,27 @@ export function SunFinderScreen({
     };
   }, [live]);
 
-  // Sin brújula el hook no emite nunca: el guiñado se queda con el de DeviceMotion
-  // (relativo, pero usable)
+  /**
+   * Filtro complementario. El giroscopio es rápido y sin ruido pero RELATIVO (deriva); la
+   * brújula es absoluta pero ruidosa y lenta. En vez de sustituir el guiñado por el de la
+   * brújula —que metía su ruido y su retardo en toda la escena—, la brújula solo corrige
+   * la diferencia entre ambos. Esa diferencia varía despacio, así que se filtra fuerte sin
+   * que la marca deje de seguir el paneo al instante.
+   *
+   * Sin brújula el hook no emite nunca: el guiñado se queda con el de DeviceMotion
+   * (relativo, pero usable).
+   */
   useHeading(live, (deg, acc) => {
+    const raw = basisRef.current;
+    // Aún no hay orientación: sin guiñado relativo no hay diferencia que medir
+    if (raw === null) return;
     // Brújula descalibrada (cargador, coche, altavoz): endurecemos el filtro en vez de
     // seguirla. Preferimos que la guía derive despacio a que dé bandazos — un error
     // constante se corrige girando; uno que salta hace la marca inservible.
-    const f = acc !== null && acc < COMPASS_MIN_ACCURACY ? HEADING_SMOOTHING_NOISY : HEADING_SMOOTHING;
-    const next = smoothBearing(headingRef.current, deg, f);
-    headingRef.current = next;
-    setHeading(next);
+    const f = acc !== null && acc < COMPASS_MIN_ACCURACY ? YAW_OFFSET_SMOOTHING_NOISY : YAW_OFFSET_SMOOTHING;
+    const next = smoothBearing(yawOffsetRef.current, shortDelta(bearingOf(raw.forward), deg), f);
+    yawOffsetRef.current = next;
+    setYawOffset(next);
     setHeadingAccuracy(acc);
   });
 
@@ -306,19 +303,12 @@ export function SunFinderScreen({
   }
 
   // --- Visor ---
-  // Vigencia reevaluada con cada muestra del sol (30 s): caduca sola en pantalla, sin
-  // temporizador dedicado, y con margen de sobra frente a un TTL de horas
-  const activeCal = isCalibrationFresh(calibration, sunNow.at, gps.lat, gps.lon) ? calibration : null;
-
-  // El compás manda en el rumbo (en Android el alpha de DeviceMotion es relativo), corregido
-  // con el offset solar ANTES de reanclar: la corrección es del SENSOR, no del objetivo,
-  // así que vale igual apuntando al hito del eclipse que al sol de ahora
+  // El guiñado del giroscopio, girado hasta el norte real. Mientras no haya llegado ninguna
+  // muestra de brújula se usa crudo: es relativo, pero la marca ya sigue bien el movimiento.
   const aimed =
-    basis === null
-      ? null
-      : heading === null
-        ? basis
-        : withCompassBearing(basis, norm360(heading + (activeCal?.offsetDeg ?? 0)));
+    basis === null || yawOffset === null
+      ? basis
+      : withCompassBearing(basis, norm360(bearingOf(basis.forward) + yawOffset));
 
   const fov = fovFor(size.w, size.h);
   const shot =
@@ -327,52 +317,18 @@ export function SunFinderScreen({
   // Normalizado (−1..1, y hacia arriba) → píxeles (y hacia abajo)
   const markerX = shot ? size.w / 2 + (shot.x * size.w) / 2 : 0;
   const markerY = shot ? size.h / 2 - (shot.y * size.h) / 2 : 0;
-  const tolDeg = activeCal ? AIM_TOLERANCE_CAL_DEG : AIM_TOLERANCE_DEG;
-  // El círculo mide la tolerancia REAL vigente (12° a pelo, 5° con calibración solar), no un
-  // tamaño bonito: proyectar tolDeg con la misma escala que la marca. Así crece en pantallas
-  // anchas y con FOV estrecha, y lo que se le pide al usuario es apuntar a una zona — no
-  // clavar un punto que los sensores no dan. El suelo visual baja con calibración: con los
-  // 44 px de siempre el círculo apenas encogería y la precisión ganada no se vería.
+  // El círculo mide la tolerancia REAL (±12°), no un tamaño bonito: se proyecta con la misma
+  // escala que la marca, así que crece en pantallas anchas y con FOV estrecha. Lo que se le
+  // pide al usuario es apuntar a una zona, no clavar un punto que los sensores no dan.
   const markerR = Math.max(
-    activeCal ? 26 : 44,
+    44,
     Math.min(
       120,
-      ((size.w / 2) * Math.tan((tolDeg * Math.PI) / 180)) /
+      ((size.w / 2) * Math.tan((AIM_TOLERANCE_DEG * Math.PI) / 180)) /
         Math.tan((fov.horizontalDeg * Math.PI) / 360),
     ),
   );
   const noisyCompass = headingAccuracy !== null && headingAccuracy < COMPASS_MIN_ACCURACY;
-
-  // «Centrar en el sol»: solo con el sol REAL a la vista (modo live y dentro del encuadre)
-  // y con brújula — sin ella no hay rumbo que corregir. Gate Y medición van contra la base
-  // reanclada a la brújula CRUDA, sin el offset vigente: recalibrar sustituye, no acumula.
-  // El gate NO puede derivar de `shot` (que lleva el offset): una calibración pasada muy
-  // mala sacaría la marca del encuadre justo cuando el usuario apunta bien al sol real, y
-  // el botón para arreglarla no aparecería hasta que caducase sola (2 h / 1 km).
-  const rawAimed = basis !== null && heading !== null ? withCompassBearing(basis, heading) : null;
-  const rawShot =
-    rawAimed !== null && size.w > 0
-      ? project(skyVector(sunNow.azimuthDeg, sunNow.altitudeDeg), rawAimed, fov)
-      : null;
-  const canCalibrate = showNow && rawShot?.inFrame === true;
-  const handleCalibrate = () => {
-    if (rawAimed === null) return;
-    const cal = calibrate(
-      sunNow.azimuthDeg,
-      sunNow.altitudeDeg,
-      rawAimed,
-      fov.verticalDeg,
-      sunNow.at,
-      gps.lat,
-      gps.lon,
-    );
-    // null = por cabeceo el sol no podía estar encuadrado (p. ej. mirando al suelo con la
-    // brújula mintiendo en el azimut): mejor sin calibrar que calibrado con basura
-    if (cal) {
-      track('sunfinder_calibrated');
-      onCalibrate(cal);
-    }
-  };
 
   // Alternar hacia «sol ahora» exige sol sobre el horizonte: si no, se aterrizaría en la
   // pantalla de «es de noche» sin camino de vuelta al hito
@@ -403,8 +359,8 @@ export function SunFinderScreen({
           </Svg>
           <View style={[s.markerLabel, { left: markerX - 60, top: markerY + markerR + 28 }]} pointerEvents="none">
             <Text style={s.markerLabelText}>{t('sun.marker')}</Text>
-            {/* Sutil a propósito: el círculo encogido ya es el aviso; esto solo le pone nombre */}
-            <Text style={s.markerApprox}>{activeCal ? t('sun.calibrated') : t('sun.approx')}</Text>
+            {/* El círculo ya dice el tamaño del error; esto solo le pone nombre */}
+            <Text style={s.markerApprox}>{t('sun.approx')}</Text>
           </View>
         </>
       )}
@@ -456,15 +412,6 @@ export function SunFinderScreen({
           <Text style={s.closeBtnText}>✕</Text>
         </Pressable>
       </View>
-
-      {/* Con el sol real encuadrado: céntralo en el círculo y pulsa — el error de brújula queda medido */}
-      {canCalibrate && (
-        <View style={[s.calWrap, { bottom: insets.bottom + 76 }]} pointerEvents="box-none">
-          <Pressable style={s.calBtn} onPress={handleCalibrate} hitSlop={8}>
-            <Text style={s.calBtnText}>{t('sun.calibrate.cta')}</Text>
-          </Pressable>
-        </View>
-      )}
 
       <View style={[s.bottom, { paddingBottom: insets.bottom + 16 }]} pointerEvents="none">
         {noisyCompass && <Text style={s.calibrate}>{t('sun.calibrate')}</Text>}
@@ -549,16 +496,6 @@ const s = StyleSheet.create({
   targetText: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1.2, color: C.text },
   targetSwap: { fontFamily: F.bold, fontSize: 12, color: C.dim },
   targetFromHere: { fontFamily: F.medium, fontSize: 10.5, lineHeight: 14, color: C.corona, marginTop: 2 },
-  calWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
-  calBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-    borderRadius: 99,
-    borderWidth: 1,
-    borderColor: 'rgba(255,184,77,0.6)',
-    backgroundColor: 'rgba(11,11,16,0.75)',
-  },
-  calBtnText: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1.4, color: C.corona },
   closeBtn: {
     width: 38,
     height: 38,

@@ -10,12 +10,6 @@ import {
   sunCoverage,
   sunPosition,
 } from '../lib/eclipse';
-import {
-  calibrate,
-  CALIBRATION_MAX_AGE_MS,
-  isCalibrationFresh,
-  type CompassCalibration,
-} from '../lib/compassCalibration';
 import { BAR_GAP, barLayout, SLIVER_MAX, SLIVER_MIN } from '../lib/eclipseBar';
 import {
   bandOf,
@@ -51,6 +45,7 @@ import {
   fovFor,
   norm360,
   project,
+  shortDelta,
   skyVector,
   smoothBasis,
   smoothBearing,
@@ -619,30 +614,30 @@ async function main() {
     'sol ahora: de madrugada bajo el horizonte',
   );
 
-  // --- Calibración de brújula con el sol real ---
-  // Base sintética mirando a `bearing` con cabeceo `pitch`; calibrate solo lee forward
+  // --- Filtro complementario del guiñado (visor en vivo) ---
+  // El giroscopio da un guiñado RELATIVO; la brújula solo aporta el offset hasta el norte.
+  // Base sintética mirando a `bearing` con cabeceo `pitch`.
   const aimAt = (bearing: number, pitch: number): CameraBasis => ({
     forward: skyVector(bearing, pitch),
     right: skyVector(bearing + 90, 0),
     up: { x: 0, y: 0, z: 1 },
   });
-  const vFov = fovFor(1080, 1920).verticalDeg;
-  const calOk = calibrate(110, 40, aimAt(100, 40), vFov, 0, 41.65, -0.88);
-  assert.ok(calOk !== null && Math.abs(calOk.offsetDeg - 10) < 1e-9, 'calibración: brújula 10° corta → offset +10');
-  const calWrap = calibrate(350, 40, aimAt(10, 40), vFov, 0, 41.65, -0.88);
-  assert.ok(calWrap !== null && Math.abs(calWrap.offsetDeg + 20) < 1e-9, 'calibración: cruza el norte por el lado corto');
-  assert.equal(calibrate(110, -5, aimAt(100, -5), vFov, 0, 41.65, -0.88), null, 'calibración: sol bajo el horizonte → descartada');
-  // El cabeceo lo fija la gravedad: mirando al suelo el sol NO puede estar encuadrado
-  assert.equal(calibrate(110, 40, aimAt(100, -20), vFov, 0, 41.65, -0.88), null, 'calibración: cabeceo incompatible → descartada');
-
-  // Vigencia: caduca por edad, por alejarse ~1 km del punto o con el reloj hacia atrás
-  const cal0: CompassCalibration = { offsetDeg: 10, at: 0, lat: 41.65, lon: -0.88 };
-  assert.ok(isCalibrationFresh(cal0, 3_600_000, 41.65, -0.88), 'vigencia: 1 h y mismo sitio → vale');
-  assert.ok(isCalibrationFresh(cal0, 1000, 41.655, -0.88), 'vigencia: a ~500 m sigue valiendo');
-  assert.ok(!isCalibrationFresh(cal0, CALIBRATION_MAX_AGE_MS + 1, 41.65, -0.88), 'vigencia: pasadas 2 h caduca');
-  assert.ok(!isCalibrationFresh(cal0, 1000, 41.66, -0.88), 'vigencia: a ~1,1 km el campo local ya es otro');
-  assert.ok(!isCalibrationFresh(cal0, -1000, 41.65, -0.88), 'vigencia: reloj hacia atrás → recalibrar');
-  assert.ok(!isCalibrationFresh(null, 0, 41.65, -0.88), 'vigencia: sin calibración no hay nada vigente');
+  /** Un ciclo del filtro: mide el offset contra la brújula y devuelve el rumbo ya corregido. */
+  const settled = (relBearing: number, compassDeg: number, pitch = 20) => {
+    const raw = aimAt(relBearing, pitch);
+    const offset = smoothBearing(null, shortDelta(bearingOf(raw.forward), compassDeg), 0.06);
+    return bearingOf(withCompassBearing(raw, norm360(bearingOf(raw.forward) + offset)).forward);
+  };
+  assert.ok(Math.abs(settled(100, 110) - 110) < 1e-9, 'guiñado: el offset lleva el eje al rumbo de la brújula');
+  assert.ok(Math.abs(settled(10, 350) - 350) < 1e-9, 'guiñado: cruza el norte por el lado corto');
+  assert.ok(Math.abs(settled(200, 20) - 20) < 1e-9, 'guiñado: media vuelta de deriva también se corrige');
+  // La corrección gira SOLO alrededor de la vertical: el cabeceo lo fija la gravedad
+  const tilted = aimAt(100, 35);
+  const turned = withCompassBearing(tilted, norm360(bearingOf(tilted.forward) + 40));
+  assert.ok(Math.abs(turned.forward.z - tilted.forward.z) < 1e-12, 'guiñado: corregir el rumbo no toca el cabeceo');
+  // Sin muestra previa el offset entra tal cual: la marca queda anclada al norte desde la
+  // primera lectura de brújula, sin arrastrar mientras converge
+  assert.equal(smoothBearing(null, shortDelta(100, 110), 0.06), 10, 'guiñado: el primer offset entra entero');
 
   console.log('selfcheck OK — Zaragoza total', zgz.totalityDurationSec + 's, máximo', max.time.toISOString());
   console.log(
