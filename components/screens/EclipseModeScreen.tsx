@@ -21,9 +21,6 @@ import { CoronaHero, type HeroLook } from '../mode/CoronaHero';
 import { EclipseTimeline, totalSpanLabel } from '../mode/EclipseTimeline';
 import { C, CARD, F } from '../theme';
 
-const WARM = '#FFF7E6';
-const FAINT = '#55525F';
-
 /** Segundos a los que el crono pasa a dos dígitos gigantes: quitarse o ponerse las gafas
  *  se juega al segundo, y ahí sobra todo lo demás en pantalla. */
 const IMMINENT_C2_SEC = 60;
@@ -48,6 +45,24 @@ const AFTER_COLOR: Record<string, string> = {
   C3: C.danger,
   C4: C.corona,
 };
+
+interface HeroLookInputs {
+  finished: boolean;
+  inTotality: boolean;
+  imminent: boolean;
+  afterTotality: boolean;
+  started: boolean;
+}
+
+/** Fondo y animación del héroe según la fase del eclipse; primero que casa manda. */
+function heroLookFor({ finished, inTotality, imminent, afterTotality, started }: HeroLookInputs): HeroLook {
+  if (finished) return { sky: ['#12121C', '#08080C', '#000'], opacity: 0.3, scale: 1.35, motion: 'drift' };
+  if (inTotality) return { sky: ['#2E2560', '#0A0814', '#000'], opacity: 1, scale: 1.5, motion: 'breathe' };
+  if (imminent) return { sky: ['#241A4E', '#09070F', '#000'], opacity: 0.8, scale: 1.35, motion: 'breathe' };
+  if (afterTotality) return { sky: ['#2E1216', '#0B0710', '#000'], opacity: 0.55, scale: 1.35, motion: 'drift' };
+  if (started) return { sky: ['#2A1220', '#0B0710', '#000'], opacity: 0.62, scale: 1.35, motion: 'drift' };
+  return { sky: ['#1A1438', '#08070E', '#000'], opacity: 0.9, scale: 1.35, motion: 'drift' };
+}
 
 function Clock() {
   const [now, setNow] = useState(() => new Date());
@@ -85,15 +100,15 @@ function TotalityMark() {
             varias paradas imita el desenfoque gaussiano de la sombra CSS: un solo tramo
             cae en línea recta y se ve un borde duro donde el diseño no tiene ninguno. */}
         <RadialGradient id="totGlow" cx="50%" cy="50%" r="50%">
-          <Stop offset="43%" stopColor={WARM} stopOpacity="0" />
-          <Stop offset="48%" stopColor={WARM} stopOpacity="0.42" />
-          <Stop offset="62%" stopColor={WARM} stopOpacity="0.18" />
-          <Stop offset="80%" stopColor={WARM} stopOpacity="0.06" />
-          <Stop offset="100%" stopColor={WARM} stopOpacity="0" />
+          <Stop offset="43%" stopColor={C.warm} stopOpacity="0" />
+          <Stop offset="48%" stopColor={C.warm} stopOpacity="0.42" />
+          <Stop offset="62%" stopColor={C.warm} stopOpacity="0.18" />
+          <Stop offset="80%" stopColor={C.warm} stopOpacity="0.06" />
+          <Stop offset="100%" stopColor={C.warm} stopOpacity="0" />
         </RadialGradient>
       </Defs>
       <Circle cx={c} cy={c} r={c} fill="url(#totGlow)" />
-      <Circle cx={c} cy={c} r={TOT_RING / 2 - 1} stroke={WARM} strokeWidth={2} fill="none" />
+      <Circle cx={c} cy={c} r={TOT_RING / 2 - 1} stroke={C.warm} strokeWidth={2} fill="none" />
     </Svg>
   );
 }
@@ -147,17 +162,7 @@ export function EclipseModeScreen({
     (target?.key === 'C3' && toTargetSec <= IMMINENT_C3_SEC);
   const afterTotality = !!c3 && tms >= c3.time.getTime() && !finished;
 
-  const hero: HeroLook = finished
-    ? { sky: ['#12121C', '#08080C', '#000'], opacity: 0.3, scale: 1.35, motion: 'drift' }
-    : inTotality
-      ? { sky: ['#2E2560', '#0A0814', '#000'], opacity: 1, scale: 1.5, motion: 'breathe' }
-      : imminent
-        ? { sky: ['#241A4E', '#09070F', '#000'], opacity: 0.8, scale: 1.35, motion: 'breathe' }
-        : afterTotality
-          ? { sky: ['#2E1216', '#0B0710', '#000'], opacity: 0.55, scale: 1.35, motion: 'drift' }
-          : started
-            ? { sky: ['#2A1220', '#0B0710', '#000'], opacity: 0.62, scale: 1.35, motion: 'drift' }
-            : { sky: ['#1A1438', '#08070E', '#000'], opacity: 0.9, scale: 1.35, motion: 'drift' };
+  const hero: HeroLook = heroLookFor({ finished, inTotality, imminent, afterTotality, started });
 
   // El crono no puede desbordar en pantallas estrechas ni con formato «1d 01:23:42»
   const chronoSize = imminent
@@ -213,7 +218,7 @@ export function EclipseModeScreen({
           }
         >
           <View style={[s.close, inTotality && s.closeQuiet]}>
-            <Text style={[s.closeTxt, inTotality && { color: FAINT }]}>✕</Text>
+            <Text style={[s.closeTxt, inTotality && { color: C.faint }]}>✕</Text>
           </View>
         </Pressable>
       </View>
@@ -420,7 +425,7 @@ const s = StyleSheet.create({
   statusSub: { fontFamily: F.semibold, fontSize: 10.5, letterSpacing: 1.6, color: C.dim, flexShrink: 1 },
   totalityMark: { margin: -TOT_GLOW },
   totalityTitle: { fontFamily: F.bold, fontSize: 26, letterSpacing: 2, color: C.text },
-  totalitySub: { fontFamily: F.bold, fontSize: 12, letterSpacing: 2, color: WARM, marginTop: 4 },
+  totalitySub: { fontFamily: F.bold, fontSize: 12, letterSpacing: 2, color: C.warm, marginTop: 4 },
   kicker: {
     fontFamily: F.semibold,
     fontSize: 11,
@@ -455,7 +460,7 @@ const s = StyleSheet.create({
   doneTitle: { fontFamily: F.bold, fontSize: 52, letterSpacing: 1, color: C.text, marginTop: 12 },
   doneSub: { fontFamily: F.semibold, fontSize: 13, letterSpacing: 1.8, color: C.dim, marginTop: 12 },
   stats: { flexDirection: 'row', gap: 26, marginTop: 26 },
-  statKey: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 1.8, color: FAINT },
+  statKey: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 1.8, color: C.faint },
   statVal: { fontFamily: F.bold, fontSize: 20, color: C.text, marginTop: 4, fontVariant: ['tabular-nums'] },
   footer: { paddingHorizontal: 20 },
   jumpRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 6, marginTop: 14 },
@@ -498,7 +503,7 @@ const s = StyleSheet.create({
     fontFamily: F.medium,
     fontSize: 10,
     letterSpacing: 1.6,
-    color: FAINT,
+    color: C.faint,
     paddingTop: 12,
   },
 });

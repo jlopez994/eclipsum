@@ -64,6 +64,7 @@ export function useSpotData(active: { lat: number; lon: number } | null, eclipse
     return () => {
       cancelled = true;
     };
+    // active por campos: App lo reconstruye como objeto literal en cada render
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.lat, active?.lon, eclipse]);
 

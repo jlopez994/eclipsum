@@ -8,9 +8,6 @@ import { fmtDurCompact, fmtDurHM, fmtHM } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import { C, F } from '../theme';
 
-const WARM = '#FFF7E6';
-const FAINT = '#55525F';
-
 /** Duración total de la serie en ms; null si le faltan contactos. */
 function spanMs(c1?: EclipseEvent, c4?: EclipseEvent): number | null {
   return c1 && c4 ? c4.time.getTime() - c1.time.getTime() : null;
@@ -81,7 +78,7 @@ export function EclipseTimeline({ eclipse, now }: Props) {
       : totalityDone && !finished
         ? t('mode.bar.seen')
         : t('mode.bar.totality', { dur: fmtDurCompact(eclipse.totalityDurationSec ?? 0) });
-  const markColor = finished ? C.dim : totalityDone && !inTotality ? FAINT : WARM;
+  const markColor = finished ? C.dim : totalityDone && !inTotality ? C.faint : C.warm;
 
   const inMin = c1 && c2 ? Math.round((c2.time.getTime() - c1.time.getTime()) / 60_000) : spanMin;
   const outMin = c3 && c4 ? Math.round((c4.time.getTime() - c3.time.getTime()) / 60_000) : spanMin;
@@ -103,7 +100,7 @@ export function EclipseTimeline({ eclipse, now }: Props) {
             <Text style={[s.markTxt, { color: markColor }]} numberOfLines={1}>
               {markLabel}
             </Text>
-            <View style={[s.markTick, { backgroundColor: finished || totalityDone ? FAINT : WARM }]} />
+            <View style={[s.markTick, { backgroundColor: finished || totalityDone ? C.faint : C.warm }]} />
           </View>
         )}
       </View>
@@ -143,13 +140,13 @@ export function EclipseTimeline({ eclipse, now }: Props) {
           <Text style={[s.legendKey, !leftDone && { color: C.danger }]}>
             C1 {c1 ? fmtHM(c1.time) : '--:--'}
           </Text>
-          <Text style={[s.legendSub, leftDone && { color: FAINT }]}>{leftSub}</Text>
+          <Text style={[s.legendSub, leftDone && { color: C.faint }]}>{leftSub}</Text>
         </View>
         <View style={[s.legendCol, s.legendRight]}>
           <Text style={[s.legendKey, totalityDone && !finished && { color: C.danger }]}>
             C4 {c4 ? fmtHM(c4.time) : '--:--'}
           </Text>
-          <Text style={[s.legendSub, finished && { color: FAINT }]}>{rightSub}</Text>
+          <Text style={[s.legendSub, finished && { color: C.faint }]}>{rightSub}</Text>
         </View>
       </View>
     </View>
@@ -181,13 +178,13 @@ const s = StyleSheet.create({
     height: 18,
     borderRadius: 2,
     backgroundColor: '#FFFDF7',
-    shadowColor: WARM,
+    shadowColor: C.warm,
     shadowOpacity: 0.95,
     shadowRadius: 12,
   },
   sliverLive: { top: -6, height: 24, shadowRadius: 18 },
   sliverSpent: { backgroundColor: C.dim, opacity: 0.7, shadowOpacity: 0 },
-  sliverPast: { backgroundColor: WARM, opacity: 0.85, shadowOpacity: 0 },
+  sliverPast: { backgroundColor: C.warm, opacity: 0.85, shadowOpacity: 0 },
   veil: {
     position: 'absolute',
     top: -3,

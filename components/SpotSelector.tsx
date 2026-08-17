@@ -278,6 +278,7 @@ export function SpotSelector({
           <TextInput
             style={s.input}
             placeholder={t('spot.searchPlaceholder')}
+            accessibilityLabel={t('spot.searchPlaceholder')}
             placeholderTextColor={C.dim}
             value={query}
             onChangeText={setQuery}

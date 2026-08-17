@@ -56,6 +56,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 
 // Resultado determinista por origen: la app lo pide varias veces (pantalla + selector)
 const NEAREST_CACHE = new Map<string, Promise<TotalityDirection | null>>();
+const CACHE_MAX = 40;
 
 /**
  * Busca el punto de totalidad más cercano probando 8 rumbos:
@@ -70,6 +71,7 @@ export function findNearestTotality(lat: number, lon: number, now?: Date): Promi
   const key = `${searchStart.getTime()}:${lat.toFixed(3)},${lon.toFixed(3)}`;
   let p = NEAREST_CACHE.get(key);
   if (!p) {
+    if (NEAREST_CACHE.size >= CACHE_MAX) NEAREST_CACHE.clear(); // ponytail: reset simple, como spotEclipses.ts
     p = searchNearestTotality(lat, lon, searchStart, now);
     NEAREST_CACHE.set(key, p);
   }

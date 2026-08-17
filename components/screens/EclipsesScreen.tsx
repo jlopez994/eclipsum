@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { InteractionManager, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bandOf, pastEclipses, upcomingEclipses, type EclipseEntry } from '../../lib/eclipseCatalog';
 import { fmtRelativeDay } from '../../lib/format';
@@ -129,12 +129,13 @@ export function EclipsesScreen({ activeEclipse, onSelectEclipse }: EclipsesScree
         <TextInput
           style={s.searchInput}
           placeholder={t('eclipses.search')}
+          accessibilityLabel={t('eclipses.search')}
           placeholderTextColor={C.dim}
           value={query}
           onChangeText={setQuery}
           // La caché de 25 años de histórico se paga al enfocar, no en el primer tecleo:
-          // el motor tarda varios frames la primera vez y pararía el teclado
-          onFocus={() => setTimeout(() => pastEclipses(999), 0)}
+          // se espera a que acabe la animación del teclado para no trabarla con el cálculo
+          onFocus={() => InteractionManager.runAfterInteractions(() => pastEclipses(999))}
           autoCorrect={false}
           returnKeyType="search"
         />

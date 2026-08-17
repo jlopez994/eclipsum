@@ -12,6 +12,8 @@ export const C = {
   ok: '#5ECC8F',
   border: '#26263A',
   knobTrack: '#3A3A50',
+  warm: '#FFF7E6',
+  faint: '#55525F',
 } as const;
 
 /**

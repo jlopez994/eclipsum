@@ -188,6 +188,7 @@ async function loadOrFetchProfile(
       storageKey,
       // NaN no sobrevive a JSON.stringify (sale null): la vuelta ya lo reconvierte
       JSON.stringify({ o: profile.obsElevM, e: profile.elevM.map((v) => (Number.isFinite(v) ? v : null)) }),
+      // Caché no escribible: el perfil ya está calculado, solo se repetirá la red la próxima vez
     ).catch(() => {});
     return profile;
   } catch {

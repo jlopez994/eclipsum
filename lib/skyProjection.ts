@@ -73,9 +73,12 @@ function perpendicularTo(v: Vec3, axis: Vec3): Vec3 {
 }
 
 /** Grados normalizados a [0, 360). */
-export function norm360(deg: number): number {
-  return ((deg % 360) + 360) % 360;
+export function norm360(d: number): number {
+  return ((d % 360) + 360) % 360;
 }
+
+/** Delta con signo por el camino corto del círculo, en [−180, 180). */
+export const shortDelta = (fromDeg: number, toDeg: number) => ((toDeg - fromDeg + 540) % 360) - 180;
 
 /**
  * Media exponencial de un RUMBO, por el camino corto del círculo: interpolando los grados
@@ -84,8 +87,7 @@ export function norm360(deg: number): number {
  */
 export function smoothBearing(prev: number | null, next: number, f: number): number {
   if (prev === null) return norm360(next);
-  const delta = ((next - prev + 540) % 360) - 180;
-  return norm360(prev + delta * f);
+  return norm360(prev + shortDelta(prev, next) * f);
 }
 
 /**

@@ -263,7 +263,7 @@ function labelFields(
 /** Entrada de catálogo derivada de un eclipse global del motor (labels en el idioma activo). */
 export function entryFromGlobalEclipse(ev: GlobalSolarEclipseInfo): EclipseEntry {
   const peak = ev.peak.date;
-  const kind = ev.kind as string;
+  const kind = ev.kind;
   const civilDate = peak.toISOString().slice(0, 10);
   return {
     id: `${civilDate}-${kind}`,

@@ -396,7 +396,12 @@ function AppInner() {
   const relocated =
     relocatedTag !== null && relocatedTag.startsWith(`${activeCatalog.civilDate}#`) ? relocatedTag : null;
 
-  const demoEclipse = demoAt && eclipse ? buildDemoEclipse(eclipse, demoAt) : null;
+  // Memoizado: en DEMO el reloj tica cada segundo y sin esto se reconstruiría el LocalEclipse
+  // en cada tick, invalidando el barLayout memoizado de EclipseTimeline
+  const demoEclipse = useMemo(
+    () => (demoAt && eclipse ? buildDemoEclipse(eclipse, demoAt) : null),
+    [demoAt, eclipse],
+  );
   const activeEclipse = drill?.eclipse ?? demoEclipse ?? eclipse;
 
   // Modo eclipse: automático en ventana del evento, o demo forzada

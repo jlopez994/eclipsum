@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
@@ -120,6 +120,37 @@ interface SunFinderScreenProps {
   onClose: () => void;
 }
 
+interface GateProps {
+  insets: { top: number; bottom: number };
+  /** Botón principal opcional (aceptar aviso, pedir permiso); el de cerrar siempre está */
+  primaryAction?: { label: string; onPress: () => void };
+  onClose: () => void;
+  children: ReactNode;
+}
+
+/**
+ * Pantalla de bloqueo a pantalla completa: aviso de seguridad, permiso de cámara y sol bajo
+ * el horizonte comparten este mismo chrome (kicker + acciones); solo cambia el cuerpo.
+ */
+function Gate({ insets, primaryAction, onClose, children }: GateProps) {
+  return (
+    <View style={[s.gate, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}>
+      <Text style={s.gateKicker}>{t('sun.title')}</Text>
+      {children}
+      <View style={s.gateActions}>
+        {primaryAction && (
+          <Pressable style={s.gateCta} onPress={primaryAction.onPress}>
+            <Text style={s.gateCtaText}>{primaryAction.label}</Text>
+          </Pressable>
+        )}
+        <Pressable onPress={onClose} hitSlop={10}>
+          <Text style={s.gateDismiss}>{t('sun.close')}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 /**
  * Visor: dibuja sobre la cámara dónde estará el sol en el instante del eclipse — o dónde
  * está AHORA MISMO (modo «sol ahora», pill superior para alternar). Sirve para elegir
@@ -231,8 +262,11 @@ export function SunFinderScreen({
   // --- Aviso de seguridad: siempre antes de encender la cámara ---
   if (!accepted) {
     return (
-      <View style={[s.gate, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}>
-        <Text style={s.gateKicker}>{t('sun.title')}</Text>
+      <Gate
+        insets={insets}
+        onClose={onClose}
+        primaryAction={{ label: t('sun.warn.cta'), onPress: () => setAccepted(true) }}
+      >
         <Text style={s.gateTitle}>{t('sun.warn.title')}</Text>
         {/* Antes de nada, de qué cielo hablamos */}
         <Text style={s.gateFromHere}>{t('sun.fromHere')}</Text>
@@ -240,15 +274,7 @@ export function SunFinderScreen({
           <Text style={s.gateAway}>{t('sun.awayFromSpot', awayFromSpot)}</Text>
         )}
         <Text style={s.gateBody}>{t('sun.warn.body')}</Text>
-        <View style={s.gateActions}>
-          <Pressable style={s.gateCta} onPress={() => setAccepted(true)}>
-            <Text style={s.gateCtaText}>{t('sun.warn.cta')}</Text>
-          </Pressable>
-          <Pressable onPress={onClose} hitSlop={10}>
-            <Text style={s.gateDismiss}>{t('sun.close')}</Text>
-          </Pressable>
-        </View>
-      </View>
+      </Gate>
     );
   }
 
@@ -256,20 +282,13 @@ export function SunFinderScreen({
   if (!permission?.granted) {
     const denied = permission !== null && !permission.canAskAgain;
     return (
-      <View style={[s.gate, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}>
-        <Text style={s.gateKicker}>{t('sun.title')}</Text>
+      <Gate
+        insets={insets}
+        onClose={onClose}
+        primaryAction={denied ? undefined : { label: t('sun.perm.cta'), onPress: () => void requestPermission() }}
+      >
         <Text style={s.gateBody}>{denied ? t('sun.perm.denied') : t('sun.perm.body')}</Text>
-        <View style={s.gateActions}>
-          {!denied && (
-            <Pressable style={s.gateCta} onPress={() => void requestPermission()}>
-              <Text style={s.gateCtaText}>{t('sun.perm.cta')}</Text>
-            </Pressable>
-          )}
-          <Pressable onPress={onClose} hitSlop={10}>
-            <Text style={s.gateDismiss}>{t('sun.close')}</Text>
-          </Pressable>
-        </View>
-      </View>
+      </Gate>
     );
   }
 
@@ -280,15 +299,9 @@ export function SunFinderScreen({
   // única respuesta honesta — una marca bajo el suelo haría creer que se verá algo.
   if (shown.altitudeDeg <= 0) {
     return (
-      <View style={[s.gate, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}>
-        <Text style={s.gateKicker}>{t('sun.title')}</Text>
+      <Gate insets={insets} onClose={onClose}>
         <Text style={s.gateBody}>{showNow ? t('sun.below.now') : t('sun.below')}</Text>
-        <View style={s.gateActions}>
-          <Pressable onPress={onClose} hitSlop={10}>
-            <Text style={s.gateDismiss}>{t('sun.close')}</Text>
-          </Pressable>
-        </View>
-      </View>
+      </Gate>
     );
   }
 

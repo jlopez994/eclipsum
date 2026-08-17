@@ -109,6 +109,7 @@ export function MapScreen({
   /** Base de relieve del mapa; vive aquí y no en RealMap para sobrevivir a sus remounts */
   const [terrainOn, setTerrainOn] = useState(false);
 
+  const mapRef = useRef<RealMapHandle>(null);
   /**
    * Tocar cualquier control de la app cierra el globo del mapa. Va en la fase de captura
    * y devuelve false: observa el toque sin robárselo al Pressable que lo reciba.
@@ -117,7 +118,6 @@ export function MapScreen({
     mapRef.current?.closePopup();
     return false;
   };
-  const mapRef = useRef<RealMapHandle>(null);
 
   // Fundido al cambiar de puesto: los datos nuevos entran suaves en vez de saltar
   const fade = useRef(new Animated.Value(1)).current;
@@ -163,6 +163,8 @@ export function MapScreen({
     } catch {
       return null;
     }
+    // eclipse: el cuerpo no lo lee, pero computeLocalEclipse lee el eclipse activo global,
+    // así que hace falta como disparador para recalcular al cambiar de selección
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gpsCoords?.lat, gpsCoords?.lon, eclipse]);
 

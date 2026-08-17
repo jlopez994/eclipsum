@@ -8,7 +8,7 @@
  *
  * Sin imports de react-native: selfcheck lo ejecuta en Node.
  */
-import { bearingOf, type CameraBasis } from './skyProjection';
+import { bearingOf, shortDelta, type CameraBasis } from './skyProjection';
 import { haversineKm } from './totality';
 
 export interface CompassCalibration {
@@ -32,9 +32,6 @@ export const CALIBRATION_MAX_AGE_MS = 2 * 3_600_000;
  * puede empujar en la dirección equivocada.
  */
 export const CALIBRATION_MAX_DRIFT_KM = 1;
-
-/** Delta con signo por el camino corto del círculo, en [−180, 180). */
-const shortDelta = (fromDeg: number, toDeg: number) => ((toDeg - fromDeg + 540) % 360) - 180;
 
 /**
  * Mide la calibración al pulsar «centrar en el sol». `aimed` es la base ya filtrada y
