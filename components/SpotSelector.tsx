@@ -98,6 +98,8 @@ export function SpotSelector({
   const [searching, setSearching] = useState(false);
   /** Puesto sin visibilidad pendiente de confirmar; null = sin diálogo */
   const [confirmRow, setConfirmRow] = useState<Row | null>(null);
+  /** Punto desde el que SÍ se ve, ya resuelto; deja al diálogo ofrecer la salida */
+  const [visibleSpot, setVisibleSpot] = useState<Spot | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -105,6 +107,7 @@ export function SpotSelector({
       setConfirmRow(null);
       return;
     }
+    setVisibleSpot(null);
     let cancelled = false;
     (async () => {
       const ref = userGeo ?? FALLBACK_REF;
@@ -148,19 +151,29 @@ export function SpotSelector({
         next.push({ title: t('spot.myPosition'), rows: [gpsRow] });
       }
 
-      // Búsqueda de totalidad lanzada ya: su CPU se solapa con la red de nubes/geocoder.
-      // Si desde tu GPS no se ve el activo, buscar su banda desde ahí es trabajo inútil
-      // (el sondeo llega a 700 km; el eclipse puede estar en otro continente).
+      /**
+       * Referencia para sugerir: el puesto que el usuario está MIRANDO —el elegido, o el
+       * GPS mientras no haya elegido ninguno—. Antes mandaba el GPS, con dos efectos malos:
+       * sin permiso de ubicación no se sugería NADA (justo a quien más depende de elegir a
+       * mano), y con un puesto lejano elegido se razonaba sobre un sitio que no era el suyo.
+       */
+      const refSpot = activeSpot ?? (userGeo ? { lat: userGeo.lat, lon: userGeo.lon } : null);
+      const refEclipse = refSpot ? computeLocalEclipse(refSpot.lat, refSpot.lon) : null;
+      const refSees = refEclipse !== null && isActiveEclipse(refEclipse);
+
+      // Desde ahí SÍ se ve, pero en parcial: lo útil es la banda más cercana. Su CPU se
+      // solapa con la red de nubes/geocoder.
       const nearestP =
-        userGeo && gpsRow && gpsRow.visible && gpsRow.kind !== 'total'
-          ? findNearestTotality(userGeo.lat, userGeo.lon).catch(() => null)
+        refSpot && refSees && refEclipse.kind !== 'total'
+          ? findNearestTotality(refSpot.lat, refSpot.lon).catch(() => null)
           : Promise.resolve(null);
 
-      // El caso simétrico: desde aquí NO se ve nada. Entonces no sirve buscar la banda a
-      // 700 km —el eclipse puede estar en otro continente— y lo único útil es decir dónde
-      // se ve, aunque quede lejos. Sin esto la lista era un muro de «NO SE VE» sin salida.
-      const wherePpromise =
-        gpsRow && !gpsRow.visible ? findVisiblePoint(getActiveEclipse()).catch(() => null) : Promise.resolve(null);
+      // Desde ahí NO se ve (o no hay referencia todavía): buscar la banda a 700 km es
+      // trabajo inútil —el eclipse puede estar en otro continente— y lo único que sirve es
+      // decir dónde se ve, aunque quede lejos. Sin esto la lista era un muro de «NO SE VE».
+      const wherePpromise = !refSees
+        ? findVisiblePoint(getActiveEclipse()).catch(() => null)
+        : Promise.resolve(null);
 
       if (recentSpots.length > 0) {
         const recentRows: Row[] = [];
@@ -238,6 +251,7 @@ export function SpotSelector({
         if (whereRow.visible) {
           allForClouds.push(whereRow);
           next.splice(1, 0, { title: t('spot.whereVisible'), rows: [whereRow] });
+          setVisibleSpot(whereRow.selectValue);
           publish();
         }
       }
@@ -253,10 +267,12 @@ export function SpotSelector({
     return () => {
       cancelled = true;
     };
-    // userGeo por coordenadas: como objeto relanzaría toda la lista (motor + red) en cada
-    // render del padre
+    // userGeo y activeSpot por coordenadas: como objetos relanzarían toda la lista
+    // (motor + red) en cada render del padre. activeSpot entra porque decide qué sección
+    // se sugiere; en la práctica no cambia con el modal abierto, pero dejarlo fuera sería
+    // un cierre obsoleto esperando a que eso deje de ser cierto.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, userGeo?.lat, userGeo?.lon, gpsPlace, recentSpots, suggestedSpots]);
+  }, [visible, userGeo?.lat, userGeo?.lon, activeSpot?.lat, activeSpot?.lon, gpsPlace, recentSpots, suggestedSpots]);
 
   const applySearch = async () => {
     const q = query.trim();
@@ -310,6 +326,14 @@ export function SpotSelector({
   const confirmPick = () => {
     if (!confirmRow) return;
     onSelect(confirmRow.selectValue);
+    setConfirmRow(null);
+    onClose();
+  };
+
+  /** Salida útil del diálogo: en vez de solo advertir, lleva donde el eclipse sí se ve. */
+  const goWhereVisible = () => {
+    if (!visibleSpot) return;
+    onSelect(visibleSpot);
     setConfirmRow(null);
     onClose();
   };
@@ -402,8 +426,17 @@ export function SpotSelector({
                 date: dateLabelOf(getActiveEclipse()),
               })}
             </Text>
-            <Pressable style={s.confirmCta} onPress={confirmPick}>
-              <Text style={s.confirmCtaText}>{t('spot.unseen.confirm')}</Text>
+            {/* Principal la salida, no la insistencia: se abrió esto para ver el eclipse,
+                no para elegir un sitio desde el que no se ve */}
+            {visibleSpot !== null && (
+              <Pressable style={s.confirmCta} onPress={goWhereVisible}>
+                <Text style={s.confirmCtaText}>{t('spot.unseen.goVisible')}</Text>
+              </Pressable>
+            )}
+            <Pressable style={visibleSpot === null ? s.confirmCta : s.confirmGhost} onPress={confirmPick}>
+              <Text style={visibleSpot === null ? s.confirmCtaText : s.confirmGhostText}>
+                {t('spot.unseen.confirm')}
+              </Text>
             </Pressable>
             <Pressable style={s.confirmGhost} onPress={() => setConfirmRow(null)} hitSlop={8}>
               <Text style={s.confirmGhostText}>{t('spot.unseen.cancel')}</Text>

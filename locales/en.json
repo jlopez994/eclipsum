@@ -344,6 +344,7 @@
   "spot.visibleAt": "Visible · {km} km away",
   "spot.unseen.title": "NOT VISIBLE THERE",
   "spot.unseen.body": "The {date} eclipse is not visible from {place}. If you pick it, the map will have no figures to show.",
+  "spot.unseen.goVisible": "GO WHERE IT'S VISIBLE →",
   "spot.unseen.confirm": "PICK IT ANYWAY",
   "spot.unseen.cancel": "CANCEL",
   "month.0": "Jan",

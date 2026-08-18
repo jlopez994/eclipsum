@@ -344,6 +344,7 @@
   "spot.visibleAt": "Se ve · a {km} km",
   "spot.unseen.title": "AHÍ NO SE VE",
   "spot.unseen.body": "Desde {place} no se ve el eclipse del {date}. Si lo eliges, el mapa no tendrá cifras que enseñar.",
+  "spot.unseen.goVisible": "IR DONDE SÍ SE VE →",
   "spot.unseen.confirm": "ELEGIRLO IGUALMENTE",
   "spot.unseen.cancel": "CANCELAR",
   "month.0": "ene",
