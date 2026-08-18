@@ -3,7 +3,7 @@ import { StyleSheet } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { type BandSlice } from '../lib/bandGeo';
 import { computeLocalEclipse, eventAt, isActiveEclipse } from '../lib/eclipse';
-import { bandOf, getActiveEclipse } from '../lib/eclipseCatalog';
+import { bandOf, dateLabelOf, getActiveEclipse } from '../lib/eclipseCatalog';
 import { fmtDur, fmtHM } from '../lib/format';
 import { fmtFixed1, t } from '../lib/i18n';
 import { LEAFLET_CSS, LEAFLET_JS } from '../lib/leafletVendor';
@@ -60,7 +60,7 @@ function tapInfo(lat: number, lon: number): TapInfo {
         ...base,
         title: t('real.noEclipse'),
         color: C.dim,
-        lines: [t('real.nothingVisible', { date: active.shortDateLabel })],
+        lines: [t('real.nothingVisible', { date: dateLabelOf(active) })],
       };
     }
     const lines = [t('real.maxAt', { time: fmtHM(max.time) })];

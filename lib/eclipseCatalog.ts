@@ -58,6 +58,16 @@ export function visiblePointFor(e: EclipseEntry): { lat: number; lon: number } |
   return null;
 }
 
+/**
+ * Fecha corta para frases y chips: «25 DIC», con año SOLO cuando no es el año en curso.
+ * Sin año no hay ruido en el caso común (el eclipse de este año) y no hay ambigüedad al
+ * navegar el histórico, donde «25 DIC» a secas no dice de qué año habla.
+ */
+export function dateLabelOf(e: EclipseEntry, now: Date = new Date()): string {
+  const year = e.civilDate.slice(0, 4);
+  return year === String(now.getFullYear()) ? e.shortDateLabel : `${e.shortDateLabel} ${year}`;
+}
+
 export const ECLIPSES: EclipseEntry[] = [
   {
     id: '2026-08-12-iberia',

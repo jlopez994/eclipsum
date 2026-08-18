@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import {
   computeLocalEclipse,
   currentPhase,
+  eclipseDayOf,
   eclipseSpan,
   eventAt,
   isActiveEclipse,
@@ -21,7 +22,9 @@ import {
   setRemoteCatalog,
   setUserSelectedEclipseDay,
   upcomingEclipses,
+  visiblePointFor,
 } from '../lib/eclipseCatalog';
+import { findVisiblePoint } from '../lib/visiblePoint';
 import { cloudCoverAt } from '../lib/weather';
 import { apparentAngleDeg, horizonAngleDeg, profileAngles, SAMPLE_DISTANCES_KM, terrainVerdict } from '../lib/horizon';
 import { eclipsesFromSpot } from '../lib/spotEclipses';
@@ -638,6 +641,28 @@ async function main() {
   // Sin muestra previa el offset entra tal cual: la marca queda anclada al norte desde la
   // primera lectura de brújula, sin arrastrar mientras converge
   assert.equal(smoothBearing(null, shortDelta(100, 110), 0.06), 10, 'guiñado: el primer offset entra entero');
+
+  // --- Dónde ver un eclipse que no se ve desde el puesto ---
+  // Los parciales no traen banda ni punto de máximo: sin el barrido, la app se quedaba en
+  // «aquí no se ve» sin adónde llevar al usuario (~30 % de los eclipses navegables).
+  const partial = pastEclipses(999).find((e) => e.id === '2000-12-25-partial');
+  assert.ok(partial, 'histórico: el parcial de 2000-12-25 está en el catálogo');
+  assert.equal(visiblePointFor(partial!), null, 'parcial: ni banda ni punto de máximo');
+  const vp = await findVisiblePoint(partial!);
+  assert.ok(vp !== null, 'parcial: el barrido encuentra dónde se ve');
+  // Lo que de verdad importa: desde el punto hallado se ve ESE eclipse, no otro
+  assert.equal(
+    eclipseDayOf(computeLocalEclipse(vp!.lat, vp!.lon, 0, new Date(partial!.searchStart))),
+    partial!.civilDate,
+    'parcial: desde el punto hallado se ve ese mismo eclipse',
+  );
+  // Camino rápido intacto: con banda empaquetada el punto sale del catálogo, sin barrer nada
+  const bandEclipse = getEclipseById('2026-08-12-iberia')!;
+  assert.deepEqual(
+    await findVisiblePoint(bandEclipse),
+    visiblePointFor(bandEclipse),
+    'con banda: el punto sale del catálogo sin barrido',
+  );
 
   console.log('selfcheck OK — Zaragoza total', zgz.totalityDurationSec + 's, máximo', max.time.toISOString());
   console.log(

@@ -21,7 +21,7 @@ import {
   sunPosition,
   type LocalEclipse,
 } from '../../lib/eclipse';
-import { bandOf, getActiveEclipse } from '../../lib/eclipseCatalog';
+import { bandOf, getActiveEclipse, dateLabelOf } from '../../lib/eclipseCatalog';
 import { fmtDur, fmtHM } from '../../lib/format';
 import { fmtFixed1, t, type I18nKey } from '../../lib/i18n';
 import { bearingLabel, haversineKm, type TotalityDirection } from '../../lib/totality';
@@ -234,7 +234,7 @@ export function MapScreen({
           a11y: t('map.clouds.a11y', {
             level: t(`map.clouds.${level}.word` as I18nKey),
             pct: cloudPct,
-            date: activeEclipseMeta.shortDateLabel.toLowerCase(),
+            date: dateLabelOf(activeEclipseMeta, now).toLowerCase(),
           }),
         };
 
@@ -330,10 +330,7 @@ export function MapScreen({
                 accessibilityLabel={t('map.eclipseChip.a11y', { label: activeEclipseMeta.label })}
               >
                 <Text style={s.chipDateText}>
-                  {activeEclipseMeta.shortDateLabel}
-                  {activeEclipseMeta.civilDate.slice(0, 4) !== String(now.getFullYear())
-                    ? ` ${activeEclipseMeta.civilDate.slice(0, 4)}`
-                    : ''}
+                  {dateLabelOf(activeEclipseMeta, now)}
                 </Text>
                 <Text style={s.chipChevron}>▾</Text>
               </Pressable>
@@ -409,7 +406,7 @@ export function MapScreen({
         <SheetDetail
           eclipse={eclipse}
           place={place}
-          dateLabel={activeEclipseMeta.shortDateLabel}
+          dateLabel={dateLabelOf(activeEclipseMeta, now)}
           now={now}
           terrain={terrain}
           onOpenMaps={onOpenMaps}

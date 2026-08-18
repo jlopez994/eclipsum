@@ -19,7 +19,8 @@ import {
   shiftEclipse,
   type LocalEclipse,
 } from './lib/eclipse';
-import { eclipseForDay, getActiveEclipse, upcomingEclipses, visiblePointFor } from './lib/eclipseCatalog';
+import { dateLabelOf, eclipseForDay, getActiveEclipse, upcomingEclipses } from './lib/eclipseCatalog';
+import { findVisiblePoint } from './lib/visiblePoint';
 import { haversineKm } from './lib/totality';
 import { openInMaps } from './lib/maps';
 import { cleanPlaceLabel, DIVERGENCE_KM, REAL_PLACE_KM, sameCoords, type Spot } from './lib/spots';
@@ -383,12 +384,20 @@ function AppInner() {
     const eclipseChanged = prevEclipseDayRef.current !== activeCatalog.civilDate;
     prevEclipseDayRef.current = activeCatalog.civilDate;
     if (!eclipseChanged || !outOfZone) return;
-    const point = visiblePointFor(activeCatalog);
-    if (!point) return;
-    relocSeq.current += 1;
-    setRelocatedTag(`${activeCatalog.civilDate}#${relocSeq.current}`);
-    track('spot_relocated', { day: activeCatalog.civilDate });
-    selectMapPoint(point);
+    // Asíncrono porque en un parcial no hay banda ni punto de máximo y hay que barrer el
+    // globo (~1 s cediendo hilo). Hasta que resuelve se ve «aquí no se ve», que es la verdad.
+    let cancelled = false;
+    void findVisiblePoint(activeCatalog).then((point) => {
+      // Sin punto no hay adónde llevar a nadie: se queda el aviso con sus dos salidas
+      if (cancelled || !point) return;
+      relocSeq.current += 1;
+      setRelocatedTag(`${activeCatalog.civilDate}#${relocSeq.current}`);
+      track('spot_relocated', { day: activeCatalog.civilDate });
+      selectMapPoint(point);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [prefs, localEclipse, outOfZone, activeCatalog, selectMapPoint]);
 
   // El aviso pertenece al eclipse que provocó la mudanza: con otro activo no viene a cuento,
@@ -447,7 +456,7 @@ function AppInner() {
     outOfZone && chosenSpot ? (
       <OutOfZoneNotice
         place={cleanPlaceLabel(chosenSpot.name)}
-        date={activeCatalog.shortDateLabel}
+        date={dateLabelOf(activeCatalog, now)}
         otherLabel={otherEclipse?.label ?? null}
         onChoosePlace={() => setSelectorOpen(true)}
         // El puesto viaja con el salto: el contexto se guarda por día civil, y sin esto
@@ -617,7 +626,7 @@ function AppInner() {
                   : outOfZone && active
                     ? t('app.outOfZone', {
                         place: cleanPlaceLabel(active.place),
-                        date: activeCatalog.shortDateLabel,
+                        date: dateLabelOf(activeCatalog, now),
                       })
                     : t('app.chooseSpotFirst')}
               </Text>
