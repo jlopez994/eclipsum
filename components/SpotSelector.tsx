@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { computeLocalEclipse, eventAt, isActiveEclipse } from '../lib/eclipse';
+import { dateLabelOf, getActiveEclipse } from '../lib/eclipseCatalog';
+import { findVisiblePoint } from '../lib/visiblePoint';
 import { openInMaps } from '../lib/maps';
 import type { SuggestedSpot } from '../lib/firebase';
 import { cleanPlaceLabel, sameCoords, type Spot, type SpotOption } from '../lib/spots';
@@ -94,10 +96,15 @@ export function SpotSelector({
   const [sections, setSections] = useState<Section[] | null>(null);
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
+  /** Puesto sin visibilidad pendiente de confirmar; null = sin diálogo */
+  const [confirmRow, setConfirmRow] = useState<Row | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      setConfirmRow(null);
+      return;
+    }
     let cancelled = false;
     (async () => {
       const ref = userGeo ?? FALLBACK_REF;
@@ -148,6 +155,12 @@ export function SpotSelector({
         userGeo && gpsRow && gpsRow.visible && gpsRow.kind !== 'total'
           ? findNearestTotality(userGeo.lat, userGeo.lon).catch(() => null)
           : Promise.resolve(null);
+
+      // El caso simétrico: desde aquí NO se ve nada. Entonces no sirve buscar la banda a
+      // 700 km —el eclipse puede estar en otro continente— y lo único útil es decir dónde
+      // se ve, aunque quede lejos. Sin esto la lista era un muro de «NO SE VE» sin salida.
+      const wherePpromise =
+        gpsRow && !gpsRow.visible ? findVisiblePoint(getActiveEclipse()).catch(() => null) : Promise.resolve(null);
 
       if (recentSpots.length > 0) {
         const recentRows: Row[] = [];
@@ -212,6 +225,23 @@ export function SpotSelector({
         publish();
       }
 
+      const where = await wherePpromise;
+      if (where && !cancelled) {
+        const place = await localityName(where.lat, where.lon);
+        const km = Math.round(haversineKm(ref.lat, ref.lon, where.lat, where.lon));
+        const name = place ? t('spot.visibleFrom', { place }) : t('spot.visibleAt', { km });
+        // toRow calcula las circunstancias reales del punto (tipo, obscuración, máximo)
+        const whereRow = toRow({ name, lat: where.lat, lon: where.lon, origin: 'manual' }, ref);
+        // El punto sale de la geometría de la banda, no de la geografía: si en ese punto
+        // concreto el sol queda bajo el horizonte, la fila diría «aquí sí se ve» y saldría
+        // marcada NO SE VE. Antes de prometer nada, se comprueba.
+        if (whereRow.visible) {
+          allForClouds.push(whereRow);
+          next.splice(1, 0, { title: t('spot.whereVisible'), rows: [whereRow] });
+          publish();
+        }
+      }
+
       const nearCloudP = near
         ? fetchCloudCoverBatch([{ lat: near.lat, lon: near.lon }]).catch(() => [])
         : Promise.resolve([]);
@@ -263,8 +293,24 @@ export function SpotSelector({
     }
   };
 
+  /**
+   * Elegir un puesto que no ve el eclipse casi siempre es un descuido: la fila lo marca,
+   * pero el resultado —el mapa entero sustituido por «aquí no se ve»— es brusco de más
+   * para no preguntar. Se confirma antes en vez de explicarlo después.
+   */
   const pick = (row: Row) => {
+    if (!row.visible) {
+      setConfirmRow(row);
+      return;
+    }
     onSelect(row.selectValue);
+    onClose();
+  };
+
+  const confirmPick = () => {
+    if (!confirmRow) return;
+    onSelect(confirmRow.selectValue);
+    setConfirmRow(null);
     onClose();
   };
 
@@ -342,11 +388,66 @@ export function SpotSelector({
           ))}
         </ScrollView>
       </View>
+
+      {/* Confirmación sobre el propio selector: la app no usa diálogos del sistema, y este
+          no debe sacarte de la lista — cancelar te deja donde estabas, eligiendo. */}
+      {confirmRow !== null && (
+        <View style={s.confirmWrap}>
+          <Pressable style={s.confirmBackdrop} onPress={() => setConfirmRow(null)} />
+          <View style={s.confirmCard}>
+            <Text style={s.confirmTitle}>{t('spot.unseen.title')}</Text>
+            <Text style={s.confirmBody}>
+              {t('spot.unseen.body', {
+                place: confirmRow.name,
+                date: dateLabelOf(getActiveEclipse()),
+              })}
+            </Text>
+            <Pressable style={s.confirmCta} onPress={confirmPick}>
+              <Text style={s.confirmCtaText}>{t('spot.unseen.confirm')}</Text>
+            </Pressable>
+            <Pressable style={s.confirmGhost} onPress={() => setConfirmRow(null)} hitSlop={8}>
+              <Text style={s.confirmGhostText}>{t('spot.unseen.cancel')}</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
     </Modal>
   );
 }
 
 const s = StyleSheet.create({
+  confirmWrap: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  confirmBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)' },
+  confirmCard: {
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(255,107,94,0.45)',
+    borderRadius: 20,
+    padding: 20,
+    gap: 10,
+  },
+  confirmTitle: { fontFamily: F.bold, fontSize: 11, letterSpacing: 2.5, color: C.danger },
+  confirmBody: { fontFamily: F.regular, fontSize: 14, lineHeight: 20, color: C.text },
+  confirmCta: {
+    marginTop: 4,
+    alignItems: 'center',
+    paddingVertical: 13,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,184,77,0.45)',
+    backgroundColor: 'rgba(255,184,77,0.10)',
+  },
+  confirmCtaText: { fontFamily: F.bold, fontSize: 13, letterSpacing: 1.4, color: C.corona },
+  confirmGhost: { alignItems: 'center', paddingVertical: 11 },
+  confirmGhostText: { fontFamily: F.bold, fontSize: 12.5, letterSpacing: 1.4, color: C.dim },
   // Velo ligero y panel a C.surface con algo de aire: el mapa se intuye detrás
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
   panel: {
