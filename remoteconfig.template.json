@@ -58,14 +58,14 @@
     },
     "latest_beta_version_code": {
       "defaultValue": {
-        "value": "42"
+        "value": "43"
       },
       "description": "android.versionCode de la última beta (pre-release). Lo escribe release-apk. Solo lo leen quienes eligen el canal beta en Ajustes. 0 = sin beta anunciada.",
       "valueType": "STRING"
     },
     "latest_beta_apk_url": {
       "defaultValue": {
-        "value": "https://github.com/jlopez994/eclipsum/releases/download/b42/eclipsum.apk"
+        "value": "https://github.com/jlopez994/eclipsum/releases/download/b43/eclipsum.apk"
       },
       "description": "URL de la APK de la última beta (asset de su tag, no releases/latest). Lo escribe release-apk. Vacío = sin aviso de beta.",
       "valueType": "STRING"
