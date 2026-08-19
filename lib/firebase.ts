@@ -77,15 +77,6 @@ const MAX_SUGGESTED_SPOTS = 6;
  * así que el default del cliente lleva ya las sugerencias del 12-ago-2026.
  * RC la sobrescribe sin publicar APK; el filtro por banda evita que se cuele en otro eclipse.
  */
-const BUNDLED_SUGGESTED_SPOTS = JSON.stringify([
-  { name: 'Palencia', lat: 42.0096, lon: -4.5288 },
-  { name: 'Burgos', lat: 42.3439, lon: -3.6969 },
-  { name: 'Soria', lat: 41.7665, lon: -2.479 },
-  { name: 'Zaragoza', lat: 41.6488, lon: -0.8891 },
-  { name: 'Teruel', lat: 40.3456, lon: -1.1065 },
-  { name: 'Peñíscola', lat: 40.3583, lon: 0.4067 },
-]);
-
 /** RC `suggested_spots`: [{"name","lat","lon"}]; entradas inválidas se descartan (nunca rompe). */
 function parseSuggestedSpots(json: string): SuggestedSpot[] {
   try {
@@ -124,7 +115,11 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       donate_url: '',
       sponsor: '',
       latest_version_code: '0',
-      suggested_spots: BUNDLED_SUGGESTED_SPOTS,
+      // Sin default: una lista horneada vale para UN eclipse y la app solo muestra los
+      // puestos de la banda activa, así que en cuanto ese eclipse pasa la sección queda
+      // vacía igual. Vacío de verdad es lo mismo en pantalla y no miente en el código;
+      // la lista buena la publica genSpots.ts cada mes por RC.
+      suggested_spots: '[]',
       latest_apk_url: 'https://github.com/jlopez994/eclipsum/releases/latest/download/eclipsum.apk',
       // Sin default útil: la URL de una beta apunta al asset de SU tag, así que la escribe
       // el workflow en cada publicación. 0 + vacío = el canal beta no avisa de nada.
