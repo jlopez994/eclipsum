@@ -2,7 +2,7 @@
   "parameters": {
     "eclipse_message": {
       "defaultValue": {
-        "value": ""
+        "value": "Eclipsum ya está listo para el próximo eclipse total: 2 de agosto de 2027, sobre el sur de España — Cádiz, Málaga y la costa de Granada. Elígelo en la pestaña ECLIPSES."
       },
       "description": "Banner superior de la app. Vacío = oculto.",
       "valueType": "STRING"
