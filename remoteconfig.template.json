@@ -72,7 +72,7 @@
     },
     "suggested_spots": {
       "defaultValue": {
-        "value": "[{\"name\":\"Palencia\",\"lat\":42.0096,\"lon\":-4.5288},{\"name\":\"Burgos\",\"lat\":42.3439,\"lon\":-3.6969},{\"name\":\"Soria\",\"lat\":41.7665,\"lon\":-2.479},{\"name\":\"Zaragoza\",\"lat\":41.6488,\"lon\":-0.8891},{\"name\":\"Teruel\",\"lat\":40.3456,\"lon\":-1.1065},{\"name\":\"Peñíscola\",\"lat\":40.3583,\"lon\":0.4067}]"
+        "value": "[{\"name\":\"Mar del Plata\",\"lat\":-38.0004,\"lon\":-57.5562},{\"name\":\"Bahía Blanca\",\"lat\":-38.7176,\"lon\":-62.2655},{\"name\":\"Tandil\",\"lat\":-37.3287,\"lon\":-59.1369},{\"name\":\"Maldonado\",\"lat\":-34.8979,\"lon\":-54.9502},{\"name\":\"Mar del Tuyú\",\"lat\":-36.5743,\"lon\":-56.6939},{\"name\":\"Necochea\",\"lat\":-38.5545,\"lon\":-58.7396}]"
       },
       "description": "Puestos recomendados del selector: [{\"name\",\"lat\",\"lon\"}], máx. 6. Solo se muestran los que caen en banda del eclipse activo; [] oculta la sección.",
       "valueType": "STRING"

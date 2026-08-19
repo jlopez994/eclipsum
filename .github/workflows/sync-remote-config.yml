@@ -39,6 +39,16 @@ jobs:
       - name: Generar bandas que falten
         run: npx tsx scripts/syncBands.ts
 
+      # Puestos sugeridos del eclipse activo (GeoNames cities15000, ~2 MB, dominio público).
+      # Opcional a propósito: si la descarga falla, el catálogo se publica igual y la lista
+      # se queda como estaba, que es mejor que no publicar nada.
+      - name: Generar puestos sugeridos
+        continue-on-error: true
+        run: |
+          curl -sSfL https://download.geonames.org/export/dump/cities15000.zip -o /tmp/cities.zip
+          unzip -p /tmp/cities.zip cities15000.txt > /tmp/cities15000.txt
+          npx tsx scripts/genSpots.ts --cities /tmp/cities15000.txt --write
+
       # Puerta de calidad: si el motor o el catálogo se rompen, no se publica nada
       - name: Selfcheck
         run: npm run selfcheck

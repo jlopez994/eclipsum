@@ -108,13 +108,13 @@ Deployment lives in **GitHub Actions** (`.github/workflows/release-apk.yml`): wh
 | `sponsor` | `{"name","url","tagline"?}` sponsor of the active eclipse |
 | `latest_version_code` / `latest_apk_url` | In-app update notice, stable channel |
 | `latest_beta_version_code` / `latest_beta_apk_url` | Same for the beta channel. The URL points at the asset of that pre-release's own tag, since a pre-release does not move `releases/latest`. Only read by users who picked "betas too" in Settings |
-| `suggested_spots` | `[{"name","lat","lon"}]` curated spots (max 6) for the picker; only those inside the active eclipse's band are shown, `[]` hides the section |
+| `suggested_spots` | `[{"name","lat","lon"}]` spots (max 6) for the picker; only those inside the active eclipse's band are shown, `[]` hides the section. Regenerated monthly by `genSpots.ts` — hand edits are overwritten |
 
 Parameter descriptions: max 256 characters (RC limit).
 
 ## Autonomous catalog pipeline
 
-`.github/workflows/sync-remote-config.yml` (monthly + manual): `genEclipse --write` → `syncBands` → `selfcheck` as gate → publishes RC with the service account (`FIREBASE_SERVICE_ACCOUNT`, Firebase Remote Config Admin role = `roles/cloudconfig.admin`) → auto-commits the template. New eclipses reach the app without touching code or publishing an APK.
+`.github/workflows/sync-remote-config.yml` (monthly + manual): `genEclipse --write` → `syncBands` → `genSpots --write` → `selfcheck` as gate → publishes RC with the service account (`FIREBASE_SERVICE_ACCOUNT`, Firebase Remote Config Admin role = `roles/cloudconfig.admin`) → auto-commits the template. New eclipses reach the app without touching code or publishing an APK. `genSpots.ts` also refreshes `suggested_spots` for whatever eclipse is active: cities inside its path (GeoNames `cities15000`, downloaded per run), engine-verified one by one, Spanish-speaking countries first, then by population, spread ≥100 km apart. No date to watch — the active eclipse rolls forward on its own, so the picker is never left with the previous eclipse's spots.
 
 Manual curation (optional, the workflow does the same on its own): `npx tsx scripts/genEclipse.ts --kind total --write` merges entries into the template (dedupe by civil day), `npx tsx scripts/syncBands.ts` fills in missing RC paths, and `npx firebase-tools deploy --only remoteconfig` publishes.
 

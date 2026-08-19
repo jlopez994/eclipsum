@@ -14,6 +14,7 @@ import {
 import { BAR_GAP, barLayout, SLIVER_MAX, SLIVER_MIN } from '../lib/eclipseBar';
 import {
   bandOf,
+  eclipseForDay,
   ECLIPSES,
   getActiveEclipse,
   getEclipseById,
@@ -28,6 +29,7 @@ import { findVisiblePoint } from '../lib/visiblePoint';
 import { cloudCoverAt } from '../lib/weather';
 import { apparentAngleDeg, horizonAngleDeg, profileAngles, SAMPLE_DISTANCES_KM, terrainVerdict } from '../lib/horizon';
 import { eclipsesFromSpot } from '../lib/spotEclipses';
+import { pickSpots, type City } from './genSpots';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
 import type { Spot } from '../lib/spots';
 import {
@@ -662,6 +664,22 @@ async function main() {
     await findVisiblePoint(bandEclipse),
     visiblePointFor(bandEclipse),
     'con banda: el punto sale del catálogo sin barrido',
+  );
+
+  // genSpots: los puestos sugeridos que el cron publica salen de aquí, y la lista solo
+  // sirve si respeta las tres reglas —dentro de la banda, público de la app primero y sin
+  // repetir área metropolitana. Ciudades sintéticas: el fichero de GeoNames no está en el repo.
+  const e2027 = eclipseForDay('2027-08-02')!;
+  const fakeCities: City[] = [
+    { name: 'Madrid', lat: 40.4168, lon: -3.7038, population: 3_255_944, country: 'ES' },
+    { name: 'Yeda', lat: 21.4901, lon: 39.1862, population: 4_697_000, country: 'SA' },
+    { name: 'Málaga', lat: 36.7202, lon: -4.4203, population: 592_346, country: 'ES' },
+    { name: 'Torremolinos', lat: 36.6237, lon: -4.4998, population: 68_661, country: 'ES' },
+  ];
+  assert.deepEqual(
+    pickSpots(fakeCities, e2027, 3).map((c) => c.name),
+    ['Málaga', 'Yeda'],
+    'genSpots: Madrid fuera de banda, Torremolinos pegada a Málaga, y España antes que Yeda pese a ser 8× menor',
   );
 
   console.log('selfcheck OK — Zaragoza total', zgz.totalityDurationSec + 's, máximo', max.time.toISOString());
