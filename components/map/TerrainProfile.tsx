@@ -57,7 +57,7 @@ export function TerrainProfile({ points, sunAltDeg, horizonDeg }: TerrainProfile
         {/* Marcas de distancia: el eje comprimido necesita referencias */}
         {[1, 5, 20].map((d) => (
           <SvgText key={d} x={x(d)} y={OY + 13} fill={C.dim} fontSize={9} textAnchor="middle">
-            {d} km
+            {`${d} km`}
           </SvgText>
         ))}
       </Svg>
