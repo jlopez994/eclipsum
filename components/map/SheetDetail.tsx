@@ -3,12 +3,19 @@ import { eventAt, eventShortLabel, type LocalEclipse } from '../../lib/eclipse';
 import { fmtHMS } from '../../lib/format';
 import type { TerrainVerdict } from '../../lib/horizon';
 import { fmtFixed1, t, type I18nKey } from '../../lib/i18n';
+import { bearingLabel } from '../../lib/totality';
 import { track, type Sponsor } from '../../lib/firebase';
-import { HorizonDiagram } from './HorizonDiagram';
 import { TerrainProfile } from './TerrainProfile';
 import { C, EVENT_ACCENT, F } from '../theme';
 
 const IGN_URL = 'https://eclipses.ign.es/como-observar-eclipses.html';
+
+/** Referencia a ojo: un puño con el brazo estirado cubre ~10° de cielo. */
+function fistLabel(altitudeDeg: number): string {
+  if (altitudeDeg < 7.5) return t('horizon.fist.less');
+  if (altitudeDeg < 12.5) return t('horizon.fist.about');
+  return t('horizon.fist.n', { n: fmtFixed1(altitudeDeg / 10) });
+}
 
 interface SheetDetailProps {
   eclipse: LocalEclipse;
@@ -85,12 +92,20 @@ export function SheetDetail({
         <>
           <View style={s.divider} />
           <Text style={s.cronoTitle}>{t('map.sunAtMax')}</Text>
-          {/* El aviso de sol bajo lo da el propio diagrama (horizon.noteLow) */}
-          <HorizonDiagram altitudeDeg={maxEvent.altitude} azimuthDeg={maxEvent.azimuth} />
-          {/* Sección aparte del diagrama del sol: son dos preguntas distintas («¿a qué
-              altura estará?» vs «¿me lo tapa el relieve?») y juntas saturaban la hoja.
-              Grado entero en el veredicto — la rejilla de ~90 m del modelo de elevación
-              no da para décimas (por eso el copy dice «estimado») */}
+          {/* Sin diagrama del sol: el perfil del terreno de abajo pinta el mismo sol sobre
+              un horizonte de verdad, no sobre un skyline de adorno. Aquí solo lo que aquel
+              dibujo tenía de propio: cifra, hacia dónde y la regla del puño. */}
+          <Text style={s.sunNote}>
+            {t('horizon.sunAt', {
+              alt: fmtFixed1(maxEvent.altitude),
+              dir: bearingLabel(maxEvent.azimuth),
+            })}{' '}
+            {t('horizon.note', { fist: fistLabel(maxEvent.altitude) })}
+            {maxEvent.altitude < 12 ? t('horizon.noteLow', { dir: bearingLabel(maxEvent.azimuth) }) : ''}
+          </Text>
+          {/* Sección aparte: son dos preguntas distintas («¿a qué altura estará?» vs
+              «¿me lo tapa el relieve?»). Grado entero en el veredicto — la rejilla de
+              ~90 m del modelo de elevación no da para décimas (por eso «estimado») */}
           {terrain && (
             <>
               <View style={[s.divider, { marginTop: 18 }]} />
@@ -205,6 +220,7 @@ const s = StyleSheet.create({
   cronoLabel: { fontFamily: F.semibold, fontSize: 14, color: C.text },
   cronoTime: { fontFamily: F.medium, fontSize: 14, color: C.dim, fontVariant: ['tabular-nums'] },
   terrainNote: { fontFamily: F.regular, fontSize: 11, lineHeight: 16, color: C.dim },
+  sunNote: { fontFamily: F.regular, fontSize: 12.5, lineHeight: 18, color: C.text },
   panoramaLink: {
     fontFamily: F.bold,
     fontSize: 11,
