@@ -35,3 +35,15 @@ export function sameCoords(a: { lat: number; lon: number }, b: { lat: number; lo
 export function cleanPlaceLabel(name: string): string {
   return name.replace(/\s·\s(GPS|Manual)$/, '').trim();
 }
+
+/**
+ * De todo lo listado, dónde dura más la totalidad. Null con menos de dos candidatos:
+ * con uno solo la sección destacada sería un duplicado literal de la fila de al lado.
+ */
+export function longestTotality<T extends { visible: boolean; totalityDurationSec: number | null }>(
+  rows: T[],
+): T | null {
+  const totals = rows.filter((r) => r.visible && r.totalityDurationSec !== null);
+  if (totals.length < 2) return null;
+  return totals.reduce((best, r) => (r.totalityDurationSec! > best.totalityDurationSec! ? r : best));
+}

@@ -31,7 +31,7 @@ import { apparentAngleDeg, horizonAngleDeg, profileAngles, SAMPLE_DISTANCES_KM, 
 import { eclipsesFromSpot } from '../lib/spotEclipses';
 import { pickSpots, type City } from './genSpots';
 import { bearingLabel, findNearestTotality, haversineKm } from '../lib/totality';
-import type { Spot } from '../lib/spots';
+import { longestTotality, type Spot } from '../lib/spots';
 import {
   ALERT_EARLY_SECONDS,
   contextFor,
@@ -666,6 +666,23 @@ async function main() {
     'con banda: el punto sale del catálogo sin barrido',
   );
 
+  // Mayor totalidad: la fila destacada del selector sale de comparar lo ya listado, así que
+  // tiene que ignorar parciales y puestos sin visibilidad, y callarse cuando no hay con qué
+  // comparar —una sección con la única fila total sería un duplicado literal de la de al lado.
+  const totalityRows = [
+    { name: 'corta', visible: true, totalityDurationSec: 90 },
+    { name: 'larga', visible: true, totalityDurationSec: 140 },
+    { name: 'parcial', visible: true, totalityDurationSec: null },
+    { name: 'no se ve', visible: false, totalityDurationSec: 300 },
+  ];
+  assert.equal(
+    longestTotality(totalityRows)?.name,
+    'larga',
+    'mayor totalidad: gana la más larga, sin contar parciales ni puestos donde no se ve',
+  );
+  assert.equal(longestTotality(totalityRows.slice(1, 2)), null, 'mayor totalidad: con un candidato no hay sección');
+  assert.equal(longestTotality([]), null, 'mayor totalidad: sin totalidades no hay sección');
+
   // genSpots: los puestos sugeridos que el cron publica salen de aquí, y la lista solo
   // sirve si respeta las tres reglas —dentro de la banda, público de la app primero y sin
   // repetir área metropolitana. Ciudades sintéticas: el fichero de GeoNames no está en el repo.
@@ -681,6 +698,25 @@ async function main() {
     ['Málaga', 'Yeda'],
     'genSpots: Madrid fuera de banda, Torremolinos pegada a Málaga, y España antes que Yeda pese a ser 8× menor',
   );
+
+  // Elegir un puesto sin visibilidad tiene que acabar SIEMPRE en un mapa con cifras: de ahí
+  // que UnseenSpotDialog no ofrezca «elegirlo igualmente» y sí las dos salidas. La de saltar
+  // de eclipse depende de que el motor encuentre uno visible desde ahí y el catálogo sepa
+  // resolverlo; sin eso el diálogo se quedaría en «cancelar» y volveríamos al callejón.
+  setUserSelectedEclipseDay('2027-02-06'); // anular sobre Argentina: desde Seseña no se ve
+  const sesena = { lat: 40.1, lon: -3.7 };
+  assert.equal(
+    isActiveEclipse(computeLocalEclipse(sesena.lat, sesena.lon)),
+    false,
+    'Seseña no ve el anular de 2027-02-06: el tap en el mapa abre el diálogo, no aplica el puesto',
+  );
+  // Ancla fija en vez de «hoy» para que el assert no dependa del día en que se ejecute;
+  // la app usa el día civil actual por el mismo motivo que aquí: sin anclar a hoy el motor
+  // saltaría al siguiente eclipse tras el ACTIVO y se comería los de en medio.
+  const unseenDay = eclipseDayOf(computeLocalEclipse(sesena.lat, sesena.lon, 0, new Date('2026-08-23T00:00:00Z')));
+  assert.equal(unseenDay, '2027-08-02', 'desde Seseña el próximo visible es el total de 2027, no el anular');
+  assert.ok(eclipseForDay(unseenDay!) !== null, 'y el catálogo lo resuelve: el diálogo tiene adónde llevar');
+  setUserSelectedEclipseDay('');
 
   console.log('selfcheck OK — Zaragoza total', zgz.totalityDurationSec + 's, máximo', max.time.toISOString());
   console.log(

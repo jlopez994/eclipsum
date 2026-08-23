@@ -15,7 +15,7 @@ import { UnseenSpotDialog } from './UnseenSpotDialog';
 import { findVisiblePoint } from '../lib/visiblePoint';
 import { openInMaps } from '../lib/maps';
 import type { SuggestedSpot } from '../lib/firebase';
-import { cleanPlaceLabel, sameCoords, type Spot, type SpotOption } from '../lib/spots';
+import { cleanPlaceLabel, longestTotality, sameCoords, type Spot, type SpotOption } from '../lib/spots';
 import { cloudCoverAt, cloudLevel, fetchCloudCoverBatch } from '../lib/weather';
 import { fmtDur, fmtHM } from '../lib/format';
 import { t } from '../lib/i18n';
@@ -117,6 +117,11 @@ export function SpotSelector({
       const ref = userGeo ?? FALLBACK_REF;
       let next: Section[] = [];
       const allForClouds: Row[] = [];
+      // Dónde va la sección destacada de mayor totalidad: debajo de la especial que se
+      // haya insertado en 1 (cercana o dónde se ve; son excluyentes), o en su sitio si no.
+      let highlightIdx = 1;
+      /** Fila de esa sección especial: si además es la más larga, destacarla sería repetirla */
+      let specialRow: Row | null = null;
       const publish = () => {
         if (cancelled) return;
         animateNextLayout();
@@ -239,6 +244,8 @@ export function SpotSelector({
         };
         allForClouds.push(nearRow);
         next.splice(1, 0, { title: t('spot.nearestTotality'), rows: [nearRow] });
+        highlightIdx = 2;
+        specialRow = nearRow;
         publish();
       }
 
@@ -255,6 +262,8 @@ export function SpotSelector({
         if (whereRow.visible) {
           allForClouds.push(whereRow);
           next.splice(1, 0, { title: t('spot.whereVisible'), rows: [whereRow] });
+          highlightIdx = 2;
+          specialRow = whereRow;
           setVisibleSpot(whereRow.selectValue);
           publish();
         }
@@ -263,6 +272,14 @@ export function SpotSelector({
       // Con la lista ya completa: de todo lo ofrecido, dónde dura más la totalidad. Fila
       // duplicada a propósito —sigue estando en su sección— para no obligar a comparar
       // duraciones a ojo. Sin coste de motor: las duraciones ya están calculadas.
+      // Ya destacada arriba (mi posición / la especial) no se repite: sería la misma fila
+      // dos veces seguidas. Que no salga la sección dice lo mismo: arriba está la mejor.
+      const best = longestTotality(next.flatMap((sec) => sec.rows));
+      if (best && best !== gpsRow && best !== specialRow && !cancelled) {
+        next.splice(highlightIdx, 0, { title: t('spot.longestTotality'), rows: [best] });
+        publish();
+      }
+
       const nearCloudP = near
         ? fetchCloudCoverBatch([{ lat: near.lat, lon: near.lon }]).catch(() => [])
         : Promise.resolve([]);

@@ -329,6 +329,7 @@
   "spot.myPosition": "MI POSICIÓN",
   "spot.recent": "HABITUALES",
   "spot.nearestTotality": "TOTALIDAD MÁS CERCANA",
+  "spot.longestTotality": "MAYOR TOTALIDAD",
   "spot.suggested": "SUGERENCIAS",
   "spot.here": "aquí",
   "spot.max": "máx {time}",
