@@ -44,6 +44,7 @@ import {
   type RecentSpot,
 } from '../lib/prefs';
 import { buildDrillEclipse, DRILL_PARTIAL_SEC, DRILL_TOTALITY_SEC } from '../lib/drill';
+import { arcPath, sunArc, SUN_ARC_STEP_MS, toPixel } from '../lib/sunArc';
 import {
   bearingOf,
   cameraBasis,
@@ -690,6 +691,36 @@ async function main() {
   // Sin muestra previa el offset entra tal cual: la marca queda anclada al norte desde la
   // primera lectura de brújula, sin arrastrar mientras converge
   assert.equal(smoothBearing(null, shortDelta(100, 110), 0.06), 10, 'guiñado: el primer offset entra entero');
+
+  // --- Recorrido del sol en el visor (arco C1→C4) ---
+  const c1 = eventAt(zgz, 'C1')!;
+  const c4 = eventAt(zgz, 'C4')!;
+  const arc = sunArc(41.65, -0.88, c1.time.getTime(), c4.time.getTime());
+  assert.ok(arc.length >= 2, 'arco: al menos dos puntos');
+  assert.equal(arc[0].at, c1.time.getTime(), 'arco: arranca en C1');
+  assert.equal(arc[arc.length - 1].at, c4.time.getTime(), 'arco: acaba en C4 aunque no caiga en el paso');
+  assert.ok(arc.every((p, i) => i === 0 || p.at - arc[i - 1].at <= SUN_ARC_STEP_MS), 'arco: paso acotado');
+  // Misma efeméride que los contactos: el primer punto ES C1 y cada paso mueve <1°
+  assert.ok(Math.abs(arc[0].azimuthDeg - c1.azimuth) < 0.01, 'arco: el primer punto coincide con C1');
+  assert.ok(
+    arc.every((p, i) => i === 0 || Math.hypot(p.azimuthDeg - arc[i - 1].azimuthDeg, p.altitudeDeg - arc[i - 1].altitudeDeg) < 1),
+    'arco: <1° entre puntos, se ve como curva',
+  );
+  // Atardecer en Zaragoza: el sol baja durante el eclipse; el sol se pone antes de C4 → puntos bajo el horizonte
+  assert.ok(arc[0].altitudeDeg > arc[arc.length - 1].altitudeDeg, 'arco: por la tarde el sol baja');
+  assert.deepEqual(sunArc(0, 0, 10, 10), [], 'arco: sin intervalo no hay puntos');
+
+  // Polilínea: cada tramo delante de la cámara arranca con M; lo de detrás se salta
+  const px = (x: number, y: number, inFront = true) => ({ x, y, inFront });
+  assert.equal(arcPath([px(0, 0), px(10, 5)]), 'M0.0 0.0 L10.0 5.0', 'path: tramo continuo');
+  assert.equal(arcPath([px(0, 0), px(5, 5, false), px(10, 5)]), 'M0.0 0.0 M10.0 5.0', 'path: detrás rompe el tramo');
+  assert.equal(arcPath([px(5, 5, false)]), '', 'path: todo detrás, vacío');
+  // Pixel: centro del encuadre al centro, y hacia abajo
+  const screen = { w: 1000, h: 2000 };
+  const centre = toPixel(project(skyVector(200, 0), lookAt(200), fov), screen);
+  assert.ok(Math.abs(centre.x - 500) < 1e-6 && Math.abs(centre.y - 1000) < 1e-6 && centre.inFront, 'pixel: centro');
+  assert.ok(toPixel(project(skyVector(200, 20), lookAt(200), fov), screen).y < 1000, 'pixel: sol alto, más arriba en pantalla');
+  assert.equal(toPixel(project(skyVector(20, 10), lookAt(200), fov), screen).inFront, false, 'pixel: a la espalda no está delante');
 
   // --- Dónde ver un eclipse que no se ve desde el puesto ---
   // Los parciales no traen banda ni punto de máximo: sin el barrido, la app se quedaba en

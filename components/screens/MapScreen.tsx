@@ -147,12 +147,11 @@ export function MapScreen({
    * azimut se va 4° y su hora casi 5 min — la cabecera del visor daría una hora que no es
    * la tuya. null = sin GPS, o desde aquí no se ve este eclipse.
    */
-  const sunHere = useMemo(() => {
+  const eclipseHere = useMemo(() => {
     if (!gpsCoords) return null;
     try {
       const here = computeLocalEclipse(gpsCoords.lat, gpsCoords.lon);
-      if (!isActiveEclipse(here)) return null;
-      return eventAt(here, 'MAX') ?? null;
+      return isActiveEclipse(here) ? here : null;
     } catch {
       return null;
     }
@@ -160,6 +159,7 @@ export function MapScreen({
     // así que hace falta como disparador para recalcular al cambiar de selección
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gpsCoords?.lat, gpsCoords?.lon, eclipse]);
+  const sunHere = eclipseHere ? (eventAt(eclipseHere, 'MAX') ?? null) : null;
 
   // La brújula tolera el respaldo del puesto (es orientativa); el visor no: solo abre con
   // posición real y sol por encima del horizonte
@@ -177,17 +177,19 @@ export function MapScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gpsCoords?.lat, gpsCoords?.lon, minuteTick]);
 
-  // Hito proyectable: azimut/altura del máximo SOBRE TI, solo con el sol en alto entonces
+  // Recorrido proyectable: de C1 a C4 SOBRE TI, solo con el sol en alto en el máximo.
+  // Sin C1/C4 (no debería pasar con un eclipse visible) el arco degenera en el máximo.
   const finderTarget =
-    sunHere !== null && sunHere.altitude > 0
+    eclipseHere !== null && sunHere !== null && sunHere.altitude > 0
       ? {
-          azimuthDeg: sunHere.azimuth,
-          altitudeDeg: sunHere.altitude,
+          startMs: (eventAt(eclipseHere, 'C1') ?? sunHere).time.getTime(),
+          maxMs: sunHere.time.getTime(),
+          endMs: (eventAt(eclipseHere, 'C4') ?? sunHere).time.getTime(),
           label: t('event.MAX').toUpperCase(),
           time: fmtHM(sunHere.time),
         }
       : null;
-  // Sin hito, el visor sigue teniendo sentido en modo «sol ahora» (y para calibrar)
+  // Sin recorrido, el visor sigue teniendo sentido con el sol real (y para calibrar)
   const canOpenFinder = gpsCoords !== null && (finderTarget !== null || sunNowUp);
 
   // A partir de unos km los obstáculos de aquí no dicen nada de los de allí: se avisa

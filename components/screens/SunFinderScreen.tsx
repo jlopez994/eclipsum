@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Line, Path } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { DeviceMotion } from 'expo-sensors';
 import { useKeepAwake } from 'expo-keep-awake';
@@ -19,8 +19,11 @@ import {
   smoothBearing,
   withCompassBearing,
   type CameraBasis,
+  type Fov,
 } from '../../lib/skyProjection';
+import { sunArc, toPixel } from '../../lib/sunArc';
 import { sunPosition } from '../../lib/eclipse';
+import { SunArcOverlay } from '../sun/SunArcOverlay';
 import { useHeading } from '../../hooks/useHeading';
 import { track } from '../../lib/firebase';
 import { bearingLabel } from '../../lib/totality';
@@ -66,12 +69,28 @@ const RADIAN_CEILING = 7;
  */
 const COMPASS_MIN_ACCURACY = 2;
 /**
- * Radio angular del círculo de puntería. No es estético: es el error que el visor NO puede
+ * Semiancho angular de la FRANJA de error. No es estético: es el error que el visor NO puede
  * evitar — magnetómetro (±10-20°) y FOV estimada, porque expo-camera no expone la real.
- * Pintarlo a escala convierte «clava este punto» en «el sol está en esta zona», que es lo
- * único que los sensores permiten prometer.
+ * Pintarla a escala convierte «clava este punto» en «el sol pasará por esta zona», que es
+ * lo único que los sensores permiten prometer.
  */
 const AIM_TOLERANCE_DEG = 12;
+/** Con la brújula descalibrada el error sube a ~35°: la franja se ensancha en vez de mentir. */
+const AIM_TOLERANCE_NOISY_DEG = 20;
+/**
+ * Tras calibrar contra el sol real queda el error de FOV y el del propio gesto de centrar.
+ * El sol ocupa 0,5°: centrarlo a ojo es fácil a ±2-3°.
+ */
+const AIM_TOLERANCE_CAL_DEG = 5;
+/**
+ * Cabeceo máximo entre el eje de la cámara y el sol real para aceptar una calibración.
+ * El cabeceo lo fija la gravedad y no se calibra: si difiere tanto es que el usuario no
+ * ha centrado el sol, y medir el guiñado en ese momento daría una corrección inventada.
+ */
+const CAL_MAX_PITCH_ERROR_DEG = 15;
+/** Píxeles de la franja: suelo para que se vea, techo para que no tape la escena. */
+const BAND_MIN_PX = 24;
+const BAND_MAX_PX = 200;
 /**
  * Refresco del modo «sol ahora». El sol se mueve ~0,25°/min: a 30 s la marca queda siempre
  * a <0,15° de la posición real — muy por debajo de lo que la brújula deja distinguir.
@@ -88,20 +107,45 @@ const sunNowSample = (lat: number, lon: number) => {
   return { at, ...sunPosition(lat, lon, 0, new Date(at)) };
 };
 
-/** Posición del sol en un hito del eclipse, con su etiqueta y hora local ya formateadas. */
+/** Recorrido del sol durante el eclipse, con el máximo etiquetado. Instantes en ms epoch. */
 export interface SunTarget {
-  /** Azimut del sol en el instante buscado, grados horarios desde el norte */
-  azimuthDeg: number;
-  /** Altura del sol sobre el horizonte, grados */
-  altitudeDeg: number;
-  /** Hito al que corresponde la posición (p. ej. «MÁXIMO») */
+  /** Primer contacto: donde arranca el arco */
+  startMs: number;
+  /** Máximo: se marca sobre el arco */
+  maxMs: number;
+  /** Último contacto: donde acaba el arco */
+  endMs: number;
+  /** Etiqueta del máximo (p. ej. «MÁXIMO») */
   label: string;
-  /** Hora local del hito */
+  /** Hora local del máximo */
   time: string;
 }
 
+/** Corrección medida contra el sol real: cuánto giraba de más la escena y cuánto se ha aplicado. */
+interface Calibration {
+  /** Giro extra del guiñado, acumulado sobre el de la brújula */
+  offsetDeg: number;
+  /** Desvío que se midió en la última calibración, para enseñárselo al usuario */
+  errorDeg: number;
+}
+
+/** Semiancho de la franja en píxeles: misma escala que la proyección, así crece con el FOV. */
+const bandPxFor = (tolDeg: number, widthPx: number, fov: Fov) =>
+  Math.max(
+    BAND_MIN_PX,
+    Math.min(BAND_MAX_PX, ((widthPx / 2) * Math.tan((tolDeg * Math.PI) / 180)) / Math.tan((fov.horizontalDeg * Math.PI) / 360)),
+  );
+
+/** Hacia qué lado girar, a partir del ángulo de la flecha (0 = arriba, 90 = derecha). */
+const turnHint = (turnDeg: number) => {
+  if (turnDeg < 45 || turnDeg >= 315) return t('sun.turn.up');
+  if (turnDeg < 135) return t('sun.turn.right');
+  if (turnDeg < 225) return t('sun.turn.down');
+  return t('sun.turn.left');
+};
+
 interface SunFinderScreenProps {
-  /** Hito del eclipse a proyectar; null ⇒ el visor arranca (y se queda) en «sol ahora» */
+  /** Recorrido del eclipse a proyectar; null ⇒ solo hay sol real, sirve para calibrar */
   target: SunTarget | null;
   /** Posición GPS real: el cielo que calcula el modo live y el ancla de la calibración */
   gps: { lat: number; lon: number };
@@ -146,16 +190,15 @@ function Gate({ insets, primaryAction, onClose, children }: GateProps) {
 }
 
 /**
- * Visor: dibuja sobre la cámara dónde estará el sol en el instante del eclipse — o dónde
- * está AHORA MISMO (modo «sol ahora», pill superior para alternar). Sirve para elegir
- * sitio —¿me tapa ese árbol?—, NO para observar: la advertencia de seguridad es previa
- * y obligatoria, y se repite en pantalla.
+ * Visor: dibuja sobre la cámara el RECORRIDO del sol durante el eclipse, de primer a último
+ * contacto, con el máximo marcado. Sirve para elegir sitio —¿me tapa ese árbol en algún
+ * momento?—, NO para observar: la advertencia de seguridad es previa y obligatoria, y se
+ * repite en pantalla.
  *
- * Precisión: el magnetómetro ronda ±10-20° (peor cerca de metal) y expo-camera no
- * expone el campo de visión real, así que se estima. La marca cae en la zona correcta,
- * no clavada al grado; por eso el círculo es amplio y el copy dice «aproximada».
- * El modo «sol ahora» permite además calibrar: centrando el sol real y pulsando, el error
- * de brújula queda medido y el círculo puede estrecharse (AIM_TOLERANCE_CAL_DEG).
+ * Precisión: el magnetómetro ronda ±10-20° (peor cerca de metal) y expo-camera no expone
+ * el campo de visión real, así que se estima. Por eso el arco va dentro de una FRANJA a
+ * escala del error: lo aproximado se ve, no se lee. Con el sol en alto se puede además
+ * calibrar: centrando el sol real y tocando, el desvío queda medido y la franja se estrecha.
  */
 export function SunFinderScreen({ target, gps, awayFromSpot, onClose }: SunFinderScreenProps) {
   useKeepAwake();
@@ -173,20 +216,29 @@ export function SunFinderScreen({ target, gps, awayFromSpot, onClose }: SunFinde
   const [headingAccuracy, setHeadingAccuracy] = useState<number | null>(null);
   const [sensorsOff, setSensorsOff] = useState(false);
   const degreeUnits = useRef(false);
-  // Modo «sol ahora»: sin hito es el único que existe; con hito se alterna desde la pill
-  const [showNow, setShowNow] = useState(target === null);
   const [sunNow, setSunNow] = useState(() => sunNowSample(gps.lat, gps.lon));
+  const [calibration, setCalibration] = useState<Calibration | null>(null);
+  const [calNotice, setCalNotice] = useState<string | null>(null);
 
   const live = accepted && permission?.granted === true;
 
-  // El sol de ahora se refresca aunque el modo visible sea el hito: decide si la pill puede
-  // alternar (de noche no) y la calibración lo necesita fresco al pulsar
+  // El recorrido es determinista por posición e instantes: se calcula una vez, no a 20 Hz
+  const arc = useMemo(
+    () => (target ? sunArc(gps.lat, gps.lon, target.startMs, target.endMs) : []),
+    [target, gps.lat, gps.lon],
+  );
+  const maxPos = useMemo(
+    () => (target ? sunPosition(gps.lat, gps.lon, 0, new Date(target.maxMs)) : null),
+    [target, gps.lat, gps.lon],
+  );
+
+  // El sol real se refresca siempre que hay cámara: es el disco «ahora» y el ancla de la calibración
   useEffect(() => {
     if (!live) return;
     // Muestra inmediata al hacerse live: los gates previos (aviso de seguridad, permiso de
     // cámara) retienen el mount un tiempo arbitrario y setInterval no dispara hasta su
-    // primer tick — sin esto, la primera pantalla y una calibración temprana usarían un
-    // sol de hace minutos (0,25°/min contra un círculo que promete 5°).
+    // primer tick — sin esto, una calibración temprana usaría un sol de hace minutos
+    // (0,25°/min contra una franja que promete 5°).
     setSunNow(sunNowSample(gps.lat, gps.lon));
     const id = setInterval(() => setSunNow(sunNowSample(gps.lat, gps.lon)), SUN_NOW_REFRESH_MS);
     return () => clearInterval(id);
@@ -233,7 +285,7 @@ export function SunFinderScreen({ target, gps, awayFromSpot, onClose }: SunFinde
    * que la marca deje de seguir el paneo al instante.
    *
    * Sin brújula el hook no emite nunca: el guiñado se queda con el de DeviceMotion
-   * (relativo, pero usable).
+   * (relativo, pero usable — y calibrable contra el sol real).
    */
   useHeading(live, (deg, acc) => {
     const raw = basisRef.current;
@@ -300,95 +352,96 @@ export function SunFinderScreen({ target, gps, awayFromSpot, onClose }: SunFinde
     );
   }
 
-  // Posición proyectada: la del hito, o la del sol de ahora mismo
-  const shown = !showNow && target ? target : sunNow;
-
-  // Sol bajo el horizonte en ese instante: no hay nada que señalar y decirlo es la
-  // única respuesta honesta — una marca bajo el suelo haría creer que se verá algo.
-  if (shown.altitudeDeg <= 0) {
+  // Sol bajo el horizonte: no hay nada que señalar y decirlo es la única respuesta honesta —
+  // un arco bajo el suelo haría creer que se verá algo.
+  const sunNowUp = sunNow.altitudeDeg > 0;
+  const arcUp = maxPos !== null && maxPos.altitudeDeg > 0;
+  if (!arcUp && !sunNowUp) {
     return (
       <Gate insets={insets} onClose={onClose}>
-        <Text style={s.gateBody}>{showNow ? t('sun.below.now') : t('sun.below')}</Text>
+        <Text style={s.gateBody}>{target ? t('sun.below') : t('sun.below.now')}</Text>
       </Gate>
     );
   }
 
   // --- Visor ---
-  // El guiñado del giroscopio, girado hasta el norte real. Mientras no haya llegado ninguna
-  // muestra de brújula se usa crudo: es relativo, pero la marca ya sigue bien el movimiento.
-  const aimed =
-    basis === null || yawOffset === null
-      ? basis
-      : withCompassBearing(basis, norm360(bearingOf(basis.forward) + yawOffset));
+  // El guiñado del giroscopio, girado hasta el norte real (brújula) y después lo que haya
+  // medido la calibración. Sin brújula todavía se usa crudo: relativo, pero sigue bien el
+  // movimiento — y la calibración lo ancla igual.
+  const totalYaw = (yawOffset ?? 0) + (calibration?.offsetDeg ?? 0);
+  const aimed = basis === null ? null : withCompassBearing(basis, norm360(bearingOf(basis.forward) + totalYaw));
 
   const fov = fovFor(size.w, size.h);
-  const shot =
-    aimed !== null && size.w > 0 ? project(skyVector(shown.azimuthDeg, shown.altitudeDeg), aimed, fov) : null;
+  const ready = aimed !== null && size.w > 0;
+  const shotOf = (azimuthDeg: number, altitudeDeg: number) =>
+    ready ? project(skyVector(azimuthDeg, altitudeDeg), aimed, fov) : null;
 
-  // Normalizado (−1..1, y hacia arriba) → píxeles (y hacia abajo)
-  const markerX = shot ? size.w / 2 + (shot.x * size.w) / 2 : 0;
-  const markerY = shot ? size.h / 2 - (shot.y * size.h) / 2 : 0;
-  // El círculo mide la tolerancia REAL (±12°), no un tamaño bonito: se proyecta con la misma
-  // escala que la marca, así que crece en pantallas anchas y con FOV estrecha. Lo que se le
-  // pide al usuario es apuntar a una zona, no clavar un punto que los sensores no dan.
-  const markerR = Math.max(
-    44,
-    Math.min(
-      120,
-      ((size.w / 2) * Math.tan((AIM_TOLERANCE_DEG * Math.PI) / 180)) /
-        Math.tan((fov.horizontalDeg * Math.PI) / 360),
-    ),
-  );
   const noisyCompass = headingAccuracy !== null && headingAccuracy < COMPASS_MIN_ACCURACY;
+  // La franja es el indicador de confianza: se ensancha con brújula mala, se estrecha calibrada
+  const tolDeg = noisyCompass ? AIM_TOLERANCE_NOISY_DEG : calibration ? AIM_TOLERANCE_CAL_DEG : AIM_TOLERANCE_DEG;
+  const bandPx = bandPxFor(tolDeg, size.w, fov);
 
-  // Alternar hacia «sol ahora» exige sol sobre el horizonte: si no, se aterrizaría en la
-  // pantalla de «es de noche» sin camino de vuelta al hito
-  const canToggle = target !== null && (showNow || sunNow.altitudeDeg > 0);
+  const maxShot = arcUp && maxPos ? shotOf(maxPos.azimuthDeg, maxPos.altitudeDeg) : null;
+  const arcPixels = ready && arcUp ? arc.filter((p) => p.altitudeDeg > 0).map((p) => toPixel(shotOf(p.azimuthDeg, p.altitudeDeg)!, size)) : [];
+  const arcVisible = arcPixels.some((p) => p.inFront && p.x >= 0 && p.x <= size.w && p.y >= 0 && p.y <= size.h);
+
+  const nowShot = sunNowUp ? shotOf(sunNow.azimuthDeg, sunNow.altitudeDeg) : null;
+  const nowPixel = nowShot ? toPixel(nowShot, size) : null;
+
+  /**
+   * Calibración: el usuario centra el sol REAL y toca. El cabeceo lo fija la gravedad, así
+   * que si difiere mucho es que no está centrado y se rechaza; el guiñado que falte es
+   * exactamente el error de brújula, y se acumula como offset.
+   */
+  const calibrate = () => {
+    if (!aimed || !sunNowUp) return;
+    const forwardAltDeg = (Math.asin(Math.max(-1, Math.min(1, aimed.forward.z))) * 180) / Math.PI;
+    if (Math.abs(sunNow.altitudeDeg - forwardAltDeg) > CAL_MAX_PITCH_ERROR_DEG) {
+      setCalNotice(t('sun.cal.notCentered'));
+      return;
+    }
+    const yawErr = shortDelta(bearingOf(aimed.forward), sunNow.azimuthDeg);
+    setCalibration({ offsetDeg: norm360((calibration?.offsetDeg ?? 0) + yawErr), errorDeg: Math.round(Math.abs(yawErr)) });
+    setCalNotice(null);
+    track('sunfinder_calibrate', { errorDeg: Math.round(Math.abs(yawErr)) });
+  };
 
   return (
     <View style={s.root} onLayout={onLayout}>
       <CameraView style={StyleSheet.absoluteFill} facing="back" />
 
-      {shot?.inFrame && (
+      {maxShot && (
+        <SunArcOverlay
+          size={size}
+          points={arcPixels}
+          max={{ ...toPixel(maxShot, size), label: t('sun.target', { label: target!.label, time: target!.time }) }}
+          bandPx={bandPx}
+        />
+      )}
+
+      {/* El sol de ahora mismo: disco punteado. Con hito es el ancla para calibrar; sin hito, lo único */}
+      {nowPixel?.inFront && nowShot?.inFrame && (
         <>
           <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
-            {/* El círculo ES la tolerancia vigente (±tolDeg): señala una zona, no un punto */}
-            <Circle cx={markerX} cy={markerY} r={markerR} stroke={C.corona} strokeWidth={2} fill="none" />
-            <Circle
-              cx={markerX}
-              cy={markerY}
-              r={markerR}
-              stroke={C.corona}
-              strokeWidth={10}
-              fill="none"
-              opacity={0.14}
-            />
-            <Line x1={markerX - markerR - 20} y1={markerY} x2={markerX - markerR - 6} y2={markerY} stroke={C.corona} strokeWidth={2} />
-            <Line x1={markerX + markerR + 6} y1={markerY} x2={markerX + markerR + 20} y2={markerY} stroke={C.corona} strokeWidth={2} />
-            <Line x1={markerX} y1={markerY - markerR - 20} x2={markerX} y2={markerY - markerR - 6} stroke={C.corona} strokeWidth={2} />
-            <Line x1={markerX} y1={markerY + markerR + 6} x2={markerX} y2={markerY + markerR + 20} stroke={C.corona} strokeWidth={2} />
+            <Circle cx={nowPixel.x} cy={nowPixel.y} r={18} stroke={C.text} strokeWidth={2} strokeDasharray="5 4" fill="none" />
           </Svg>
-          <View style={[s.markerLabel, { left: markerX - 60, top: markerY + markerR + 28 }]} pointerEvents="none">
-            <Text style={s.markerLabelText}>{t('sun.marker')}</Text>
-            {/* El círculo ya dice el tamaño del error; esto solo le pone nombre */}
-            <Text style={s.markerApprox}>{t('sun.approx')}</Text>
+          <View style={[s.nowLabel, { left: nowPixel.x - 50, top: nowPixel.y + 26 }]} pointerEvents="none">
+            <Text style={s.nowLabelText}>{t('sun.now')}</Text>
           </View>
         </>
       )}
 
-      {/* Fuera de encuadre: flecha girada hacia donde buscar + cuánto girar, tipo navegación */}
-      {shot !== null && !shot.inFrame && (
+      {/* Nada del arco en pantalla: flecha hacia el máximo + hacia dónde girar, sin grados falsos */}
+      {maxShot && !arcVisible && !maxShot.inFrame && (
         <View style={s.away} pointerEvents="none">
-          <View style={{ transform: [{ rotate: `${shot.turnDeg}deg` }] }}>
+          <View style={{ transform: [{ rotate: `${maxShot.turnDeg}deg` }] }}>
             <Svg width={54} height={62} viewBox="0 0 12 14" fill={C.corona}>
               <Path d="M6 0 L11 13 L6 10.4 L1 13 Z" />
             </Svg>
           </View>
-          <Text style={s.awayHeadline}>
-            {shot.offAxisDeg > 120 ? t('sun.behind') : t('sun.turnBy', { deg: Math.round(shot.offAxisDeg) })}
-          </Text>
+          <Text style={s.awayHeadline}>{maxShot.offAxisDeg > 120 ? t('sun.behind') : turnHint(maxShot.turnDeg)}</Text>
           <Text style={s.awayText}>
-            {t('sun.turnTo', { dir: bearingLabel(shown.azimuthDeg), alt: Math.round(shown.altitudeDeg) })}
+            {t('sun.turnTo', { dir: bearingLabel(maxPos!.azimuthDeg), alt: Math.round(maxPos!.altitudeDeg) })}
           </Text>
         </View>
       )}
@@ -400,32 +453,34 @@ export function SunFinderScreen({ target, gps, awayFromSpot, onClose }: SunFinde
       )}
 
       <View style={[s.top, { paddingTop: insets.top + 12 }]} pointerEvents="box-none">
-        {/* La pill es el conmutador de modo: hito del eclipse ⇄ sol de ahora mismo */}
-        <Pressable
-          style={s.targetPill}
-          onPress={canToggle ? () => setShowNow((v) => !v) : undefined}
-          disabled={!canToggle}
-          accessibilityRole={canToggle ? 'button' : 'text'}
-          accessibilityLabel={canToggle ? t('sun.switchTarget') : undefined}
-        >
-          <View style={s.targetRow}>
-            <Text style={s.targetText}>
-              {!showNow && target ? t('sun.target', { label: target.label, time: target.time }) : t('sun.now')}
-            </Text>
-            {canToggle && <Text style={s.targetSwap}>⇄</Text>}
-          </View>
+        <View style={s.targetPill}>
+          <Text style={s.targetText}>{target ? t('sun.arcTitle') : t('sun.now')}</Text>
           {/* Permanente: la hora y la posición son las de aquí, no las del puesto elegido */}
           <Text style={s.targetFromHere} numberOfLines={2}>
             {awayFromSpot ? t('sun.awayFromSpot', awayFromSpot) : t('sun.fromHere')}
           </Text>
-        </Pressable>
+        </View>
         <Pressable style={s.closeBtn} onPress={onClose} hitSlop={10} accessibilityLabel={t('sun.close')}>
           <Text style={s.closeBtnText}>✕</Text>
         </Pressable>
       </View>
 
-      <View style={[s.bottom, { paddingBottom: insets.bottom + 16 }]} pointerEvents="none">
+      <View style={[s.bottom, { paddingBottom: insets.bottom + 16 }]} pointerEvents="box-none">
+        {target && <Text style={s.hint}>{t('sun.band')}</Text>}
         {noisyCompass && <Text style={s.calibrate}>{t('sun.calibrate')}</Text>}
+        {/* Calibración: una acción, un resultado visible. Solo con sol real en alto y sensores */}
+        {sunNowUp && ready && (
+          <View style={s.calBox}>
+            {calNotice && <Text style={s.calNotice}>{calNotice}</Text>}
+            {calibration && !calNotice && (
+              <Text style={s.calDone}>{t('sun.cal.done', { deg: calibration.errorDeg })}</Text>
+            )}
+            <Pressable style={s.calBtn} onPress={calibrate} accessibilityRole="button" accessibilityHint={t('sun.cal.hint')}>
+              <Text style={s.calBtnText}>{calibration ? t('sun.cal.redo') : t('sun.cal.cta')}</Text>
+            </Pressable>
+            <Text style={s.calHint}>{t('sun.cal.hint')}</Text>
+          </View>
+        )}
         <Text style={s.safety}>{t('sun.safety')}</Text>
       </View>
     </View>
@@ -462,9 +517,15 @@ const s = StyleSheet.create({
   },
   gateCtaText: { fontFamily: F.bold, fontSize: 13, letterSpacing: 1.4, color: C.danger },
   gateDismiss: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1.4, color: C.dim },
-  markerLabel: { position: 'absolute', width: 120, alignItems: 'center' },
-  markerLabelText: { fontFamily: F.bold, fontSize: 13, letterSpacing: 2, color: C.corona },
-  markerApprox: { fontFamily: F.medium, fontSize: 10, color: 'rgba(242,239,233,0.75)', marginTop: 2 },
+  nowLabel: { position: 'absolute', width: 100, alignItems: 'center' },
+  nowLabelText: {
+    fontFamily: F.bold,
+    fontSize: 10,
+    letterSpacing: 1.5,
+    color: C.text,
+    textShadowColor: '#000',
+    textShadowRadius: 6,
+  },
   away: { ...FILL, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 40 },
   awayHeadline: {
     fontFamily: F.bold,
@@ -503,9 +564,7 @@ const s = StyleSheet.create({
     paddingVertical: 8,
     flexShrink: 1,
   },
-  targetRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   targetText: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1.2, color: C.text },
-  targetSwap: { fontFamily: F.bold, fontSize: 12, color: C.dim },
   targetFromHere: { fontFamily: F.medium, fontSize: 10.5, lineHeight: 14, color: C.corona, marginTop: 2 },
   closeBtn: {
     width: 38,
@@ -519,6 +578,27 @@ const s = StyleSheet.create({
   },
   closeBtnText: { fontFamily: F.bold, fontSize: 15, color: C.text },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 24, gap: 8 },
+  hint: {
+    fontFamily: F.medium,
+    fontSize: 11.5,
+    color: 'rgba(242,239,233,0.8)',
+    textAlign: 'center',
+    textShadowColor: '#000',
+    textShadowRadius: 6,
+  },
+  calBox: { alignItems: 'center', gap: 6, marginTop: 4 },
+  calBtn: {
+    paddingVertical: 11,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: 'rgba(11,11,16,0.75)',
+  },
+  calBtnText: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1.4, color: C.corona },
+  calHint: { fontFamily: F.medium, fontSize: 10.5, color: C.dim, textAlign: 'center' },
+  calDone: { fontFamily: F.semibold, fontSize: 12, color: C.text, textShadowColor: '#000', textShadowRadius: 6 },
+  calNotice: { fontFamily: F.semibold, fontSize: 12, color: C.corona, textAlign: 'center', textShadowColor: '#000', textShadowRadius: 6 },
   calibrate: {
     fontFamily: F.medium,
     fontSize: 11.5,
