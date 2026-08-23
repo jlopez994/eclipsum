@@ -44,6 +44,7 @@ import { useDrill } from './hooks/useDrill';
 import { useSpotData } from './hooks/useSpotData';
 import { NoticeStack } from './components/NoticeStack';
 import { OutOfZoneNotice } from './components/OutOfZoneNotice';
+import { UnseenSpotDialog } from './components/UnseenSpotDialog';
 import { TabBar, type TabKey } from './components/TabBar';
 import { Tour } from './components/Tour';
 import { SpotSelector, localityName } from './components/SpotSelector';
@@ -343,6 +344,56 @@ function AppInner() {
     [selectSpot, activeCatalog.civilDate, onPrefsChange],
   );
 
+  /**
+   * Puesto Y eclipse a la vez: se queda el sitio elegido y el activo pasa al que sí se ve
+   * desde ahí. Es la salida que ofrecen el diálogo de «ahí no se ve» y el aviso de fuera
+   * de zona, y la única forma de que elegir un sitio sin visibilidad acabe en un mapa con
+   * cifras en vez de en otro aviso.
+   *
+   * El puesto viaja con el salto porque el contexto se guarda por día civil: sin esto el
+   * eclipse nuevo nacería sin puesto y la siembra lo rellenaría con el GPS.
+   */
+  const selectSpotForEclipse = useCallback(
+    (spot: Spot, day: string, from: string) => {
+      if (!prefs) return;
+      track('eclipse_selected', { day, from });
+      animateNextLayout();
+      const recentSpots = spot.origin === 'gps' ? prefs.recentSpots : pushRecent(prefs.recentSpots, spot);
+      onPrefsChange({
+        // El destino siempre es futuro (se busca desde hoy): si venías de una consulta del
+        // histórico, el salto la termina y vuelve el rollover normal
+        ...withContext({ ...prefs, selectedEclipseDay: day, selectedEclipsePast: false }, day, { spot }),
+        recentSpots,
+      });
+    },
+    [prefs, onPrefsChange],
+  );
+
+  /**
+   * Punto tocado en el mapa que no ve el eclipse activo: antes se aplicaba igual y el mapa
+   * —lo que estabas usando para explorar— desaparecía bajo «aquí no se ve», sin preguntar.
+   * Ahora pasa por el mismo diálogo que el selector.
+   */
+  const [unseenTap, setUnseenTap] = useState<Spot | null>(null);
+  const tapMapPoint = useCallback(
+    ({ lat, lon }: { lat: number; lon: number }) => {
+      const sees = (() => {
+        try {
+          return isActiveEclipse(computeLocalEclipse(lat, lon));
+        } catch {
+          return true; // sin cálculo no hay motivo para dudar: se aplica como siempre
+        }
+      })();
+      if (sees) {
+        selectMapPoint({ lat, lon });
+        return;
+      }
+      setUnseenTap({ name: `${lat.toFixed(2)}, ${lon.toFixed(2)}`, lat, lon, origin: 'manual' });
+    },
+    // setUnseenTap es estable, pero el compilador de React no da eso por hecho
+    [selectMapPoint, setUnseenTap],
+  );
+
   const recalcHere = useCallback(() => {
     if (geo) selectSpot(gpsSpot(geo));
   }, [geo, selectSpot]);
@@ -459,20 +510,9 @@ function AppInner() {
         date={dateLabelOf(activeCatalog, now)}
         otherLabel={otherEclipse?.label ?? null}
         onChoosePlace={() => setSelectorOpen(true)}
-        // El puesto viaja con el salto: el contexto se guarda por día civil, y sin esto
-        // el eclipse nuevo nacería sin puesto y la siembra lo rellenaría con el GPS
         onGoToOther={() => {
           if (!otherEclipse) return;
-          track('eclipse_selected', { day: otherEclipse.civilDate, from: 'out_of_zone' });
-          onPrefsChange(
-            withContext(
-              // El destino siempre es futuro (nextHere busca desde hoy): si venías de una
-              // consulta del histórico, el salto la termina y vuelve el rollover normal
-              { ...prefs, selectedEclipseDay: otherEclipse.civilDate, selectedEclipsePast: false },
-              otherEclipse.civilDate,
-              { spot: chosenSpot },
-            ),
-          );
+          selectSpotForEclipse(chosenSpot, otherEclipse.civilDate, 'out_of_zone');
         }}
       />
     ) : null;
@@ -557,7 +597,7 @@ function AppInner() {
               gpsCoords={geo ? { lat: geo.lat, lon: geo.lon } : null}
               onOpenSelector={() => setSelectorOpen(true)}
               onOpenMaps={() => openInMaps(shown.spot.lat, shown.spot.lon, shown.spot.name)}
-              onSelectMapPoint={selectMapPoint}
+              onSelectMapPoint={tapMapPoint}
               sponsor={remote.sponsor}
               glassesUrl={remote.glassesUrl}
               // Salto desde «Eclipses desde aquí»: el puesto viaja con el eclipse elegido
@@ -670,7 +710,24 @@ function AppInner() {
         recentSpots={prefs.recentSpots}
         suggestedSpots={remote.suggestedSpots}
         onSelect={selectSpot}
+        onSelectOtherEclipse={(spot, day) => selectSpotForEclipse(spot, day, 'unseen_spot')}
       />
+      {/* Tap fuera de banda en el mapa: el diálogo se monta aquí, no en el mapa, para que
+          el WebView no se remonte al abrirlo (recargaría los tiles). */}
+      {unseenTap !== null && (
+        <UnseenSpotDialog
+          spot={unseenTap}
+          // En el mapa la banda está a la vista: «ir donde sí se ve» es tocarla, así que
+          // no se resuelve un punto por red solo para repetir lo que ya se está viendo
+          visibleSpot={null}
+          onGoVisible={() => setUnseenTap(null)}
+          onGoOtherEclipse={(spot, day) => {
+            setUnseenTap(null);
+            selectSpotForEclipse(spot, day, 'map_tap_unseen');
+          }}
+          onCancel={() => setUnseenTap(null)}
+        />
+      )}
       {/* Primer arranque o repetición desde Ajustes. Fuera del modo eclipse: ese return
           va antes, así que el día D nunca se cruza por delante del evento. */}
       {(tourOpen || !prefs.tourSeen) && (

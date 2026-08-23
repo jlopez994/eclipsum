@@ -53,8 +53,9 @@ function tapInfo(lat: number, lon: number): TapInfo {
   try {
     const ec = computeLocalEclipse(lat, lon);
     const max = eventAt(ec, 'MAX');
-    // Desde este punto no se ve el eclipse activo. Se puede elegir igual (la pantalla
-    // del mapa lo explica): así se puede explorar «¿y desde aquí?» sin pelearse con el mapa.
+    // Desde este punto no se ve el eclipse activo. Se puede tocar igual —explorar «¿y
+    // desde aquí?» es la gracia del mapa—, pero elegirlo pasa por UnseenSpotDialog: antes
+    // se aplicaba sin preguntar y el mapa desaparecía bajo el aviso de fuera de zona.
     if (!max || !isActiveEclipse(ec)) {
       return {
         ...base,

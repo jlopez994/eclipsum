@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { computeLocalEclipse, eventAt, isActiveEclipse } from '../lib/eclipse';
-import { dateLabelOf, getActiveEclipse } from '../lib/eclipseCatalog';
+import { getActiveEclipse } from '../lib/eclipseCatalog';
+import { UnseenSpotDialog } from './UnseenSpotDialog';
 import { findVisiblePoint } from '../lib/visiblePoint';
 import { openInMaps } from '../lib/maps';
 import type { SuggestedSpot } from '../lib/firebase';
@@ -35,6 +36,8 @@ interface SpotSelectorProps {
   /** Lista curada servida por Remote Config; vacía = sin sección de sugerencias */
   suggestedSpots: SuggestedSpot[];
   onSelect: (spot: Spot) => void;
+  /** Elegir un puesto sin visibilidad Y saltar al eclipse que sí se ve desde ahí */
+  onSelectOtherEclipse: (spot: Spot, day: string) => void;
 }
 
 interface Row extends SpotOption {
@@ -92,6 +95,7 @@ export function SpotSelector({
   recentSpots,
   suggestedSpots,
   onSelect,
+  onSelectOtherEclipse,
 }: SpotSelectorProps) {
   const [sections, setSections] = useState<Section[] | null>(null);
   const [query, setQuery] = useState('');
@@ -256,6 +260,9 @@ export function SpotSelector({
         }
       }
 
+      // Con la lista ya completa: de todo lo ofrecido, dónde dura más la totalidad. Fila
+      // duplicada a propósito —sigue estando en su sección— para no obligar a comparar
+      // duraciones a ojo. Sin coste de motor: las duraciones ya están calculadas.
       const nearCloudP = near
         ? fetchCloudCoverBatch([{ lat: near.lat, lon: near.lon }]).catch(() => [])
         : Promise.resolve([]);
@@ -312,7 +319,7 @@ export function SpotSelector({
   /**
    * Elegir un puesto que no ve el eclipse casi siempre es un descuido: la fila lo marca,
    * pero el resultado —el mapa entero sustituido por «aquí no se ve»— es brusco de más
-   * para no preguntar. Se confirma antes en vez de explicarlo después.
+   * para no preguntar. Se ofrecen antes las dos salidas en vez de explicarlo después.
    */
   const pick = (row: Row) => {
     if (!row.visible) {
@@ -323,17 +330,8 @@ export function SpotSelector({
     onClose();
   };
 
-  const confirmPick = () => {
-    if (!confirmRow) return;
-    onSelect(confirmRow.selectValue);
-    setConfirmRow(null);
-    onClose();
-  };
-
-  /** Salida útil del diálogo: en vez de solo advertir, lleva donde el eclipse sí se ve. */
-  const goWhereVisible = () => {
-    if (!visibleSpot) return;
-    onSelect(visibleSpot);
+  const closeDialog = (apply: () => void) => {
+    apply();
     setConfirmRow(null);
     onClose();
   };
@@ -413,74 +411,22 @@ export function SpotSelector({
         </ScrollView>
       </View>
 
-      {/* Confirmación sobre el propio selector: la app no usa diálogos del sistema, y este
-          no debe sacarte de la lista — cancelar te deja donde estabas, eligiendo. */}
+      {/* Sobre el propio selector: la app no usa diálogos del sistema, y este no debe
+          sacarte de la lista — cancelar te deja donde estabas, eligiendo. */}
       {confirmRow !== null && (
-        <View style={s.confirmWrap}>
-          <Pressable style={s.confirmBackdrop} onPress={() => setConfirmRow(null)} />
-          <View style={s.confirmCard}>
-            <Text style={s.confirmTitle}>{t('spot.unseen.title')}</Text>
-            <Text style={s.confirmBody}>
-              {t('spot.unseen.body', {
-                place: confirmRow.name,
-                date: dateLabelOf(getActiveEclipse()),
-              })}
-            </Text>
-            {/* Principal la salida, no la insistencia: se abrió esto para ver el eclipse,
-                no para elegir un sitio desde el que no se ve */}
-            {visibleSpot !== null && (
-              <Pressable style={s.confirmCta} onPress={goWhereVisible}>
-                <Text style={s.confirmCtaText}>{t('spot.unseen.goVisible')}</Text>
-              </Pressable>
-            )}
-            <Pressable style={visibleSpot === null ? s.confirmCta : s.confirmGhost} onPress={confirmPick}>
-              <Text style={visibleSpot === null ? s.confirmCtaText : s.confirmGhostText}>
-                {t('spot.unseen.confirm')}
-              </Text>
-            </Pressable>
-            <Pressable style={s.confirmGhost} onPress={() => setConfirmRow(null)} hitSlop={8}>
-              <Text style={s.confirmGhostText}>{t('spot.unseen.cancel')}</Text>
-            </Pressable>
-          </View>
-        </View>
+        <UnseenSpotDialog
+          spot={confirmRow.selectValue}
+          visibleSpot={visibleSpot}
+          onGoVisible={(spot) => closeDialog(() => onSelect(spot))}
+          onGoOtherEclipse={(spot, day) => closeDialog(() => onSelectOtherEclipse(spot, day))}
+          onCancel={() => setConfirmRow(null)}
+        />
       )}
     </Modal>
   );
 }
 
 const s = StyleSheet.create({
-  confirmWrap: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  confirmBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)' },
-  confirmCard: {
-    backgroundColor: C.surface,
-    borderWidth: 1,
-    borderColor: 'rgba(255,107,94,0.45)',
-    borderRadius: 20,
-    padding: 20,
-    gap: 10,
-  },
-  confirmTitle: { fontFamily: F.bold, fontSize: 11, letterSpacing: 2.5, color: C.danger },
-  confirmBody: { fontFamily: F.regular, fontSize: 14, lineHeight: 20, color: C.text },
-  confirmCta: {
-    marginTop: 4,
-    alignItems: 'center',
-    paddingVertical: 13,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,184,77,0.45)',
-    backgroundColor: 'rgba(255,184,77,0.10)',
-  },
-  confirmCtaText: { fontFamily: F.bold, fontSize: 13, letterSpacing: 1.4, color: C.corona },
-  confirmGhost: { alignItems: 'center', paddingVertical: 11 },
-  confirmGhostText: { fontFamily: F.bold, fontSize: 12.5, letterSpacing: 1.4, color: C.dim },
   // Velo ligero y panel a C.surface con algo de aire: el mapa se intuye detrás
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
   panel: {
