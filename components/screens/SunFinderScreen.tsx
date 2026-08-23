@@ -8,7 +8,9 @@ import { useKeepAwake } from 'expo-keep-awake';
 import {
   bearingOf,
   cameraBasis,
+  compassReading,
   fovFor,
+  MIN_COMPASS_HORIZONTALITY,
   norm360,
   project,
   shortDelta,
@@ -237,11 +239,20 @@ export function SunFinderScreen({ target, gps, awayFromSpot, onClose }: SunFinde
     const raw = basisRef.current;
     // Aún no hay orientación: sin guiñado relativo no hay diferencia que medir
     if (raw === null) return;
+    // El offset se mide contra lo que la brújula MIRA —el eje superior del móvil—, no contra
+    // el eje de la cámara: con la cámara alzada sobre el horizonte los dos van 180° aparte y
+    // comparar con el equivocado desplazaba la marca justo al apuntar al sol.
+    const compass = compassReading(raw);
+    // Móvil casi a plomo en la primera muestra: entraría entera (smoothBearing ignora el peso)
+    // y anclaría la escena a ruido. El resto ya se apagan solas —el peso va multiplicado por
+    // la horizontalidad—, pero a la primera sí hay que ponerle suelo.
+    if (yawOffsetRef.current === null && compass.horizontality < MIN_COMPASS_HORIZONTALITY) return;
     // Brújula descalibrada (cargador, coche, altavoz): endurecemos el filtro en vez de
     // seguirla. Preferimos que la guía derive despacio a que dé bandazos — un error
     // constante se corrige girando; uno que salta hace la marca inservible.
-    const f = acc !== null && acc < COMPASS_MIN_ACCURACY ? YAW_OFFSET_SMOOTHING_NOISY : YAW_OFFSET_SMOOTHING;
-    const next = smoothBearing(yawOffsetRef.current, shortDelta(bearingOf(raw.forward), deg), f);
+    const base = acc !== null && acc < COMPASS_MIN_ACCURACY ? YAW_OFFSET_SMOOTHING_NOISY : YAW_OFFSET_SMOOTHING;
+    const f = base * compass.horizontality;
+    const next = smoothBearing(yawOffsetRef.current, shortDelta(compass.bearingDeg, deg), f);
     yawOffsetRef.current = next;
     setYawOffset(next);
     setHeadingAccuracy(acc);

@@ -162,6 +162,45 @@ export function bearingOf(v: Vec3): number {
   return (deg(Math.atan2(v.x, v.y)) + 360) % 360;
 }
 
+/**
+ * Suelo de `horizontality` para fiarse del rumbo del sistema: 0,25 ≈ 15° fuera de la vertical.
+ * Por debajo, el eje que mide la brújula apenas se proyecta en el horizonte: el rumbo es ruido
+ * amplificado y, al cruzar la vertical, se invierte 180° de golpe.
+ */
+export const MIN_COMPASS_HORIZONTALITY = 0.25;
+
+/** Margen para dar una lectura del acelerómetro por gravedad pura (1 g); fuera, el móvil se mueve. */
+const GRAVITY_TOLERANCE_G = 0.3;
+
+/**
+ * `horizontality` a partir del acelerómetro en reposo (unidades g, marco del móvil), para
+ * consumidores que tienen brújula pero no una base de cámara. `y` es el eje superior del
+ * móvil —el que mide la brújula—, así que su ángulo con la vertical lo da la gravedad.
+ *
+ * null cuando la lectura no es gravedad pura: con el móvil en movimiento no se puede decir
+ * nada de la inclinación, y la última muestra buena vale más que una inventada.
+ */
+export function horizontalityFromGravity(x: number, y: number, z: number): number | null {
+  const g = Math.hypot(x, y, z);
+  if (Math.abs(g - 1) > GRAVITY_TOLERANCE_G) return null;
+  return Math.sqrt(Math.max(0, 1 - (y / g) ** 2));
+}
+
+/**
+ * Cómo lee la brújula del sistema una actitud dada. NO es el rumbo de la cámara: tanto
+ * `SensorManager.getOrientation` en Android como CLHeading en iOS devuelven el rumbo del
+ * EJE SUPERIOR del móvil proyectado al horizonte. Con el móvil tumbado los dos coinciden,
+ * pero al alzar la cámara POR ENCIMA del horizonte —justo lo que hace falta para apuntar
+ * al sol— el eje superior cae hacia atrás y ambos rumbos se separan 180°.
+ *
+ * `horizontality` (0..1) es cuánto de ese eje queda en el plano horizontal. Con el móvil a
+ * plomo tiende a 0: el rumbo del sistema deja de significar nada y sirve de peso para que
+ * la muestra se apague sola en vez de anclar la escena a ruido amplificado.
+ */
+export function compassReading(basis: CameraBasis): { bearingDeg: number; horizontality: number } {
+  return { bearingDeg: bearingOf(basis.up), horizontality: Math.hypot(basis.up.x, basis.up.y) };
+}
+
 /** Gira un vector alrededor de la vertical sumando `deltaDeg` a su rumbo. */
 function turnBearing(v: Vec3, deltaDeg: number): Vec3 {
   const c = Math.cos(rad(deltaDeg));
@@ -173,9 +212,10 @@ function turnBearing(v: Vec3, deltaDeg: number): Vec3 {
  * Base de la cámara a partir de la rotación de DeviceMotion (convención W3C:
  * R = Rz(alpha)·Rx(beta)·Ry(gamma), ángulos en GRADOS).
  *
- * OJO: en Android `alpha` suele venir de un vector de rotación RELATIVO, no del norte
- * magnético — el guiñado deriva. Por eso existe `withCompassBearing`, que lo reancla
- * con la brújula de expo-location (la misma que ya usa CompassChip).
+ * `alpha` es absoluto respecto al norte MAGNÉTICO en ambas plataformas (Android:
+ * TYPE_ROTATION_VECTOR; iOS: xMagneticNorthZVertical), pero el cero no cae en el mismo
+ * eje —Android referencia el norte al eje Y del mundo, iOS al X— y falta la declinación.
+ * Ese desfase, constante, es lo que reancla `withCompassBearing` con la brújula.
  */
 export function cameraBasis(alphaDeg: number, betaDeg: number, gammaDeg: number): CameraBasis {
   const r = mul(mul(rotZ(alphaDeg), rotX(betaDeg)), rotY(gammaDeg));

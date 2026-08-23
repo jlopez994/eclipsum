@@ -1,10 +1,24 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
+import { Accelerometer } from 'expo-sensors';
 import { useHeading } from '../../hooks/useHeading';
+import {
+  horizontalityFromGravity,
+  MIN_COMPASS_HORIZONTALITY,
+  smoothBearing,
+} from '../../lib/skyProjection';
 import { t } from '../../lib/i18n';
 import { bearingLabel } from '../../lib/totality';
 import { C, CARD, F } from '../theme';
+
+/** Refresco de la inclinación: solo decide si el rumbo vale, 5 Hz sobra y no cuesta batería. */
+const TILT_INTERVAL_MS = 200;
+/**
+ * Peso de la muestra nueva en la aguja. El magnetómetro ronda ±10-20°: en crudo la aguja
+ * tiembla parada. A ~5 muestras/s, 0,25 ≈ 0,8 s de constante — sigue el giro sin vibrar.
+ */
+const HEADING_SMOOTHING = 0.25;
 
 interface CompassChipProps {
   targetAzimuthDeg: number;
@@ -25,15 +39,40 @@ interface CompassChipProps {
 /**
  * Brújula de observación: la aguja apunta al azimut del sol en el máximo.
  * Con sensor, gira respecto al rumbo del móvil — cuando miras bien, la aguja queda arriba.
- * Sin sensor (emulador): muestra el rumbo cardenal fijo (arriba = N del diagrama).
+ * Sin sensor (emulador) o con el móvil siempre a plomo, donde el rumbo del sistema no
+ * significa nada: muestra el rumbo cardenal fijo (arriba = N del diagrama).
  */
 export function CompassChip({ targetAzimuthDeg, onPress, paused = false }: CompassChipProps) {
   const [heading, setHeading] = useState<number | null>(null);
+  const [upright, setUpright] = useState(false);
   const target = ((targetAzimuthDeg % 360) + 360) % 360;
   const label = bearingLabel(target);
 
-  // Sin filtro: la aguja del chip es orientativa y el crudo del sensor le vale
-  useHeading(!paused, (deg) => setHeading(deg));
+  /**
+   * La brújula del sistema mide el rumbo del EJE SUPERIOR del móvil, no el de la cámara.
+   * Sostenido a plomo —mirando el mapa de pie— ese eje apunta al cenit, su proyección
+   * horizontal tiende a cero y el rumbo pasa a ser ruido que además se invierte 180° al
+   * cruzar la vertical. El acelerómetro es lo que dice cuándo hay que callarse.
+   *
+   * Sin acelerómetro el listener no emite nunca y la aguja se queda en el modo fijo.
+   */
+  useEffect(() => {
+    if (paused) return;
+    Accelerometer.setUpdateInterval(TILT_INTERVAL_MS);
+    const sub = Accelerometer.addListener(({ x, y, z }) => {
+      const horizontality = horizontalityFromGravity(x, y, z);
+      // Lectura con el móvil en movimiento: no dice nada de la inclinación, se conserva la anterior
+      if (horizontality !== null) setUpright(horizontality >= MIN_COMPASS_HORIZONTALITY);
+    });
+    return () => sub.remove();
+  }, [paused]);
+
+  // A plomo la aguja se congela en el último rumbo bueno: un error estático que se corrige
+  // inclinando el móvil, en vez de una aguja girando sola.
+  useHeading(!paused, (deg) => {
+    if (!upright) return;
+    setHeading((prev) => smoothBearing(prev, deg, HEADING_SMOOTHING));
+  });
 
   // Con sensor: ángulo relativo (0° = ya miras al sol). Sin sensor: rumbo sobre el diagrama (N arriba).
   const rotateDeg = heading !== null ? target - heading : target;

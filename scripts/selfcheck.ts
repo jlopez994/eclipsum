@@ -47,7 +47,10 @@ import { buildDrillEclipse, DRILL_PARTIAL_SEC, DRILL_TOTALITY_SEC } from '../lib
 import {
   bearingOf,
   cameraBasis,
+  compassReading,
   fovFor,
+  horizontalityFromGravity,
+  MIN_COMPASS_HORIZONTALITY,
   norm360,
   project,
   shortDelta,
@@ -621,21 +624,65 @@ async function main() {
 
   // --- Filtro complementario del guiñado (visor en vivo) ---
   // El giroscopio da un guiñado RELATIVO; la brújula solo aporta el offset hasta el norte.
-  // Base sintética mirando a `bearing` con cabeceo `pitch`.
-  const aimAt = (bearing: number, pitch: number): CameraBasis => ({
-    forward: skyVector(bearing, pitch),
-    right: skyVector(bearing + 90, 0),
-    up: { x: 0, y: 0, z: 1 },
-  });
-  /** Un ciclo del filtro: mide el offset contra la brújula y devuelve el rumbo ya corregido. */
-  const settled = (relBearing: number, compassDeg: number, pitch = 20) => {
-    const raw = aimAt(relBearing, pitch);
-    const offset = smoothBearing(null, shortDelta(bearingOf(raw.forward), compassDeg), 0.06);
+  // Móvil en retrato SIN alabeo mirando a `bearing` con cabeceo `pitch`: el eje superior sale
+  // de la propia base (right × forward), no clavado al cenit — es justo lo que se inclina.
+  const aimAt = (bearing: number, pitch: number): CameraBasis => {
+    const forward = skyVector(bearing, pitch);
+    const right = skyVector(bearing + 90, 0);
+    return {
+      forward,
+      right,
+      up: {
+        x: right.y * forward.z - right.z * forward.y,
+        y: right.z * forward.x - right.x * forward.z,
+        z: right.x * forward.y - right.y * forward.x,
+      },
+    };
+  };
+
+  // Lo que la brújula del sistema MIRA es el eje superior del móvil, no el de la cámara.
+  // Con la cámara al horizonte ese eje apunta al cenit y su rumbo no significa nada; al
+  // alzarla sobre el horizonte se va hacia ATRÁS y los dos rumbos quedan 180° aparte.
+  assert.ok(compassReading(aimAt(100, 0)).horizontality < 1e-9, 'brújula: al horizonte el eje superior es vertical');
+  const raised = compassReading(aimAt(100, 40));
+  assert.equal(Math.round(raised.bearingDeg), 280, 'brújula: con la cámara alzada el eje superior mira atrás');
+  assert.ok(Math.abs(raised.horizontality - Math.sin((40 * Math.PI) / 180)) < 1e-9, 'brújula: peso = seno del alzado');
+  const lowered = compassReading(aimAt(100, -40));
+  assert.equal(Math.round(lowered.bearingDeg), 100, 'brújula: con la cámara baja ambos rumbos coinciden');
+
+  // El chip del mapa solo tiene brújula, así que la misma horizontalidad sale del acelerómetro
+  // (unidades g): `y` es ese mismo eje superior, y en reposo su componente vertical es la que lee.
+  assert.equal(horizontalityFromGravity(0, 1, 0), 0, 'inclinación: móvil a plomo, el rumbo no vale nada');
+  assert.equal(horizontalityFromGravity(0, 0, 1), 1, 'inclinación: móvil plano, el rumbo vale entero');
+  assert.ok(
+    Math.abs(horizontalityFromGravity(0, Math.cos((40 * Math.PI) / 180), Math.sin((40 * Math.PI) / 180))! -
+      raised.horizontality) < 1e-9,
+    'inclinación: acelerómetro y base de cámara dan la misma horizontalidad',
+  );
+  assert.ok(horizontalityFromGravity(0, 1, 0)! < MIN_COMPASS_HORIZONTALITY, 'inclinación: a plomo cae bajo el suelo');
+  assert.ok(raised.horizontality >= MIN_COMPASS_HORIZONTALITY, 'inclinación: 40° de alzado ya es fiable');
+  assert.equal(horizontalityFromGravity(0, 3, 0), null, 'inclinación: móvil en movimiento no dice nada');
+  assert.equal(horizontalityFromGravity(0, 0, 0), null, 'inclinación: caída libre tampoco');
+
+  /**
+   * Un ciclo del filtro: la brújula ve la actitud REAL, el giroscopio la entrega girada
+   * `driftDeg`. Devuelve a qué rumbo acaba mirando la cámara — debe ser el real, sin deriva.
+   */
+  const settled = (trueBearing: number, driftDeg: number, pitch = 20) => {
+    const raw = aimAt(norm360(trueBearing - driftDeg), pitch); // lo que cree el giroscopio
+    const compassDeg = compassReading(aimAt(trueBearing, pitch)).bearingDeg; // lo que ve la brújula
+    const offset = smoothBearing(null, shortDelta(compassReading(raw).bearingDeg, compassDeg), 0.06);
     return bearingOf(withCompassBearing(raw, norm360(bearingOf(raw.forward) + offset)).forward);
   };
-  assert.ok(Math.abs(settled(100, 110) - 110) < 1e-9, 'guiñado: el offset lleva el eje al rumbo de la brújula');
-  assert.ok(Math.abs(settled(10, 350) - 350) < 1e-9, 'guiñado: cruza el norte por el lado corto');
-  assert.ok(Math.abs(settled(200, 20) - 20) < 1e-9, 'guiñado: media vuelta de deriva también se corrige');
+  const settlesAt = (trueBearing: number, driftDeg: number, pitch?: number) =>
+    Math.abs(shortDelta(settled(trueBearing, driftDeg, pitch), trueBearing)) < 1e-9;
+  assert.ok(settlesAt(110, 10), 'guiñado: el offset borra la deriva del giroscopio');
+  assert.ok(settlesAt(350, -20), 'guiñado: cruza el norte por el lado corto');
+  assert.ok(settlesAt(20, 180), 'guiñado: media vuelta de deriva también se corrige');
+  // Regresión: medir el offset contra el eje de la CÁMARA metía 180° en cuanto se alzaba el
+  // móvil, y la marca se desplazaba sola justo al buscar un sol alto — todo el caso de uso.
+  assert.ok(settlesAt(110, 10, 45), 'guiñado: con la cámara alzada sobre el horizonte también');
+  assert.ok(settlesAt(110, 10, 70), 'guiñado: y con el móvil casi tumbado hacia atrás');
   // La corrección gira SOLO alrededor de la vertical: el cabeceo lo fija la gravedad
   const tilted = aimAt(100, 35);
   const turned = withCompassBearing(tilted, norm360(bearingOf(tilted.forward) + 40));
