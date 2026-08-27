@@ -26,12 +26,21 @@ const CACHE_MAX = 40;
 
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 
-export function eclipsesFromSpot(lat: number, lon: number): Promise<SpotEclipseHit[]> {
+/**
+ * `onPartial` recibe la lista parcial según crece: el barrido tarda segundos y sin esto el
+ * modal enseñaba «Calculando…» hasta el final. Con caché el resultado llega entero de golpe
+ * (la búsqueda ya corrió, quizá con el onPartial de otro caller) — el await final manda igual.
+ */
+export function eclipsesFromSpot(
+  lat: number,
+  lon: number,
+  onPartial?: (hits: SpotEclipseHit[]) => void,
+): Promise<SpotEclipseHit[]> {
   const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
   let p = CACHE.get(key);
   if (!p) {
     if (CACHE.size >= CACHE_MAX) CACHE.clear(); // ponytail: reset simple, como el memo de eclipse.ts
-    p = searchSpotEclipses(lat, lon);
+    p = searchSpotEclipses(lat, lon, onPartial);
     CACHE.set(key, p);
   }
   return p;
@@ -52,7 +61,11 @@ function globalCivilDate(localMax: Date): string {
   }
 }
 
-async function searchSpotEclipses(lat: number, lon: number): Promise<SpotEclipseHit[]> {
+async function searchSpotEclipses(
+  lat: number,
+  lon: number,
+  onPartial?: (hits: SpotEclipseHit[]) => void,
+): Promise<SpotEclipseHit[]> {
   const observer = new Observer(lat, lon, 0);
   const to = Date.now() + YEARS_AHEAD * YEAR_MS;
   const out: SpotEclipseHit[] = [];
@@ -70,6 +83,8 @@ async function searchSpotEclipses(lat: number, lon: number): Promise<SpotEclipse
         obscuration: ec.obscuration,
         maxTime: localMax,
       });
+      // Copia: el caller no debe poder mutar (ni ver mutar) la lista que sigue creciendo
+      onPartial?.([...out]);
     }
     await tick(); // cede el hilo: cada paso del motor son ~10-30 ms
     ec = NextLocalSolarEclipse(ec.peak.time, observer);

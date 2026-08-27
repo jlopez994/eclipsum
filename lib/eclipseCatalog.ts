@@ -279,6 +279,9 @@ export function entryFromGlobalEclipse(ev: GlobalSolarEclipseInfo): EclipseEntry
     id: `${civilDate}-${kind}`,
     searchStart: `${new Date(peak.getTime() - SEARCH_START_DAYS_BEFORE * DAY_MS).toISOString().slice(0, 10)}T00:00:00Z`,
     civilDate,
+    // Un eclipse solar del motor solo puede ser partial/annular/total (penumbral es lunar).
+    // Con kind presente los labels se regeneran por idioma y el filtro por tipo lo ve.
+    kind: kind as EclipseEntry['kind'],
     ...labelFields(kind, peak),
     windyFallbackMax: new Date(Math.round(peak.getTime() / HOUR_MS) * HOUR_MS)
       .toISOString()

@@ -386,12 +386,16 @@ export function MapScreen({
                 </Text>
                 <Text style={s.statLabel}>{bandStat.label}</Text>
               </View>
+              {/* Sin dato (cargando o sin red) el chip no abre Windy: enlazar un pronóstico
+                  que aquí no hemos podido enseñar promete lo que no sabemos dar */}
               <Pressable
                 style={[s.cloudChip, { borderColor: cloud.color + '66' }]}
                 hitSlop={6}
-                accessibilityLabel={isPastEclipse ? cloud.a11y : t('map.clouds.openWindy', { a11y: cloud.a11y })}
+                accessibilityLabel={
+                  isPastEclipse || cloudPct === null ? cloud.a11y : t('map.clouds.openWindy', { a11y: cloud.a11y })
+                }
                 onPress={
-                  isPastEclipse
+                  isPastEclipse || cloudPct === null
                     ? undefined
                     : () => {
                         const when = maxEvent?.time ?? new Date(activeEclipseMeta.windyFallbackMax);

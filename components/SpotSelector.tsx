@@ -158,6 +158,9 @@ export function SpotSelector({
         gpsRow.distanceKm = 0;
         allForClouds.push(gpsRow);
         next.push({ title: t('spot.myPosition'), rows: [gpsRow] });
+        // La primera fila ya está: se enseña sin esperar a habituales y sugerencias
+        // (cada una paga su paso de motor y el «Calculando…» se comía la espera entera)
+        publish();
       }
 
       /**
@@ -193,6 +196,7 @@ export function SpotSelector({
         }
         allForClouds.push(...recentRows);
         next.push({ title: t('spot.recent'), rows: recentRows });
+        publish();
       }
 
       // Sugerencias curadas (RC). Se filtran contra el eclipse activo: una lista
@@ -272,8 +276,9 @@ export function SpotSelector({
       // Con la lista ya completa: de todo lo ofrecido, dónde dura más la totalidad. Fila
       // duplicada a propósito —sigue estando en su sección— para no obligar a comparar
       // duraciones a ojo. Sin coste de motor: las duraciones ya están calculadas.
-      // Ya destacada arriba (mi posición / la especial) no se repite: sería la misma fila
-      // dos veces seguidas. Que no salga la sección dice lo mismo: arriba está la mejor.
+      // Sale con CUALQUIER totalidad listada (antes pedía dos y la sección iba y venía
+      // según qué trajera la lista ese día). Única excepción: ya destacada arriba (mi
+      // posición / la especial) no se repite — sería la misma fila dos veces seguidas.
       const best = longestTotality(next.flatMap((sec) => sec.rows));
       if (best && best !== gpsRow && best !== specialRow && !cancelled) {
         next.splice(highlightIdx, 0, { title: t('spot.longestTotality'), rows: [best] });

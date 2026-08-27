@@ -36,7 +36,11 @@ export function SpotEclipses({ visible, onClose, lat, lon, place, activeCivilDat
     if (!visible) return;
     let alive = true;
     setHits(null);
-    eclipsesFromSpot(lat, lon).then((list) => {
+    // Los parciales pintan la lista según el barrido avanza (tarda segundos la primera vez);
+    // el then final manda: con caché no hay parciales y llega todo de golpe
+    eclipsesFromSpot(lat, lon, (partial) => {
+      if (alive) setHits(partial);
+    }).then((list) => {
       if (alive) setHits(list);
     });
     return () => {

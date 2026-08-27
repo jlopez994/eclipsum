@@ -103,13 +103,12 @@ export function SheetDetail({
             {t('horizon.note', { fist: fistLabel(maxEvent.altitude) })}
             {maxEvent.altitude < 12 ? t('horizon.noteLow', { dir: bearingLabel(maxEvent.azimuth) }) : ''}
           </Text>
-          {/* Sección aparte: son dos preguntas distintas («¿a qué altura estará?» vs
-              «¿me lo tapa el relieve?»). Grado entero en el veredicto — la rejilla de
-              ~90 m del modelo de elevación no da para décimas (por eso «estimado») */}
+          {/* Mismo bloque que la altura del sol: altura y relieve responden juntos a «¿lo
+              veré desde aquí?» (dos secciones repetían el mismo sol dos veces). Grado
+              entero en el veredicto — la rejilla de ~90 m del modelo de elevación no da
+              para décimas (por eso «estimado») */}
           {terrain && (
             <>
-              <View style={[s.divider, { marginTop: 18 }]} />
-              <Text style={s.cronoTitle}>{t('horizon.profile.title')}</Text>
               {terrain.blockedKeys.length > 0 ? (
                 <Text style={[s.terrainNote, { color: C.corona }]}>
                   {t('horizon.terrain.blocked', {
@@ -219,7 +218,8 @@ const s = StyleSheet.create({
   },
   cronoLabel: { fontFamily: F.semibold, fontSize: 14, color: C.text },
   cronoTime: { fontFamily: F.medium, fontSize: 14, color: C.dim, fontVariant: ['tabular-nums'] },
-  terrainNote: { fontFamily: F.regular, fontSize: 11, lineHeight: 16, color: C.dim },
+  /** Pegado al párrafo del sol: mismo bloque, solo un respiro */
+  terrainNote: { fontFamily: F.regular, fontSize: 11, lineHeight: 16, color: C.dim, marginTop: 10 },
   sunNote: { fontFamily: F.regular, fontSize: 12.5, lineHeight: 18, color: C.text },
   panoramaLink: {
     fontFamily: F.bold,

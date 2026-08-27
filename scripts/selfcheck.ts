@@ -745,8 +745,9 @@ async function main() {
   );
 
   // Mayor totalidad: la fila destacada del selector sale de comparar lo ya listado, así que
-  // tiene que ignorar parciales y puestos sin visibilidad, y callarse cuando no hay con qué
-  // comparar —una sección con la única fila total sería un duplicado literal de la de al lado.
+  // tiene que ignorar parciales y puestos sin visibilidad. Con UN candidato también contesta:
+  // la sección debe salir siempre que haya alguna totalidad listada (el caller solo la calla
+  // si el mejor es la fila destacada justo encima), no según cuántas trajera la lista ese día.
   const totalityRows = [
     { name: 'corta', visible: true, totalityDurationSec: 90 },
     { name: 'larga', visible: true, totalityDurationSec: 140 },
@@ -758,7 +759,11 @@ async function main() {
     'larga',
     'mayor totalidad: gana la más larga, sin contar parciales ni puestos donde no se ve',
   );
-  assert.equal(longestTotality(totalityRows.slice(1, 2)), null, 'mayor totalidad: con un candidato no hay sección');
+  assert.equal(
+    longestTotality(totalityRows.slice(0, 1))?.name,
+    'corta',
+    'mayor totalidad: con un solo candidato también contesta (la sección no depende del nº de filas)',
+  );
   assert.equal(longestTotality([]), null, 'mayor totalidad: sin totalidades no hay sección');
 
   // genSpots: los puestos sugeridos que el cron publica salen de aquí, y la lista solo

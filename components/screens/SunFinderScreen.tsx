@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { LinearGradient } from 'expo-linear-gradient';
 import { DeviceMotion } from 'expo-sensors';
 import { useKeepAwake } from 'expo-keep-awake';
 import {
@@ -465,7 +466,12 @@ export function SunFinderScreen({ target, gps, awayFromSpot, onClose }: SunFinde
         </Pressable>
       </View>
 
-      <View style={[s.bottom, { paddingBottom: insets.bottom + 16 }]} pointerEvents="box-none">
+      {/* Degradado bajo los textos: sobre cielo claro o paisaje soleado eran ilegibles */}
+      <LinearGradient
+        colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.78)']}
+        style={[s.bottom, { paddingBottom: insets.bottom + 16 }]}
+        pointerEvents="box-none"
+      >
         {target && <Text style={s.hint}>{t('sun.band')}</Text>}
         {noisyCompass && <Text style={s.calibrate}>{t('sun.calibrate')}</Text>}
         {/* Calibración: una acción, un resultado visible. Solo con sol real en alto y sensores */}
@@ -482,7 +488,7 @@ export function SunFinderScreen({ target, gps, awayFromSpot, onClose }: SunFinde
           </View>
         )}
         <Text style={s.safety}>{t('sun.safety')}</Text>
-      </View>
+      </LinearGradient>
     </View>
   );
 }
@@ -577,11 +583,12 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   closeBtnText: { fontFamily: F.bold, fontSize: 15, color: C.text },
-  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 24, gap: 8 },
+  /** paddingTop: que el degradado nazca por encima del primer texto, no cortado en él */
+  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 24, paddingTop: 40, gap: 8 },
   hint: {
     fontFamily: F.medium,
-    fontSize: 11.5,
-    color: 'rgba(242,239,233,0.8)',
+    fontSize: 12.5,
+    color: C.text,
     textAlign: 'center',
     textShadowColor: '#000',
     textShadowRadius: 6,
@@ -596,7 +603,7 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(11,11,16,0.75)',
   },
   calBtnText: { fontFamily: F.bold, fontSize: 12, letterSpacing: 1.4, color: C.corona },
-  calHint: { fontFamily: F.medium, fontSize: 10.5, color: C.dim, textAlign: 'center' },
+  calHint: { fontFamily: F.medium, fontSize: 11, color: 'rgba(242,239,233,0.75)', textAlign: 'center' },
   calDone: { fontFamily: F.semibold, fontSize: 12, color: C.text, textShadowColor: '#000', textShadowRadius: 6 },
   calNotice: { fontFamily: F.semibold, fontSize: 12, color: C.corona, textAlign: 'center', textShadowColor: '#000', textShadowRadius: 6 },
   calibrate: {

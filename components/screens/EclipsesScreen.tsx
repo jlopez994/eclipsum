@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { InteractionManager, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bandOf, pastEclipses, upcomingEclipses, type EclipseEntry } from '../../lib/eclipseCatalog';
-import { fmtRelativeDay } from '../../lib/format';
-import { t } from '../../lib/i18n';
+import { lunarEclipses, type LunarEclipseHit } from '../../lib/lunar';
+import { fmtHM, fmtRelativeDay } from '../../lib/format';
+import { monthShort, t, type I18nKey } from '../../lib/i18n';
+import { EclipseTypesInfo } from '../EclipseTypesInfo';
 import { C, F } from '../theme';
 
 interface EclipsesScreenProps {
@@ -15,6 +17,10 @@ interface EclipsesScreenProps {
 
 /** Tamaño de página de ambas listas; cada «Ver más» añade otra. */
 const PAGE = 5;
+
+/** Filtro por tipo; 'lunar' cambia de catálogo (lib/lunar), el resto filtra el solar. */
+type KindFilter = 'all' | 'total' | 'annular' | 'partial' | 'lunar';
+const FILTERS: KindFilter[] = ['all', 'total', 'annular', 'partial', 'lunar'];
 
 /** Sin tildes y en minúsculas: «Anular» casa con «anular», «AGO» con «ago». */
 const norm = (v: string) => v.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -64,6 +70,37 @@ export function EclipsesScreen({ activeEclipse, onSelectEclipse }: EclipsesScree
   // Elegir el más próximo (fila 0) equivale al modo automático; misma regla que getActiveEclipse
   const isManualSelection = activeEclipse.civilDate !== upcoming[0]?.civilDate;
 
+  const [filter, setFilter] = useState<KindFilter>('all');
+  const [typesOpen, setTypesOpen] = useState(false);
+  /** Listas del filtro activo, calculadas en diferido; null = aún calculando */
+  const [lunar, setLunar] = useState<LunarEclipseHit[] | null>(null);
+  const [solarFiltered, setSolarFiltered] = useState<{
+    key: KindFilter;
+    upcoming: EclipseEntry[];
+    past: EclipseEntry[];
+  } | null>(null);
+
+  /**
+   * El filtro barre el rango completo (la caché de 25 años del motor, o el barrido lunar):
+   * se calcula tras la animación del toque, no en el render del chip, para no trabarla.
+   * Entradas RC sin `kind` no pueden clasificarse: solo salen en TODOS.
+   */
+  useEffect(() => {
+    if (filter === 'all') return;
+    const task = InteractionManager.runAfterInteractions(() => {
+      if (filter === 'lunar') {
+        setLunar(lunarEclipses());
+        return;
+      }
+      setSolarFiltered({
+        key: filter,
+        upcoming: upcomingEclipses(999).filter((e) => e.kind === filter),
+        past: pastEclipses(999).filter((e) => e.kind === filter),
+      });
+    });
+    return () => task.cancel();
+  }, [filter]);
+
   const [query, setQuery] = useState('');
   const tokens = norm(query.trim()).split(/\s+/).filter(Boolean);
   /**
@@ -108,6 +145,37 @@ export function EclipsesScreen({ activeEclipse, onSelectEclipse }: EclipsesScree
     );
   };
 
+  /**
+   * Fila lunar: solo consulta. Los lunares se ven desde medio planeta a la vez, sin puesto
+   * ni banda ni alertas que programar, así que no hay radio ni selección — la nota bajo la
+   * lista lo explica.
+   */
+  const lunarRow = (h: LunarEclipseHit, hasDivider: boolean) => {
+    const d = new Date(`${h.civilDate}T00:00:00Z`);
+    const label = `${t(`lunar.${h.kind}` as I18nKey)} · ${d.getUTCDate()} ${monthShort(d.getUTCMonth())} ${d.getUTCFullYear()}`;
+    const sub = `${fmtRelativeDay(h.civilDate)} · ${t('real.maxAt', { time: fmtHM(h.peak) })}`;
+    return (
+      <View
+        key={h.civilDate}
+        style={[s.rowItem, hasDivider && s.rowDivider]}
+        accessible
+        accessibilityLabel={`${label}. ${sub}`}
+      >
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={s.rowTitle}>{label}</Text>
+          <Text style={s.rowSub}>{sub}</Text>
+        </View>
+      </View>
+    );
+  };
+
+  // filter/reverse devuelven copias: la caché de lib/lunar no se toca
+  const lunarUp = filter === 'lunar' && lunar ? lunar.filter((h) => h.civilDate >= todayKey) : [];
+  const lunarPast = filter === 'lunar' && lunar ? lunar.filter((h) => h.civilDate < todayKey).reverse() : [];
+  /** Listas solares del filtro activo; null mientras el diferido calcula (o al cambiar de chip) */
+  const solar =
+    filter !== 'all' && filter !== 'lunar' && solarFiltered?.key === filter ? solarFiltered : null;
+
   /** Filas del histórico con cabecera al cambiar de año: 25 años de lista piden ancla. */
   const pastRows = past.flatMap((e, i) => {
     const year = e.civilDate.slice(0, 4);
@@ -151,6 +219,33 @@ export function EclipsesScreen({ activeEclipse, onSelectEclipse }: EclipsesScree
           </Pressable>
         )}
       </View>
+      {/* Filtro por tipo + enlace a la hoja de tipos; la búsqueda por texto tiene prioridad */}
+      <View style={s.filterRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterChips}>
+          {FILTERS.map((f) => (
+            <Pressable
+              key={f}
+              style={[s.filterChip, filter === f && s.filterChipOn]}
+              onPress={() => setFilter(f)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: filter === f }}
+              accessibilityLabel={t('eclipses.filter.a11y', { label: t(`eclipses.filter.${f}` as I18nKey) })}
+            >
+              <Text style={[s.filterChipTxt, filter === f && s.filterChipTxtOn]}>
+                {t(`eclipses.filter.${f}` as I18nKey)}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+        <Pressable
+          onPress={() => setTypesOpen(true)}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={t('eclipses.types.a11y')}
+        >
+          <Text style={s.typesLink}>{t('eclipses.types')}</Text>
+        </Pressable>
+      </View>
       <ScrollView
         style={s.body}
         showsVerticalScrollIndicator={false}
@@ -165,6 +260,48 @@ export function EclipsesScreen({ activeEclipse, onSelectEclipse }: EclipsesScree
               {results.map((e, i) => eclipseRow(e, i < results.length - 1, e.civilDate < todayKey))}
             </View>
           </View>
+        ) : filter === 'lunar' ? (
+          <>
+            <View>
+              <Text style={s.section}>{t('settings.upcoming')}</Text>
+              <View style={s.card}>
+                {lunar === null && <Text style={s.emptyTxt}>{t('eclipses.computing')}</Text>}
+                {lunar !== null && lunarUp.length === 0 && (
+                  <Text style={s.emptyTxt}>{t('eclipses.filterEmpty')}</Text>
+                )}
+                {lunarUp.map((h, i) => lunarRow(h, i < lunarUp.length - 1))}
+              </View>
+              <Text style={s.note}>{t('eclipses.lunar.note')}</Text>
+            </View>
+            {lunarPast.length > 0 && (
+              <View>
+                <Text style={s.section}>{t('settings.past')}</Text>
+                <View style={s.card}>{lunarPast.map((h, i) => lunarRow(h, i < lunarPast.length - 1))}</View>
+              </View>
+            )}
+          </>
+        ) : filter !== 'all' ? (
+          <>
+            <View>
+              <Text style={s.section}>{t('settings.upcoming')}</Text>
+              <View style={s.card}>
+                {solar === null && <Text style={s.emptyTxt}>{t('eclipses.computing')}</Text>}
+                {solar !== null && solar.upcoming.length === 0 && (
+                  <Text style={s.emptyTxt}>{t('eclipses.filterEmpty')}</Text>
+                )}
+                {solar?.upcoming.map((e, i) => eclipseRow(e, i < solar.upcoming.length - 1, false))}
+              </View>
+            </View>
+            {solar !== null && solar.past.length > 0 && (
+              <View>
+                <Text style={s.section}>{t('settings.past')}</Text>
+                <View style={s.card}>
+                  {solar.past.map((e, i) => eclipseRow(e, i < solar.past.length - 1, true))}
+                </View>
+                <Text style={s.note}>{t('settings.past.note')}</Text>
+              </View>
+            )}
+          </>
         ) : (
           <>
             <View>
@@ -207,6 +344,7 @@ export function EclipsesScreen({ activeEclipse, onSelectEclipse }: EclipsesScree
           </>
         )}
       </ScrollView>
+      <EclipseTypesInfo visible={typesOpen} onClose={() => setTypesOpen(false)} />
     </View>
   );
 }
@@ -239,6 +377,27 @@ const s = StyleSheet.create({
   /** Encima del extremo derecho del input, no al lado: el campo conserva todo el ancho */
   searchClear: { position: 'absolute', right: 32, padding: 8 },
   searchClearTxt: { fontFamily: F.bold, fontSize: 14, color: C.dim },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingLeft: 24,
+    paddingRight: 24,
+    paddingBottom: 4,
+  },
+  filterChips: { flexDirection: 'row', gap: 8, paddingVertical: 6 },
+  filterChip: {
+    borderRadius: 99,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  filterChipOn: { borderColor: 'rgba(255,184,77,0.5)', backgroundColor: 'rgba(255,184,77,0.08)' },
+  filterChipTxt: { fontFamily: F.semibold, fontSize: 10, letterSpacing: 1.5, color: C.dim },
+  filterChipTxtOn: { color: C.corona },
+  typesLink: { fontFamily: F.bold, fontSize: 10, letterSpacing: 1, color: C.corona },
   yearHeader: {
     fontFamily: F.semibold,
     fontSize: 10,

@@ -44,7 +44,15 @@ interface CompassChipProps {
  */
 export function CompassChip({ targetAzimuthDeg, onPress, paused = false }: CompassChipProps) {
   const [heading, setHeading] = useState<number | null>(null);
-  const [upright, setUpright] = useState(false);
+  /**
+   * true de inicio: hasta la primera lectura LIMPIA del acelerómetro no se sabe nada de la
+   * inclinación, y horizontalityFromGravity devuelve null mientras el móvil se mueve. Con
+   * false, andando o en coche esa lectura podía no llegar nunca: la brújula ignoraba todos
+   * los rumbos y la aguja se quedaba en modo fijo aun con sensor sano. El coste de asumir
+   * bien es unos ms de rumbo dudoso si arrancas con el móvil a plomo — la primera lectura
+   * limpia lo corrige.
+   */
+  const [upright, setUpright] = useState(true);
   const target = ((targetAzimuthDeg % 360) + 360) % 360;
   const label = bearingLabel(target);
 
@@ -54,7 +62,8 @@ export function CompassChip({ targetAzimuthDeg, onPress, paused = false }: Compa
    * horizontal tiende a cero y el rumbo pasa a ser ruido que además se invierte 180° al
    * cruzar la vertical. El acelerómetro es lo que dice cuándo hay que callarse.
    *
-   * Sin acelerómetro el listener no emite nunca y la aguja se queda en el modo fijo.
+   * Sin acelerómetro (o sin lectura limpia aún) se asume inclinación válida: ver el estado
+   * `upright` — callarse por defecto dejaba la aguja muerta en movimiento.
    */
   useEffect(() => {
     if (paused) return;

@@ -37,13 +37,15 @@ export function cleanPlaceLabel(name: string): string {
 }
 
 /**
- * De todo lo listado, dónde dura más la totalidad. Null con menos de dos candidatos:
- * con uno solo la sección destacada sería un duplicado literal de la fila de al lado.
+ * De todo lo listado, dónde dura más la totalidad. Null solo sin ningún candidato: antes
+ * exigía dos y la sección aparecía o no según cuántas totalidades trajera la lista ese día
+ * (habituales que rotan, sugerencias filtradas por eclipse) — el caller ya evita el único
+ * duplicado literal (que el mejor sea la fila destacada justo encima).
  */
 export function longestTotality<T extends { visible: boolean; totalityDurationSec: number | null }>(
   rows: T[],
 ): T | null {
   const totals = rows.filter((r) => r.visible && r.totalityDurationSec !== null);
-  if (totals.length < 2) return null;
+  if (totals.length === 0) return null;
   return totals.reduce((best, r) => (r.totalityDurationSec! > best.totalityDurationSec! ? r : best));
 }
