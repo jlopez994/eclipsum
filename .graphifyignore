@@ -1,0 +1,16 @@
+package.json
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+tsconfig*.json
+eslint.config.*
+turbo.json
+vite.config.*
+next.config.*
+requirements*.txt
+.next/
+.next-cache/
+.firebase/
+dist/
+build/
+*.md
