@@ -59,23 +59,28 @@ export function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice
 <div id="map"></div>
 <script>
   var D = ${data};
-  var map = L.map('map', { zoomControl: false, attributionControl: true });
+  // Una sola copia del mundo: sin límites, al alejar el planeta se repetía en horizontal
+  // (banda y marcadores incluidos por duplicado). minZoom acorde: más lejos solo hay fondo.
+  var map = L.map('map', {
+    zoomControl: false, attributionControl: true,
+    minZoom: 2, maxBounds: [[-85, -180], [85, 180]], maxBoundsViscosity: 1.0,
+  });
   // Esri Dark Gray Canvas, sin API key. La base viene SIN rótulos (van en la capa
   // Reference), así que las etiquetas son una capa fija encima de cualquier base.
   // maxNativeZoom 16: más cerca Esri ya no sirve teselas y Leaflet sobreamplía las últimas.
   var baseDark = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-    { maxNativeZoom: 16, maxZoom: 18, zIndex: 1, className: 'dim', attribution: '&copy; Esri' }
+    { maxNativeZoom: 16, maxZoom: 18, zIndex: 1, noWrap: true, className: 'dim', attribution: '&copy; Esri' }
   ).addTo(map);
   // Modo relieve: hillshade oscuro de Esri.
   // maxNativeZoom 15: más cerca Esri ya no sirve teselas y Leaflet sobreamplía las últimas.
   var terrainBase = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade_Dark/MapServer/tile/{z}/{y}/{x}',
-    { maxNativeZoom: 15, maxZoom: 18, zIndex: 1, attribution: '&copy; Esri' }
+    { maxNativeZoom: 15, maxZoom: 18, zIndex: 1, noWrap: true, attribution: '&copy; Esri' }
   );
   var labels = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
-    { maxNativeZoom: 16, maxZoom: 18, zIndex: 2, attribution: '&copy; Esri' }
+    { maxNativeZoom: 16, maxZoom: 18, zIndex: 2, noWrap: true, attribution: '&copy; Esri' }
   ).addTo(map);
   window.eclipsumSetTerrain = function (on) {
     if (on) { map.removeLayer(baseDark); terrainBase.addTo(map); }
