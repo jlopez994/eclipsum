@@ -85,9 +85,10 @@ function tapInfo(lat: number, lon: number): TapInfo {
 }
 
 /**
- * Mapa real (Leaflet embebido en el HTML + tiles Carto dark, sin API key) con
+ * Mapa real (Leaflet embebido en el HTML + tiles Esri Dark Gray, sin API key) con
  * la banda de totalidad dibujada encima y marcadores de puesto y GPS.
  * Los tiles sí requieren red; la librería ya no depende de ningún CDN.
+ * (Antes Carto dark: empezó a servir «API KEY REQUIRED» en sus teselas anónimas.)
  */
 const RealMapInner = forwardRef<RealMapHandle, RealMapProps>(function RealMap(
   { spot, here, terrain, onSelectPoint }: RealMapProps,
@@ -224,23 +225,26 @@ function buildHtml(spot: MapPoint, here: MapPoint | null, band: BandSlice[] | nu
 <script>
   var D = ${data};
   var map = L.map('map', { zoomControl: false, attributionControl: true });
-  var baseDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    maxZoom: 18,
-    attribution: '&copy; OSM &copy; CARTO',
-  }).addTo(map);
-  // Modo relieve: hillshade oscuro de Esri (sin API key) + solo-etiquetas de Carto encima.
+  // Esri Dark Gray Canvas, sin API key. La base viene SIN rótulos (van en la capa
+  // Reference), así que las etiquetas son una capa fija encima de cualquier base.
+  // maxNativeZoom 16: más cerca Esri ya no sirve teselas y Leaflet sobreamplía las últimas.
+  var baseDark = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    { maxNativeZoom: 16, maxZoom: 18, zIndex: 1, attribution: '&copy; Esri' }
+  ).addTo(map);
+  // Modo relieve: hillshade oscuro de Esri.
   // maxNativeZoom 15: más cerca Esri ya no sirve teselas y Leaflet sobreamplía las últimas.
   var terrainBase = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade_Dark/MapServer/tile/{z}/{y}/{x}',
     { maxNativeZoom: 15, maxZoom: 18, zIndex: 1, attribution: '&copy; Esri' }
   );
-  var terrainLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
-    // Atribución propia: en modo relieve la base oscura (que la traía) no está en el mapa
-    maxZoom: 18, zIndex: 2, attribution: '&copy; OSM &copy; CARTO',
-  });
+  var labels = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+    { maxNativeZoom: 16, maxZoom: 18, zIndex: 2, attribution: '&copy; Esri' }
+  ).addTo(map);
   window.eclipsumSetTerrain = function (on) {
-    if (on) { map.removeLayer(baseDark); terrainBase.addTo(map); terrainLabels.addTo(map); }
-    else { map.removeLayer(terrainBase); map.removeLayer(terrainLabels); baseDark.addTo(map); }
+    if (on) { map.removeLayer(baseDark); terrainBase.addTo(map); }
+    else { map.removeLayer(terrainBase); baseDark.addTo(map); }
   };
 
   if (D.polygon) {

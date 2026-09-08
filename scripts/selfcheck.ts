@@ -59,6 +59,7 @@ import {
   smoothBasis,
   smoothBearing,
   withCompassBearing,
+  yawRateFromRotationRate,
   type CameraBasis,
 } from '../lib/skyProjection';
 
@@ -691,6 +692,28 @@ async function main() {
   // Sin muestra previa el offset entra tal cual: la marca queda anclada al norte desde la
   // primera lectura de brújula, sin arrastrar mientras converge
   assert.equal(smoothBearing(null, shortDelta(100, 110), 0.06), 10, 'guiñado: el primer offset entra entero');
+
+  // --- Ancla de guiñado: ritmo de rumbo implicado por el giroscopio puro ---
+  // El fusor puede reanclar el rumbo sin que el giroscopio vea giro: todo lo que la base
+  // gire de más respecto a este ritmo es deriva magnética y el visor lo cancela.
+  const flatUp = cameraBasis(0, 0, 0); // pantalla al cielo, cámara al suelo
+  assert.ok(
+    Math.abs(yawRateFromRotationRate(flatUp, { alpha: -10, beta: 0, gamma: 0 }) - 10) < 1e-9,
+    'ancla: móvil plano girando horario (visto desde arriba) → rumbo +10°/s',
+  );
+  const portrait = cameraBasis(0, 90, 0); // vertical, cámara al horizonte
+  assert.ok(
+    Math.abs(yawRateFromRotationRate(portrait, { alpha: 0, beta: 0, gamma: -10 }) - 10) < 1e-9,
+    'ancla: en vertical el guiñado pasa al eje Y del móvil',
+  );
+  assert.ok(
+    Math.abs(yawRateFromRotationRate(portrait, { alpha: 5, beta: 0, gamma: 0 })) < 1e-9,
+    'ancla: alabeo puro alrededor del eje de la cámara no toca el rumbo',
+  );
+  assert.ok(
+    Math.abs(yawRateFromRotationRate(portrait, { alpha: 0, beta: 8, gamma: 0 })) < 1e-9,
+    'ancla: cabeceo puro (alzar la cámara) tampoco',
+  );
 
   // --- Recorrido del sol en el visor (arco C1→C4) ---
   const c1 = eventAt(zgz, 'C1')!;

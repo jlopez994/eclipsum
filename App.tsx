@@ -311,8 +311,9 @@ function AppInner() {
       // elección es del usuario y el efecto de reubicación no debe deshacerla
       prevEclipseDayRef.current = activeCatalog.civilDate;
       animateNextLayout();
-      const recentSpots = spot.origin === 'gps' ? prefs.recentSpots : pushRecent(prefs.recentSpots, spot);
-      onPrefsChange({ ...withContext(prefs, activeCatalog.civilDate, { spot }), recentSpots });
+      const recent = contextFor(prefs, activeCatalog.civilDate).recentSpots;
+      const recentSpots = spot.origin === 'gps' ? recent : pushRecent(recent, spot);
+      onPrefsChange(withContext(prefs, activeCatalog.civilDate, { spot, recentSpots }));
     },
     [prefs, activeCatalog.civilDate, onPrefsChange],
   );
@@ -331,13 +332,14 @@ function AppInner() {
         if (!name) return;
         onPrefsChange((p) => {
           // Otro puesto elegido mientras resolvía: el renombrado ya no le corresponde
-          const current = contextFor(p, day).spot;
+          const ctxDay = contextFor(p, day);
+          const current = ctxDay.spot;
           if (!current || current.lat !== lat || current.lon !== lon) return p;
-          return {
-            ...withContext(p, day, { spot: { ...current, name } }),
+          return withContext(p, day, {
+            spot: { ...current, name },
             // La entrada de habituales se creó con las coordenadas: renombrarla también
-            recentSpots: p.recentSpots.map((r) => (sameCoords(r, current) ? { ...r, name } : r)),
-          };
+            recentSpots: ctxDay.recentSpots.map((r) => (sameCoords(r, current) ? { ...r, name } : r)),
+          });
         });
       });
     },
@@ -358,13 +360,14 @@ function AppInner() {
       if (!prefs) return;
       track('eclipse_selected', { day, from });
       animateNextLayout();
-      const recentSpots = spot.origin === 'gps' ? prefs.recentSpots : pushRecent(prefs.recentSpots, spot);
-      onPrefsChange({
+      // Los habituales son del eclipse DESTINO: el puesto viaja con el salto
+      const recent = contextFor(prefs, day).recentSpots;
+      const recentSpots = spot.origin === 'gps' ? recent : pushRecent(recent, spot);
+      onPrefsChange(
         // El destino siempre es futuro (se busca desde hoy): si venías de una consulta del
         // histórico, el salto la termina y vuelve el rollover normal
-        ...withContext({ ...prefs, selectedEclipseDay: day, selectedEclipsePast: false }, day, { spot }),
-        recentSpots,
-      });
+        withContext({ ...prefs, selectedEclipseDay: day, selectedEclipsePast: false }, day, { spot, recentSpots }),
+      );
     },
     [prefs, onPrefsChange],
   );
@@ -707,7 +710,7 @@ function AppInner() {
         userGeo={geo ? { lat: geo.lat, lon: geo.lon } : null}
         gpsPlace={geo?.place ?? t('spot.yourPosition')}
         activeSpot={activeSpot}
-        recentSpots={prefs.recentSpots}
+        recentSpots={ctx.recentSpots}
         suggestedSpots={remote.suggestedSpots}
         onSelect={selectSpot}
         onSelectOtherEclipse={(spot, day) => selectSpotForEclipse(spot, day, 'unseen_spot')}

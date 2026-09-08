@@ -19,6 +19,7 @@ import {
   smoothBasis,
   smoothBearing,
   withCompassBearing,
+  yawRateFromRotationRate,
   type CameraBasis,
   type Fov,
 } from '../../lib/skyProjection';
@@ -59,6 +60,26 @@ const YAW_OFFSET_SMOOTHING_NOISY = 0.015;
  * criterio se resuelve solo en cuanto lo inclinas — antes de que el error importe.
  */
 const RADIAN_CEILING = 7;
+/**
+ * ANCLA DE GUIÑADO (estilo flecha de navegación de Maps): el rumbo de la escena solo se
+ * mueve lo que mida el giroscopio puro (`rotationRate`); todo lo que el fusor gire DE MÁS
+ * es reanclaje magnético (TV, metal, cargador) y se resta del offset en el mismo instante.
+ * Sin esto la marca «navegaba» sola por la escena aunque el móvil no girase.
+ * El error absoluto que el ancla congela lo siguen corrigiendo, despacio, la brújula
+ * (YAW_OFFSET_SMOOTHING) y la calibración contra el sol real.
+ */
+/**
+ * Reposo: giro por debajo de este ritmo (°/s) cuenta como móvil quieto. En reposo el
+ * ritmo restante es sesgo del giroscopio: se espera rumbo clavado (esperado = 0) en vez
+ * de integrar ese sesgo, y la brújula deja de perseguirse (ver useHeading).
+ */
+const STILL_RATE_DEG_S = 2;
+/**
+ * Residuo máximo por muestra (°) que el ancla acepta como reanclaje. Más que esto en 50 ms
+ * no es deriva sino discontinuidad (giro de pantalla, salto del filtro de base, vuelta de
+ * segundo plano con dt capado): cancelarla destrozaría el offset.
+ */
+const RESIDUAL_MAX_DEG = 3;
 /**
  * Calibración mínima para fiarse de la brújula. `accuracy` de expo-location NO son grados:
  * es un nivel 0-3 (3 alta, <20° de incertidumbre; 2 media, <35°; 1 baja, <50°; 0 ninguna).
@@ -217,6 +238,10 @@ export function SunFinderScreen({ target, gps, awayFromSpot, onClose }: SunFinde
   const [headingAccuracy, setHeadingAccuracy] = useState<number | null>(null);
   const [sensorsOff, setSensorsOff] = useState(false);
   const degreeUnits = useRef(false);
+  /** Móvil en reposo según el giroscopio; congela deriva y persecución de brújula */
+  const stillRef = useRef(false);
+  /** Última base CRUDA con su instante — el ancla mide residuos sin el retardo del filtro */
+  const prevRawRef = useRef<{ at: number; basis: CameraBasis } | null>(null);
   const [sunNow, setSunNow] = useState(() => sunNowSample(gps.lat, gps.lon));
   const [calibration, setCalibration] = useState<Calibration | null>(null);
   const [calNotice, setCalNotice] = useState<string | null>(null);
@@ -267,7 +292,33 @@ export function SunFinderScreen({ target, gps, awayFromSpot, onClose }: SunFinde
           degreeUnits.current = true;
         }
         const k = degreeUnits.current ? 1 : 180 / Math.PI;
-        const next = smoothBasis(basisRef.current, cameraBasis(alpha * k, beta * k, gamma * k), MOTION_SMOOTHING);
+        const raw = cameraBasis(alpha * k, beta * k, gamma * k);
+        // `rotationRate` no comparte la ambigüedad de unidades de `rotation`: ambos módulos
+        // nativos de expo-sensors 57 convierten a °/s antes de emitir.
+        const rate = d.rotationRate;
+        const rateOk =
+          rate !== null &&
+          Number.isFinite(rate.alpha) &&
+          Number.isFinite(rate.beta) &&
+          Number.isFinite(rate.gamma);
+        stillRef.current =
+          rateOk && Math.max(Math.abs(rate.alpha), Math.abs(rate.beta), Math.abs(rate.gamma)) < STILL_RATE_DEG_S;
+        // Ancla de guiñado: el rumbo crudo solo debe moverse lo que integre el giroscopio;
+        // el residuo es reanclaje magnético del fusor y se resta del offset ya (persistente:
+        // no hay salto al moverse, y brújula/calibración siguen corrigiendo el absoluto).
+        // Cabeceo y alabeo pasan tal cual — esos los fija la gravedad y no derivan.
+        const now = Date.now();
+        if (rateOk && prevRawRef.current !== null && yawOffsetRef.current !== null) {
+          const dt = Math.min(0.2, (now - prevRawRef.current.at) / 1000);
+          const expected = stillRef.current ? 0 : yawRateFromRotationRate(raw, rate) * dt;
+          const residual = shortDelta(bearingOf(prevRawRef.current.basis.forward), bearingOf(raw.forward)) - expected;
+          if (residual !== 0 && Math.abs(residual) < RESIDUAL_MAX_DEG) {
+            yawOffsetRef.current = norm360(yawOffsetRef.current - residual);
+            setYawOffset(yawOffsetRef.current);
+          }
+        }
+        prevRawRef.current = { at: now, basis: raw };
+        const next = smoothBasis(basisRef.current, raw, MOTION_SMOOTHING);
         basisRef.current = next;
         setBasis(next);
       });
@@ -292,6 +343,13 @@ export function SunFinderScreen({ target, gps, awayFromSpot, onClose }: SunFinde
     const raw = basisRef.current;
     // Aún no hay orientación: sin guiñado relativo no hay diferencia que medir
     if (raw === null) return;
+    // En reposo y ya anclada, la brújula solo aporta su ruido (±10-20°): perseguirla era
+    // la otra mitad de la deriva con el móvil quieto. La precisión sí se refresca — la
+    // franja debe ensancharse aunque no se toque el offset.
+    if (stillRef.current && yawOffsetRef.current !== null) {
+      setHeadingAccuracy(acc);
+      return;
+    }
     // El offset se mide contra lo que la brújula MIRA —el eje superior del móvil—, no contra
     // el eje de la cámara: con la cámara alzada sobre el horizonte los dos van 180° aparte y
     // comparar con el equivocado desplazaba la marca justo al apuntar al sol.

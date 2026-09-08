@@ -201,6 +201,22 @@ export function compassReading(basis: CameraBasis): { bearingDeg: number; horizo
   return { bearingDeg: bearingOf(basis.up), horizontality: Math.hypot(basis.up.x, basis.up.y) };
 }
 
+/**
+ * Ritmo de cambio del RUMBO (°/s, horario) que implica el giroscopio puro: la proyección
+ * del ritmo de giro en ejes del móvil (W3C: alpha→z, beta→x, gamma→y, en °/s) sobre la
+ * vertical del mundo. Positivo = el rumbo crece.
+ *
+ * Es la referencia del ancla de guiñado: el reanclaje magnético del fusor NO aparece en
+ * este ritmo, así que todo rumbo que la base gire de más respecto a él es deriva, no giro.
+ */
+export function yawRateFromRotationRate(
+  basis: CameraBasis,
+  rate: { alpha: number; beta: number; gamma: number },
+): number {
+  // ω_mundo·ẑ con la base (x móvil→right, y→up, z→−forward); rumbo horario = −giro antihorario
+  return -(rate.beta * basis.right.z + rate.gamma * basis.up.z - rate.alpha * basis.forward.z);
+}
+
 /** Gira un vector alrededor de la vertical sumando `deltaDeg` a su rumbo. */
 function turnBearing(v: Vec3, deltaDeg: number): Vec3 {
   const c = Math.cos(rad(deltaDeg));

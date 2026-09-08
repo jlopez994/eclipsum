@@ -38,6 +38,12 @@ export interface RecentSpot extends Spot {
 export interface EclipseContext {
   /** Puesto de observación deseado; null hasta la 1ª elección / siembra GPS */
   spot: Spot | null;
+  /**
+   * Puestos habituales DE ESTE eclipse (más visitados primero), máx. RECENT_CAP.
+   * Por eclipse y no globales: los sitios elegidos para uno no significan nada
+   * para otro (la banda cae en otra parte) y solo ensuciaban el selector.
+   */
+  recentSpots: RecentSpot[];
   alertsOn: AlertToggles;
   /** Aviso unos segundos antes del contacto (por hito) */
   alertEarly: AlertEarly;
@@ -58,8 +64,6 @@ export interface Prefs {
    * los pasados se conservan como histórico
    */
   byEclipse: Record<string, EclipseContext>;
-  /** Puestos habituales globales (más visitados primero), máx. RECENT_CAP */
-  recentSpots: RecentSpot[];
   /** Audio de las notificaciones locales */
   alertSound: AlertSound;
   /** Canal de los avisos de actualización; 'stable' por defecto */
@@ -100,6 +104,7 @@ export const DEFAULT_C1_PLAN_ALERTS: C1PlanAlerts = {
 // identidad estable → los efectos que dependen del contexto no se disparan de más
 const DEFAULT_ECLIPSE_CONTEXT: EclipseContext = {
   spot: null,
+  recentSpots: [],
   alertsOn: { C1: true, C2: true, MAX: true, C3: true, C4: true },
   alertEarly: DEFAULT_ALERT_EARLY,
   c1PlanAlerts: DEFAULT_C1_PLAN_ALERTS,
@@ -109,7 +114,6 @@ export const DEFAULT_PREFS: Prefs = {
   selectedEclipseDay: '',
   selectedEclipsePast: false,
   byEclipse: {},
-  recentSpots: [],
   alertSound: 'eclipse',
   updateChannel: 'stable',
   language: '',
@@ -174,11 +178,26 @@ function parseSpot(raw: unknown): Spot | null {
   return { name: s.name, lat: s.lat, lon: s.lon, origin: s.origin as Spot['origin'] };
 }
 
+/** Sanea una lista de habituales guardada; entradas sin contador valen 1 visita. */
+function parseRecentSpots(raw: unknown): RecentSpot[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((s) => {
+      const spot = parseSpot(s);
+      if (!spot) return null;
+      const visits = (s as { visits?: unknown }).visits;
+      return { ...spot, visits: typeof visits === 'number' ? visits : 1 };
+    })
+    .filter((s): s is RecentSpot => s !== null)
+    .slice(0, RECENT_CAP);
+}
+
 /** Sanea un contexto guardado (o los campos planos legacy pasando el objeto raíz). */
 function parseContext(raw: unknown, legacyLeads?: unknown): EclipseContext {
   const src = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   return {
     spot: parseSpot(src.spot),
+    recentSpots: parseRecentSpots(src.recentSpots),
     alertsOn: {
       ...DEFAULT_ECLIPSE_CONTEXT.alertsOn,
       ...(src.alertsOn && typeof src.alertsOn === 'object' ? (src.alertsOn as Partial<AlertToggles>) : {}),
@@ -206,18 +225,6 @@ export async function loadPrefs(migrationDay: string): Promise<Prefs> {
     const raw = await AsyncStorage.getItem(KEY);
     if (!raw) return DEFAULT_PREFS;
     const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const recentSpots = Array.isArray(parsed.recentSpots)
-      ? (parsed.recentSpots as unknown[])
-          .map((s) => {
-            const spot = parseSpot(s);
-            if (!spot) return null;
-            // Migración desde listas sin contador: cada entrada vale 1 visita
-            const visits = (s as { visits?: unknown }).visits;
-            return { ...spot, visits: typeof visits === 'number' ? visits : 1 };
-          })
-          .filter((s): s is RecentSpot => s !== null)
-          .slice(0, RECENT_CAP)
-      : [];
     const byEclipse: Record<string, EclipseContext> = {};
     if (parsed.byEclipse && typeof parsed.byEclipse === 'object') {
       for (const [day, ctx] of Object.entries(parsed.byEclipse as Record<string, unknown>)) {
@@ -231,7 +238,6 @@ export async function loadPrefs(migrationDay: string): Promise<Prefs> {
       selectedEclipseDay: typeof parsed.selectedEclipseDay === 'string' ? parsed.selectedEclipseDay : '',
       selectedEclipsePast: parsed.selectedEclipsePast === true,
       byEclipse,
-      recentSpots,
       alertSound: parsed.alertSound === 'default' ? 'default' : 'eclipse',
       // Ausente = prefs anteriores al selector de canal: estable, como venían comportándose
       updateChannel: parsed.updateChannel === 'beta' ? 'beta' : 'stable',

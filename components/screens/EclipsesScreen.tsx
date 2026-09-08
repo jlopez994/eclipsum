@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { InteractionManager, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bandOf, pastEclipses, upcomingEclipses, type EclipseEntry } from '../../lib/eclipseCatalog';
 import { lunarEclipses, type LunarEclipseHit } from '../../lib/lunar';
@@ -221,22 +222,32 @@ export function EclipsesScreen({ activeEclipse, onSelectEclipse }: EclipsesScree
       </View>
       {/* Filtro por tipo + enlace a la hoja de tipos; la búsqueda por texto tiene prioridad */}
       <View style={s.filterRow}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterChips}>
-          {FILTERS.map((f) => (
-            <Pressable
-              key={f}
-              style={[s.filterChip, filter === f && s.filterChipOn]}
-              onPress={() => setFilter(f)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: filter === f }}
-              accessibilityLabel={t('eclipses.filter.a11y', { label: t(`eclipses.filter.${f}` as I18nKey) })}
-            >
-              <Text style={[s.filterChipTxt, filter === f && s.filterChipTxtOn]}>
-                {t(`eclipses.filter.${f}` as I18nKey)}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
+        <View style={s.filterScroll}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterChips}>
+            {FILTERS.map((f) => (
+              <Pressable
+                key={f}
+                style={[s.filterChip, filter === f && s.filterChipOn]}
+                onPress={() => setFilter(f)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: filter === f }}
+                accessibilityLabel={t('eclipses.filter.a11y', { label: t(`eclipses.filter.${f}` as I18nKey) })}
+              >
+                <Text style={[s.filterChipTxt, filter === f && s.filterChipTxtOn]}>
+                  {t(`eclipses.filter.${f}` as I18nKey)}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+          {/* Fundido en el borde: sin él, el chip cortado chocaba en seco contra el enlace TIPOS */}
+          <LinearGradient
+            colors={['rgba(11,11,16,0)', C.bg]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={s.filterFade}
+            pointerEvents="none"
+          />
+        </View>
         <Pressable
           onPress={() => setTypesOpen(true)}
           hitSlop={8}
@@ -385,7 +396,9 @@ const s = StyleSheet.create({
     paddingRight: 24,
     paddingBottom: 4,
   },
-  filterChips: { flexDirection: 'row', gap: 8, paddingVertical: 6 },
+  filterScroll: { flex: 1, minWidth: 0 },
+  filterFade: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 28 },
+  filterChips: { flexDirection: 'row', gap: 8, paddingVertical: 6, paddingRight: 20 },
   filterChip: {
     borderRadius: 99,
     borderWidth: 1,
