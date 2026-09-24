@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  Animated,
   Modal,
   Pressable,
   ScrollView,
@@ -9,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import * as Location from 'expo-location';
+import { useDragToClose } from '../hooks/useDragToClose';
 import { computeLocalEclipse, eventAt, isActiveEclipse } from '../lib/eclipse';
 import { getActiveEclipse } from '../lib/eclipseCatalog';
 import { UnseenSpotDialog } from './UnseenSpotDialog';
@@ -105,6 +107,7 @@ export function SpotSelector({
   /** Punto desde el que SÍ se ve, ya resuelto; deja al diálogo ofrecer la salida */
   const [visibleSpot, setVisibleSpot] = useState<Spot | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const drag = useDragToClose(visible, onClose);
 
   useEffect(() => {
     if (!visible) {
@@ -361,9 +364,11 @@ export function SpotSelector({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={s.backdrop} onPress={onClose} />
-      <View style={s.panel}>
-        <View style={s.handle} />
-        <Text style={s.title}>{t('spot.title')}</Text>
+      <Animated.View style={[s.panel, { transform: [{ translateY: drag.translateY }] }]}>
+        <View {...drag.panHandlers}>
+          <View style={s.handle} />
+          <Text style={s.title}>{t('spot.title')}</Text>
+        </View>
         <View style={s.searchRow}>
           <TextInput
             style={s.input}
@@ -431,7 +436,7 @@ export function SpotSelector({
             </View>
           ))}
         </ScrollView>
-      </View>
+      </Animated.View>
 
       {/* Sobre el propio selector: la app no usa diálogos del sistema, y este no debe
           sacarte de la lista — cancelar te deja donde estabas, eligiendo. */}

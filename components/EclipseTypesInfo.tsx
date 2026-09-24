@@ -1,4 +1,5 @@
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useDragToClose } from '../hooks/useDragToClose';
 import { t, type I18nKey } from '../lib/i18n';
 import { C, F } from './theme';
 
@@ -18,16 +19,20 @@ const GROUPS = [
  * Solo lectura; el filtro por tipo de la pestaña Eclipses es quien la enlaza.
  */
 export function EclipseTypesInfo({ visible, onClose }: EclipseTypesInfoProps) {
+  const drag = useDragToClose(visible, onClose);
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={s.backdrop} onPress={onClose} />
-      <View style={s.panel}>
-        <View style={s.handle} />
-        <Text style={s.title}>{t('types.title')}</Text>
+      <Animated.View style={[s.panel, { transform: [{ translateY: drag.translateY }] }]}>
+        <View {...drag.panHandlers}>
+          <View style={s.handle} />
+          <Text style={s.title}>{t('types.title')}</Text>
+        </View>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.body}>
           {GROUPS.map((g) => (
             <View key={g.key}>
               <Text style={s.groupTitle}>{t(`types.${g.key}` as I18nKey)}</Text>
+              <Text style={s.groupIntro}>{t(`types.${g.key}.intro` as I18nKey)}</Text>
               {g.kinds.map((k) => (
                 <View key={k} style={s.typeRow}>
                   <Text style={s.typeName}>{t(`types.${g.key}.${k}.name` as I18nKey)}</Text>
@@ -37,7 +42,7 @@ export function EclipseTypesInfo({ visible, onClose }: EclipseTypesInfoProps) {
             </View>
           ))}
         </ScrollView>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }
@@ -73,6 +78,7 @@ const s = StyleSheet.create({
     marginTop: 18,
     marginBottom: 6,
   },
+  groupIntro: { fontFamily: F.regular, fontSize: 13, lineHeight: 19, color: C.dim, marginBottom: 4 },
   typeRow: {
     paddingVertical: 10,
     borderBottomWidth: 1,

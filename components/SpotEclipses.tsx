@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useDragToClose } from '../hooks/useDragToClose';
 import { eclipsesFromSpot, type SpotEclipseHit } from '../lib/spotEclipses';
 import { fmtRelativeDay } from '../lib/format';
 import { monthShort, t, type I18nKey } from '../lib/i18n';
@@ -31,6 +32,7 @@ function hitLabel(hit: SpotEclipseHit): string {
  */
 export function SpotEclipses({ visible, onClose, lat, lon, place, activeCivilDate, onSelectDay }: SpotEclipsesProps) {
   const [hits, setHits] = useState<SpotEclipseHit[] | null>(null);
+  const drag = useDragToClose(visible, onClose);
 
   useEffect(() => {
     if (!visible) return;
@@ -78,9 +80,11 @@ export function SpotEclipses({ visible, onClose, lat, lon, place, activeCivilDat
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={s.backdrop} onPress={onClose} />
-      <View style={s.panel}>
-        <View style={s.handle} />
-        <Text style={s.title}>{t('map.history.title', { place })}</Text>
+      <Animated.View style={[s.panel, { transform: [{ translateY: drag.translateY }] }]}>
+        <View {...drag.panHandlers}>
+          <View style={s.handle} />
+          <Text style={s.title}>{t('map.history.title', { place })}</Text>
+        </View>
         <ScrollView style={s.list} showsVerticalScrollIndicator={false}>
           {hits === null && <Text style={s.loading}>{t('spot.computing')}</Text>}
           {hits?.length === 0 && <Text style={s.loading}>{t('map.history.empty')}</Text>}
@@ -89,7 +93,7 @@ export function SpotEclipses({ visible, onClose, lat, lon, place, activeCivilDat
           {past.length > 0 && <Text style={s.sectionTitle}>{t('settings.past')}</Text>}
           {past.map(row)}
         </ScrollView>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }
