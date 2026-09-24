@@ -267,8 +267,19 @@ async function main() {
     1,
     'Entradas malformadas se descartan; válidas pasan',
   );
+  // Sin kind (o con uno inválido) el motor lo pone: si no, el filtro TOTALES se saltaba 2027-2028
+  assert.equal(parseRemoteCatalog(JSON.stringify([rcEntry]))[0].kind, 'total', 'RC sin kind → kind del motor');
+  assert.equal(
+    parseRemoteCatalog(JSON.stringify([{ ...rcEntry, kind: 'hibrido' }]))[0].kind,
+    'total',
+    'RC con kind inválido → kind del motor',
+  );
   setRemoteCatalog(JSON.stringify([rcEntry]));
   assert.equal(getEclipseById('2027-08-02-egipto')?.label, 'Total · 2 ago 2027', 'Entrada RC resoluble por id');
+  assert.ok(
+    upcomingEclipses(999, new Date('2026-09-24T00:00:00Z')).some((e) => e.civilDate === '2027-08-02' && e.kind === 'total'),
+    'Filtro TOTALES: la entrada RC de 2027 sale como total',
+  );
   assert.equal(
     getActiveEclipse(new Date('2026-06-01T00:00:00Z')).id,
     '2026-08-12-iberia',

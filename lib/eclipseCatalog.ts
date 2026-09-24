@@ -192,12 +192,22 @@ function sanitizeBand(raw: unknown): BandSlice[] | undefined {
   return ok ? raw.map((s) => ({ lon: s.lon, latS: s.latS, latN: s.latN })) : undefined;
 }
 
-/** Valida el JSON de RC; entradas malformadas se descartan en silencio (nunca rompe la app). */
+const KINDS: readonly string[] = ['total', 'annular', 'partial'];
+
+/**
+ * Valida el JSON de RC; entradas malformadas se descartan en silencio (nunca rompe la app).
+ * Sin `kind` válido lo pone el motor: la entrada RC gana el dedupe por día al autogenerado,
+ * y sin tipo desaparecería de los filtros y no traduciría sus labels.
+ */
 export function parseRemoteCatalog(json: string): EclipseEntry[] {
   try {
     const raw: unknown = JSON.parse(json);
     if (!Array.isArray(raw)) return [];
-    return raw.filter(isValidEntry).map((e) => ({ ...e, band: sanitizeBand((e as EclipseEntry).band) }));
+    return raw.filter(isValidEntry).map((e) => ({
+      ...e,
+      kind: e.kind && KINDS.includes(e.kind) ? e.kind : resolveByEngine(e.civilDate)?.kind,
+      band: sanitizeBand(e.band),
+    }));
   } catch {
     return [];
   }
