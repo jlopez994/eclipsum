@@ -16,6 +16,7 @@ updates:
         update-types: [minor, patch]
       mayores:
         patterns: ["*"]
+        update-types: [major]
       seguridad:
         applies-to: security-updates
         patterns: ["*"]
@@ -33,6 +34,7 @@ updates:
         update-types: [minor, patch]
       mayores:
         patterns: ["*"]
+        update-types: [major]
       seguridad:
         applies-to: security-updates
         patterns: ["*"]
