@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { InteractionManager, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bandOf, pastEclipses, upcomingEclipses, type EclipseEntry } from '../../lib/eclipseCatalog';
@@ -88,7 +88,7 @@ export function EclipsesScreen({ activeEclipse, onSelectEclipse }: EclipsesScree
    */
   useEffect(() => {
     if (filter === 'all') return;
-    const task = InteractionManager.runAfterInteractions(() => {
+    const task = requestIdleCallback(() => {
       if (filter === 'lunar') {
         setLunar(lunarEclipses());
         return;
@@ -99,7 +99,7 @@ export function EclipsesScreen({ activeEclipse, onSelectEclipse }: EclipsesScree
         past: pastEclipses(999).filter((e) => e.kind === filter),
       });
     });
-    return () => task.cancel();
+    return () => cancelIdleCallback(task);
   }, [filter]);
 
   const [query, setQuery] = useState('');
@@ -204,7 +204,7 @@ export function EclipsesScreen({ activeEclipse, onSelectEclipse }: EclipsesScree
           onChangeText={setQuery}
           // La caché de 25 años de histórico se paga al enfocar, no en el primer tecleo:
           // se espera a que acabe la animación del teclado para no trabarla con el cálculo
-          onFocus={() => InteractionManager.runAfterInteractions(() => pastEclipses(999))}
+          onFocus={() => requestIdleCallback(() => pastEclipses(999))}
           autoCorrect={false}
           returnKeyType="search"
         />
