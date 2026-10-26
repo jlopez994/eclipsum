@@ -6,6 +6,7 @@ import {
   type AudioSource,
 } from 'expo-audio';
 import { ECLIPSE_SOUND } from './eclipseSound';
+import { trackError } from './firebase';
 import type { AlertSound } from './prefs';
 
 let player: AudioPlayer | null = null;
@@ -84,7 +85,8 @@ export async function previewAlertSound(sound: AlertSound): Promise<void> {
     next.volume = 1;
     await next.seekTo(0);
     next.play();
-  } catch {
+  } catch (e) {
     releasePlayer();
+    trackError('sound_preview', e);
   }
 }
