@@ -3,11 +3,9 @@ import { getCrashlytics, recordError } from '@react-native-firebase/crashlytics'
 import { fetchAndActivate, getRemoteConfig, getString } from '@react-native-firebase/remote-config';
 import { setRemoteActiveEclipseId, setRemoteCatalog } from './eclipseCatalog';
 
-// Dev sin caché para probar banners al momento; release 1 h: los avisos de
-// actualización se ven el mismo día y sigue lejos del throttling de RC
-const FETCH_INTERVAL_MS = __DEV__ ? 0 : 3_600_000;
-
 export interface RemoteExtras {
+  /** false = sin respuesta de RC (sin red o throttling): valores de la última vez */
+  fetched: boolean;
   /** Banner superior; vacío = oculto */
   message: string;
   /** URL de gafas certificadas (afiliado); vacío = botón oculto */
@@ -111,11 +109,13 @@ function parseSuggestedSpots(json: string): SuggestedSpot[] {
  * Remote Config: banner, eclipse activo, catálogo extra, gafas, patrocinador y aviso de actualización.
  * Nunca lanza: sin red devuelve últimos valores activados o defaults.
  */
-export async function fetchRemoteExtras(): Promise<RemoteExtras> {
+export async function fetchRemoteExtras(force = false): Promise<RemoteExtras> {
   try {
     const rc = getRemoteConfig();
     // Asignar el objeto completo: en RNFirebase `settings` es un setter; mutar una propiedad no aplica nada
-    rc.settings = { minimumFetchIntervalMillis: FETCH_INTERVAL_MS, fetchTimeoutMillis: 30_000 };
+    // force (arranque y «Buscar actualizaciones») ve lo publicado ya; volver a primer plano
+    // (también desde el instalador o un permiso) usa 5 min para no acabar en throttling
+    rc.settings = { minimumFetchIntervalMillis: force ? 0 : 300_000, fetchTimeoutMillis: 30_000 };
     rc.defaultConfig = {
       eclipse_message: '',
       active_eclipse_id: '',
@@ -137,9 +137,11 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       latest_beta_apk_url: '',
       latest_beta_apk_sha256: '',
     };
+    let fetched = true;
     try {
       await fetchAndActivate(rc);
     } catch {
+      fetched = false;
       // Sin red el fetch lanza, pero los últimos valores activados persisten en disco:
       // seguimos y los leemos igual (arranque en frío offline conserva catálogo y banner)
     }
@@ -158,6 +160,7 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
     setRemoteCatalog(getString(rc, 'eclipse_catalog'));
     setRemoteActiveEclipseId(getString(rc, 'active_eclipse_id'));
     return {
+      fetched,
       message,
       glassesUrl,
       donateUrl,
@@ -174,6 +177,7 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
     // Aquí solo se llega por fallo del SDK (la falta de red se traga arriba): reportable
     trackError('remote_config', e);
     return {
+      fetched: false,
       message: '',
       glassesUrl: '',
       donateUrl: '',

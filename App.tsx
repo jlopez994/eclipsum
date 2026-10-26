@@ -697,6 +697,8 @@ function AppInner() {
             onSoundChange={(sound) => onPrefsChange({ ...prefs, alertSound: sound })}
             updateChannel={prefs.updateChannel}
             onUpdateChannelChange={(channel) => onPrefsChange({ ...prefs, updateChannel: channel })}
+            update={apkUpdate}
+            onCheckUpdates={remote.checkNow}
             onDemoEclipse={() => setDemoAt(new Date())}
             language={prefs.language}
             onLanguageChange={(lang) => onPrefsChange({ ...prefs, language: lang })}
