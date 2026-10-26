@@ -1,5 +1,3 @@
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
 import {
   createAudioPlayer,
   setAudioModeAsync,
@@ -7,11 +5,9 @@ import {
   type AudioPlayer,
   type AudioSource,
 } from 'expo-audio';
+import { ECLIPSE_SOUND } from './eclipseSound';
+import { trackError } from './firebase';
 import type { AlertSound } from './prefs';
-
-/** Package real de la app (app.json) → android.resource://…/raw/eclipse; fallback si Constants no carga */
-const ANDROID_PKG = Constants.expoConfig?.android?.package ?? 'com.jlopez.eclipsum';
-const ECLIPSE_ASSET = require('../assets/sounds/eclipse.wav');
 
 let player: AudioPlayer | null = null;
 let modeReady = false;
@@ -29,13 +25,7 @@ async function ensureMode(): Promise<void> {
 }
 
 function sourceFor(sound: AlertSound): AudioSource | null {
-  if (sound === 'eclipse') {
-    // El wav de notificaciones ya está en res/raw — más fiable que el require de Metro
-    if (Platform.OS === 'android') {
-      return { uri: `android.resource://${ANDROID_PKG}/raw/eclipse` };
-    }
-    return ECLIPSE_ASSET;
-  }
+  if (sound === 'eclipse') return ECLIPSE_SOUND;
   // Tono de sistema: content://settings/... no carga en expo-audio; se previsualiza
   // con una notificación real (sendTestNotification) desde Ajustes
   return null;
@@ -95,20 +85,8 @@ export async function previewAlertSound(sound: AlertSound): Promise<void> {
     next.volume = 1;
     await next.seekTo(0);
     next.play();
-  } catch {
+  } catch (e) {
     releasePlayer();
-    // Fallback custom: asset empaquetado por Metro si el URI raw falla
-    if (sound === 'eclipse' && Platform.OS === 'android') {
-      try {
-        const fallback = createAudioPlayer(ECLIPSE_ASSET, { downloadFirst: true, keepAudioSessionActive: true });
-        player = fallback;
-        await waitLoaded(fallback);
-        fallback.volume = 1;
-        await fallback.seekTo(0);
-        fallback.play();
-      } catch {
-        releasePlayer();
-      }
-    }
+    trackError('sound_preview', e);
   }
 }
