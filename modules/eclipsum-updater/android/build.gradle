@@ -1,0 +1,15 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.jlopez.eclipsum.updater'
+version = '1.0.0'
+
+android {
+  namespace "com.jlopez.eclipsum.updater"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+}

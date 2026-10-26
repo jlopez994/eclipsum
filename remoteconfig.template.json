@@ -53,7 +53,14 @@
       "defaultValue": {
         "value": "https://github.com/jlopez994/eclipsum/releases/latest/download/eclipsum.apk"
       },
-      "description": "URL pública de la APK latest (GitHub Releases, asset de nombre fijo). Vacío = sin aviso aunque haya versionCode nuevo.",
+      "description": "URL de la APK estable (asset de SU tag b<vc>, para que case con latest_apk_sha256). Lo escribe release-apk. Vacío = sin aviso aunque haya versionCode nuevo.",
+      "valueType": "STRING"
+    },
+    "latest_apk_sha256": {
+      "defaultValue": {
+        "value": ""
+      },
+      "description": "sha256 de la APK de latest_apk_url. Lo escribe release-apk. La app la descarga, comprueba este hash e instala ella misma; vacío = sin aviso.",
       "valueType": "STRING"
     },
     "latest_beta_version_code": {
@@ -68,6 +75,13 @@
         "value": "https://github.com/jlopez994/eclipsum/releases/download/b54/eclipsum.apk"
       },
       "description": "URL de la APK de la última beta (asset de su tag, no releases/latest). Lo escribe release-apk. Vacío = sin aviso de beta.",
+      "valueType": "STRING"
+    },
+    "latest_beta_apk_sha256": {
+      "defaultValue": {
+        "value": ""
+      },
+      "description": "sha256 de la APK de latest_beta_apk_url. Lo escribe release-apk. Vacío = sin aviso de beta.",
       "valueType": "STRING"
     },
     "suggested_spots": {

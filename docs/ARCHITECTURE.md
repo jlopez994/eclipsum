@@ -17,7 +17,8 @@ The only component with global state (~500 lines). No external store.
 | `prefs` | `usePrefs()` | persisted preferences; `null` = loading (spinner) |
 | `geo`, `locating` | `useGeo()` | one-shot GPS position |
 | `permissions` | re-read on launch and on every `AppState → active` | location + notifications, without re-prompting |
-| `remoteMsg`, `glassesUrl`, `sponsor`, `updateUrl`, `suggestedSpots` | `fetchRemoteExtras()` | Remote Config values |
+| `remoteMsg`, `glassesUrl`, `sponsor`, `update`, `suggestedSpots` | `fetchRemoteExtras()` | Remote Config values |
+| `apkUpdate` | `useApkUpdate(remote.update)` | in-app update (permission → download % → install, or error); lives in App so a download survives the banner unmounting. Native side: `modules/eclipsum-updater` (PackageInstaller) |
 | `catalogEpoch` | counter | invalidates the eclipse memo when RC changes the catalog |
 | `tab` | `'mapa' \| 'eclipses' \| 'alertas' \| 'ajustes'` | active tab |
 | `demo` | bool | demo mode (1.5 s long-press on *About*, in Settings) |
@@ -96,4 +97,4 @@ Reschedules all notifications when the spot, toggles, sound, language or permiss
 
 ## Remote data (Remote Config)
 
-9 string parameters — full table and operations in the [README](../README.md#remote-config-remoteconfigtemplatejson). The client ships baked-in defaults (`lib/firebase.ts`), so the app is functional without ever having contacted Firebase.
+13 string parameters — full table and operations in the [README](../README.md#remote-config-remoteconfigtemplatejson). The client ships baked-in defaults (`lib/firebase.ts`), so the app is functional without ever having contacted Firebase.

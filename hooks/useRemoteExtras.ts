@@ -11,6 +11,12 @@ import type { UpdateChannel } from '../lib/prefs';
  */
 const PREVIEW_UPDATE_IN_DEV = __DEV__;
 
+/** APK que la app puede descargar e instalar por sí misma */
+export interface ApkUpdate {
+  url: string;
+  sha256: string;
+}
+
 export interface RemoteExtrasState {
   /** Banner superior servido por RC; vacío = sin aviso */
   message: string;
@@ -22,8 +28,8 @@ export interface RemoteExtrasState {
   sponsor: Sponsor | null;
   /** Puestos recomendados; vacío = el selector no enseña la sección */
   suggestedSpots: SuggestedSpot[];
-  /** URL de la APK nueva cuando RC anuncia un versionCode mayor; vacío = sin aviso */
-  updateUrl: string;
+  /** APK nueva cuando RC anuncia un versionCode mayor; null = sin aviso */
+  update: ApkUpdate | null;
   /** Sube en cada lectura: RC puede cambiar el eclipse activo → recalcular circunstancias */
   catalogEpoch: number;
 }
@@ -34,7 +40,7 @@ const EMPTY: RemoteExtrasState = {
   donateUrl: '',
   sponsor: null,
   suggestedSpots: [],
-  updateUrl: '',
+  update: null,
   catalogEpoch: 0,
 };
 
@@ -43,10 +49,15 @@ const EMPTY: RemoteExtrasState = {
  * prueba betas no debe perderse una estable posterior (al publicar la estable de una
  * beta su versionCode es mayor, así que el aviso lleva a la definitiva).
  */
-function updateFor(r: RemoteExtras, channel: UpdateChannel, ownVc: number): string {
-  const candidates = [{ vc: r.latestVersionCode, url: r.latestApkUrl }];
-  if (channel === 'beta') candidates.push({ vc: r.latestBetaVersionCode, url: r.latestBetaApkUrl });
-  return candidates.filter((c) => c.url !== '' && c.vc > ownVc).sort((a, b) => b.vc - a.vc)[0]?.url ?? '';
+function updateFor(r: RemoteExtras, channel: UpdateChannel, ownVc: number): ApkUpdate | null {
+  const candidates = [{ vc: r.latestVersionCode, url: r.latestApkUrl, sha256: r.latestApkSha256 }];
+  if (channel === 'beta') {
+    candidates.push({ vc: r.latestBetaVersionCode, url: r.latestBetaApkUrl, sha256: r.latestBetaApkSha256 });
+  }
+  const best = candidates
+    .filter((c) => c.url !== '' && c.sha256 !== '' && c.vc > ownVc)
+    .sort((a, b) => b.vc - a.vc)[0];
+  return best ? { url: best.url, sha256: best.sha256 } : null;
 }
 
 /**
@@ -59,7 +70,7 @@ export function useRemoteExtras(channel: UpdateChannel): RemoteExtrasState {
   useEffect(() => {
     const pull = () =>
       void fetchRemoteExtras().then((r) => {
-        // Aviso de actualización sin tienda: RC anuncia versionCode y URL de la APK
+        // Actualización sin tienda: RC anuncia versionCode, URL y sha256 de la APK
         const ownVc = PREVIEW_UPDATE_IN_DEV ? 0 : Constants.expoConfig?.android?.versionCode ?? 0;
         setState((prev) => ({
           message: r.message,
@@ -67,7 +78,7 @@ export function useRemoteExtras(channel: UpdateChannel): RemoteExtrasState {
           donateUrl: r.donateUrl,
           sponsor: r.sponsor,
           suggestedSpots: r.suggestedSpots,
-          updateUrl: updateFor(r, channel, ownVc),
+          update: updateFor(r, channel, ownVc),
           catalogEpoch: prev.catalogEpoch + 1,
         }));
       });

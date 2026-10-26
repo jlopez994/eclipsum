@@ -52,6 +52,9 @@ hooks/
   usePrefs.ts            Loads/saves prefs, resolves language
   useSheet.ts            Draggable bottom sheet
   useSpotData.ts         Clouds + nearest totality + GPS point for the spot
+  useApkUpdate.ts        In-app update flow (permission → download → install)
+modules/
+  eclipsum-updater/      Local Expo module (Kotlin): downloads the APK, checks its sha256, installs it with PackageInstaller
 components/
   screens/               MapScreen, EclipsesScreen, AlertsScreen, SettingsScreen, EclipseModeScreen
   map/                   Visual map pieces (CompassChip, HorizonDiagram, …)
@@ -86,16 +89,28 @@ Build requirements: `google-services.json` from the Firebase project in the repo
 
 ## Release
 
-Deployment lives in **GitHub Actions** (`.github/workflows/release-apk.yml`): when a new `expo.android.versionCode` lands on main, it builds the APK (gated by `selfcheck` + `typecheck`), creates the **GitHub Release** `b<versionCode>` and publishes `latest_version_code` to Remote Config so the app announces the update.
+Deployment lives in **GitHub Actions** (`.github/workflows/release-apk.yml`): when a new `expo.android.versionCode` lands on main, it builds the APK (gated by `selfcheck` + `typecheck`), creates the **GitHub Release** `b<versionCode>` and publishes `latest_version_code` + `latest_apk_url` + `latest_apk_sha256` to Remote Config so the app announces the update.
 
 - **Deploying = `npm run release`** (or `npm run release -- <vc>` for an explicit versionCode): bumps `expo.android.versionCode`, commits `chore(release): build N` and pushes to main. Pushing code without a bump publishes nothing (the guard sees the release already exists).
 - **Build identity = `android.versionCode`** (monotonic, never decreases). There is no separate semver: `expo.version` is derived from it by `release.sh` (`b<vc>` stable, `b<vc>-beta` beta) and never edited by hand.
 - **Beta before stable**: `npm run beta` — same pipeline, but the release is marked pre-release (the `-beta` suffix is what the workflow detects) and regular users are not notified. Download it from the release page, test, then `npm run release` promotes a stable.
 - **Local test APK** (nothing published): `npm run apk`, or `npm run dev` for the emulator + Metro loop.
 - **Stable download URL**: `https://github.com/jlopez994/eclipsum/releases/latest/download/eclipsum.apk` — the asset always has the same name, the URL never changes.
-- **Store-less updates**: the app compares its versionCode against RC `latest_version_code` and shows a download banner (`latest_apk_url`).
+- **Store-less, in-app updates**: the app compares its versionCode against RC `latest_version_code` and shows an update banner. "Install" downloads `latest_apk_url` inside the app, checks it against `latest_apk_sha256` and hands it to Android's `PackageInstaller` (local module `modules/eclipsum-updater`). The first time Android asks to allow installs from Eclipsum (the banner opens that screen) and to confirm; after that, updates install with no browser or file manager. Android only installs over the app if the APK carries the same signature (the RN template's debug keystore, identical on CI and locally); which APK gets offered is decided by Remote Config (URL + sha256, written only by `release-apk.yml`). Without a sha256 in RC there is no banner: builds published before this mechanism keep the old browser banner until they update once.
+- **Testing the update locally** (nothing published): see "Testing the in-app update" below.
 - Local build (no publishing): `npm run apk` → `android/app/build/outputs/apk/release/app-release.apk`.
 - Workflow secrets: `GOOGLE_SERVICES_JSON` (file contents) and `FIREBASE_SERVICE_ACCOUNT` (shared with sync-remote-config).
+
+### Testing the in-app update
+
+Locally, without touching Remote Config (a debug build allows http):
+
+1. Build the "new" APK: set `expo.android.versionCode` to N+1 in `app.json` (don't commit it), `npm run apk`, copy `android/app/build/outputs/apk/release/app-release.apk` to a folder, note its `shasum -a 256` and put `app.json` back.
+2. Serve it: `python3 -m http.server 8765 --bind 127.0.0.1` in that folder (the emulator reaches it as `10.0.2.2`).
+3. In `hooks/useRemoteExtras.ts`, temporarily replace `update: updateFor(…)` with `update: { url: 'http://10.0.2.2:8765/app-release.apk', sha256: '<hash>' }`, then `npm run dev`.
+4. In the app: banner → **Install** → *Open settings* (allow installs from Eclipsum) → back → **Install** → Android's "Update this app?" → the app closes and `adb shell dumpsys package com.jlopez.eclipsum | grep versionCode` shows N+1. A wrong hash must end in "Couldn't download the update"; cancelling the Android dialog, in "Android cancelled the installation".
+
+For real: publish a beta with this code (`npm run beta`), install it on the phone with *betas too* in Settings, publish the next beta and the banner installs it in-app.
 
 ## Remote Config (`remoteconfig.template.json`)
 
@@ -106,8 +121,8 @@ Deployment lives in **GitHub Actions** (`.github/workflows/release-apk.yml`): wh
 | `eclipse_catalog` | JSON of extra eclipses (with optional `band` path) without a release. Safety net: serves paths to old builds and to installs whose bundled window has rolled past |
 | `glasses_url` | ISO 12312-2 glasses affiliate; empty = button hidden |
 | `sponsor` | `{"name","url","tagline"?}` sponsor of the active eclipse |
-| `latest_version_code` / `latest_apk_url` | In-app update notice, stable channel |
-| `latest_beta_version_code` / `latest_beta_apk_url` | Same for the beta channel. The URL points at the asset of that pre-release's own tag, since a pre-release does not move `releases/latest`. Only read by users who picked "betas too" in Settings |
+| `latest_version_code` / `latest_apk_url` / `latest_apk_sha256` | In-app update, stable channel. The URL points at the asset of that release's own tag (`releases/download/b<vc>/eclipsum.apk`), so a later release can't change the file under a published sha256 |
+| `latest_beta_version_code` / `latest_beta_apk_url` / `latest_beta_apk_sha256` | Same for the beta channel. Only read by users who picked "betas too" in Settings |
 | `suggested_spots` | `[{"name","lat","lon"}]` spots (max 6) for the picker; only those inside the active eclipse's band are shown, `[]` hides the section. Regenerated monthly by `genSpots.ts` — hand edits are overwritten |
 
 Parameter descriptions: max 256 characters (RC limit).

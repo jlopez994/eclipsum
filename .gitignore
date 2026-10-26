@@ -39,6 +39,7 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+modules/*/android/build/
 
 # graphify
 graphify-out/
