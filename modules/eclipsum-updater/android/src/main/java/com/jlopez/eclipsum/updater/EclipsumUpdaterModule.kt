@@ -100,7 +100,7 @@ class EclipsumUpdaterModule : Module() {
             md.update(buf, 0, n)
             done += n
             // Un evento por punto porcentual: por bloque serían cientos de cruces al hilo de JS
-            val percent = if (total > 0) (done * 100 / total).toInt() else -1
+            val percent = if (total > 0) (done * 100 / total).toInt().coerceAtMost(100) else -1
             if (percent != sent) {
               sent = percent
               sendEvent("onProgress", mapOf("percent" to percent))

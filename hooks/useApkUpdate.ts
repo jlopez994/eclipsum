@@ -44,7 +44,9 @@ export function useApkUpdate(update: ApkUpdate | null): ApkUpdateUi | null {
       Linking.openURL(update.url).catch(() => {});
       return;
     }
-    if (state.kind === 'downloading' || state.kind === 'installing') return;
+    // 'installing' sí se puede relanzar: si Android no llegó a abrir su confirmación (app en
+    // segundo plano al acabar la descarga) no habrá resultado y el aviso se quedaría ahí
+    if (state.kind === 'downloading') return;
     if (!Updater.canInstall()) {
       setState({ kind: 'needsPermission' });
       return;

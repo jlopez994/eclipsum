@@ -177,8 +177,13 @@ function UpdateNotice({ update, onClose }: { update: ApkUpdateUi; onClose: () =>
           onClose={onClose}
         />
       );
+    // La confirmación de Android tapa este aviso; si se ve, es que no llegó a abrirse
     case 'installing':
-      return <Notice tone="action" text={t('app.updateInstalling')} onClose={onClose} />;
+      return (
+        <Notice tone="action" text={t('app.updateInstalling')} onClose={onClose}>
+          <NoticeLink label={t('app.updateRetry')} onPress={update.install} soft />
+        </Notice>
+      );
     case 'failed':
       return (
         <Notice tone="warn" text={t(`app.updateError.${st.error}`, { detail: st.detail })} onClose={onClose}>
