@@ -10,6 +10,18 @@ updates:
       default-days: 7
     commit-message:
       prefix: "chore(deps)"
+    # Versiones que fija el SDK de Expo: se suben con `npx expo install --fix`, no sueltas
+    # (react-native 0.87 fuera de Expo 57 rompió la build de la APK en #11)
+    ignore:
+      - dependency-name: "react"
+      - dependency-name: "react-native"
+      - dependency-name: "react-native-*"
+      - dependency-name: "@react-native-async-storage/async-storage"
+      - dependency-name: "@types/react"
+      - dependency-name: "expo"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-*"
+        update-types: ["version-update:semver-major"]
     groups:
       menores:
         patterns: ["*"]
