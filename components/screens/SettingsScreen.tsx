@@ -248,7 +248,10 @@ export function SettingsScreen({
                 <Pressable
                   key={opt.id}
                   style={[s.permRow, i < UPDATE_CHANNELS.length - 1 && s.rowDivider]}
-                  onPress={() => onUpdateChannelChange(opt.id)}
+                  onPress={() => {
+                    setCheck('idle'); // «Estás al día» era del canal anterior
+                    onUpdateChannelChange(opt.id);
+                  }}
                   accessibilityRole="radio"
                   accessibilityState={{ selected: on }}
                   accessibilityLabel={`${t(opt.label)}. ${t(opt.hint)}`}

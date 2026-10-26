@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import Constants from 'expo-constants';
 import { fetchRemoteExtras, type RemoteExtras, type Sponsor, type SuggestedSpot } from '../lib/firebase';
@@ -61,18 +61,22 @@ function updateFor(r: RemoteExtras, channel: UpdateChannel, ownVc: number): ApkU
 }
 
 /**
- * Remote Config al arrancar y al volver a primer plano, sin caché, y bajo demanda con
- * checkNow (botón «Buscar actualizaciones»). Nunca lanza: sin red se queda con lo último activado.
+ * Remote Config al arrancar, al volver a primer plano y bajo demanda con checkNow (botón
+ * «Buscar actualizaciones»). Nunca lanza: sin red se queda con lo último activado.
  */
 export function useRemoteExtras(
   channel: UpdateChannel,
 ): RemoteExtrasState & { /** false = RC no respondió */ checkNow: () => Promise<boolean> } {
   const [state, setState] = useState<RemoteExtrasState>(EMPTY);
+  const lastPull = useRef(0);
 
   // channel en las deps: cambiarlo en Ajustes reevalúa el aviso sin esperar a otro arranque
   const pull = useCallback(
-    () =>
-      fetchRemoteExtras().then((r) => {
+    (force: boolean) => {
+      const id = ++lastPull.current;
+      return fetchRemoteExtras(force).then((r) => {
+        // Una consulta anterior que acabe tarde (p. ej. con el canal de antes) no pisa la última
+        if (id !== lastPull.current) return r.fetched;
         // Actualización sin tienda: RC anuncia versionCode, URL y sha256 de la APK
         const ownVc = PREVIEW_UPDATE_IN_DEV ? 0 : Constants.expoConfig?.android?.versionCode ?? 0;
         setState((prev) => ({
@@ -85,17 +89,18 @@ export function useRemoteExtras(
           catalogEpoch: prev.catalogEpoch + 1,
         }));
         return r.fetched;
-      }),
+      });
+    },
     [channel],
   );
 
   useEffect(() => {
-    void pull();
+    void pull(true);
     const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'active') void pull();
+      if (s === 'active') void pull(false);
     });
     return () => sub.remove();
   }, [pull]);
 
-  return { ...state, checkNow: pull };
+  return { ...state, checkNow: () => pull(true) };
 }

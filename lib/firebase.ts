@@ -109,13 +109,13 @@ function parseSuggestedSpots(json: string): SuggestedSpot[] {
  * Remote Config: banner, eclipse activo, catálogo extra, gafas, patrocinador y aviso de actualización.
  * Nunca lanza: sin red devuelve últimos valores activados o defaults.
  */
-export async function fetchRemoteExtras(): Promise<RemoteExtras> {
+export async function fetchRemoteExtras(force = false): Promise<RemoteExtras> {
   try {
     const rc = getRemoteConfig();
     // Asignar el objeto completo: en RNFirebase `settings` es un setter; mutar una propiedad no aplica nada
-    // Sin caché: solo se consulta al entrar en la app y con «Buscar actualizaciones», y en
-    // ambos casos hay que ver lo publicado ya
-    rc.settings = { minimumFetchIntervalMillis: 0, fetchTimeoutMillis: 30_000 };
+    // force (arranque y «Buscar actualizaciones») ve lo publicado ya; volver a primer plano
+    // (también desde el instalador o un permiso) usa 5 min para no acabar en throttling
+    rc.settings = { minimumFetchIntervalMillis: force ? 0 : 300_000, fetchTimeoutMillis: 30_000 };
     rc.defaultConfig = {
       eclipse_message: '',
       active_eclipse_id: '',
