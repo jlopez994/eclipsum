@@ -40,6 +40,7 @@ import { useGeo } from './hooks/useGeo';
 import { usePrefs } from './hooks/usePrefs';
 import { usePermissions } from './hooks/usePermissions';
 import { useRemoteExtras } from './hooks/useRemoteExtras';
+import { useApkUpdate } from './hooks/useApkUpdate';
 import { useDrill } from './hooks/useDrill';
 import { useSpotData } from './hooks/useSpotData';
 import { NoticeStack } from './components/NoticeStack';
@@ -101,6 +102,7 @@ function AppInner() {
   const { permissions, request: requestPermission } = usePermissions(locationGranted);
   // Antes de cargar prefs, canal estable: nunca ofrecer una beta a quien no la pidió
   const remote = useRemoteExtras(prefs?.updateChannel ?? 'stable');
+  const apkUpdate = useApkUpdate(remote.update);
   const [tab, setTab] = useState<TabKey>('mapa');
   /** Instante en que se lanzó la demo; null = demo apagada. Ancla fija de la serie sintética */
   const [demoAt, setDemoAt] = useState<Date | null>(null);
@@ -570,7 +572,7 @@ function AppInner() {
       <StatusBar style="light" />
       <NoticeStack
         message={remote.message}
-        updateUrl={remote.updateUrl}
+        update={apkUpdate}
         showDonate={showDonatePrompt}
         onDonateResolve={resolveDonate}
         showBackToMode={inEclipseWindow && modeExited}

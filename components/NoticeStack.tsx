@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import type { ApkUpdateUi } from '../hooks/useApkUpdate';
 import { t } from '../lib/i18n';
 import { DIVERGENCE_KM } from '../lib/spots';
 import { Notice, NoticeActions, NoticeLink } from './Notice';
@@ -7,8 +8,8 @@ import { Notice, NoticeActions, NoticeLink } from './Notice';
 interface NoticeStackProps {
   /** Mensaje remoto (Remote Config); vacío = sin aviso */
   message: string;
-  /** URL de la APK nueva; vacío = sin aviso de actualización */
-  updateUrl: string;
+  /** Actualización in-app; null = sin aviso */
+  update: ApkUpdateUi | null;
   /** Petición de propina pendiente (ya filtrada por umbral de aperturas y URL) */
   showDonate: boolean;
   /** true = donó, false = «ahora no»; en ambos casos el aviso no vuelve nunca */
@@ -47,7 +48,7 @@ interface NoticeStackProps {
  */
 export function NoticeStack({
   message,
-  updateUrl,
+  update,
   showDonate,
   onDonateResolve,
   showBackToMode,
@@ -83,7 +84,7 @@ export function NoticeStack({
     Math.abs(divergenceKm - divergeHidden.km) < DIVERGENCE_KM;
 
   const showMessage = message !== '' && !messageHidden;
-  const showUpdate = updateUrl !== '' && !updateHidden;
+  const showUpdate = update !== null && !updateHidden;
   // La reubicación manda: el puesto en pantalla no es el que elegiste, y hasta que eso se
   // explique cada cifra de debajo parece describir un sitio equivocado. Luego la
   // divergencia, por lo mismo el día D. Después, volver al modo: mientras el evento ocurre
@@ -133,14 +134,7 @@ export function NoticeStack({
       {notice === 'info' && (
         <Notice tone="info" text={message} onClose={() => setMessageHidden(true)} />
       )}
-      {notice === 'update' && (
-        <Notice tone="action" text={t('app.updateBanner')} onClose={() => setUpdateHidden(true)}>
-          <NoticeLink
-            label={t('app.updateCta')}
-            onPress={() => Linking.openURL(updateUrl).catch(() => {})}
-          />
-        </Notice>
-      )}
+      {notice === 'update' && update && <UpdateNotice update={update} onClose={() => setUpdateHidden(true)} />}
       {/* Propina: solo tras varios usos, una vez en la vida y nunca en modo eclipse (App no
           monta este bloque allí). Sin ✕: su «ahora no» es definitivo, y un icono ambiguo
           aquí haría dudar si vuelve. */}
@@ -154,6 +148,44 @@ export function NoticeStack({
       )}
     </View>
   );
+}
+
+/** Mismos pasos que la app los recorre: aviso → permiso (una vez) → descarga → instalación. */
+function UpdateNotice({ update, onClose }: { update: ApkUpdateUi; onClose: () => void }) {
+  const st = update.state;
+  switch (st.kind) {
+    case 'available':
+      return (
+        <Notice tone="action" text={t('app.updateBanner')} onClose={onClose}>
+          <NoticeLink label={t('app.updateCta')} onPress={update.install} />
+        </Notice>
+      );
+    case 'needsPermission':
+      return (
+        <Notice tone="action" text={t('app.updatePermission')} onClose={onClose}>
+          <NoticeActions>
+            <NoticeLink label={t('app.updatePermissionCta')} onPress={update.openSettings} soft />
+            <NoticeLink label={t('app.updateCta')} onPress={update.install} />
+          </NoticeActions>
+        </Notice>
+      );
+    case 'downloading':
+      return (
+        <Notice
+          tone="action"
+          text={t('app.updateDownloading', { percent: st.percent >= 0 ? `${st.percent} %` : '' })}
+          onClose={onClose}
+        />
+      );
+    case 'installing':
+      return <Notice tone="action" text={t('app.updateInstalling')} onClose={onClose} />;
+    case 'failed':
+      return (
+        <Notice tone="warn" text={t(`app.updateError.${st.error}`, { detail: st.detail })} onClose={onClose}>
+          <NoticeLink label={t('app.updateRetry')} onPress={update.install} />
+        </Notice>
+      );
+  }
 }
 
 const s = StyleSheet.create({

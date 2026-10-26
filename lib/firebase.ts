@@ -20,10 +20,13 @@ export interface RemoteExtras {
   latestVersionCode: number;
   /** URL de descarga de la última APK estable; vacío = sin aviso de actualización */
   latestApkUrl: string;
+  /** sha256 de esa APK; vacío = sin aviso (la app no instala lo que no puede comprobar) */
+  latestApkSha256: string;
   /** versionCode de la última beta (pre-release); solo lo mira el canal beta */
   latestBetaVersionCode: number;
   /** URL de la APK de la última beta (asset de su tag); vacío = sin aviso de beta */
   latestBetaApkUrl: string;
+  latestBetaApkSha256: string;
   /** Puestos recomendados para el selector; vacío = sección oculta */
   suggestedSpots: SuggestedSpot[];
 }
@@ -49,6 +52,12 @@ export interface Sponsor {
  */
 function httpsOnly(url: string): string {
   return url.startsWith('https://') ? url : '';
+}
+
+/** sha256 en hex; cualquier otra cosa queda en '' (= sin aviso de actualización). */
+function sha256Only(hex: string): string {
+  const h = hex.trim().toLowerCase();
+  return /^[0-9a-f]{64}$/.test(h) ? h : '';
 }
 
 /** RC `sponsor`: {"name","url","tagline"?}; inválido o vacío → null (nunca rompe). */
@@ -121,10 +130,12 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       // la lista buena la publica genSpots.ts cada mes por RC.
       suggested_spots: '[]',
       latest_apk_url: 'https://github.com/jlopez994/eclipsum/releases/latest/download/eclipsum.apk',
+      latest_apk_sha256: '',
       // Sin default útil: la URL de una beta apunta al asset de SU tag, así que la escribe
       // el workflow en cada publicación. 0 + vacío = el canal beta no avisa de nada.
       latest_beta_version_code: '0',
       latest_beta_apk_url: '',
+      latest_beta_apk_sha256: '',
     };
     try {
       await fetchAndActivate(rc);
@@ -138,8 +149,10 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
     const sponsor = parseSponsor(getString(rc, 'sponsor'));
     const latestVersionCode = Number.parseInt(getString(rc, 'latest_version_code'), 10) || 0;
     const latestApkUrl = httpsOnly(getString(rc, 'latest_apk_url'));
+    const latestApkSha256 = sha256Only(getString(rc, 'latest_apk_sha256'));
     const latestBetaVersionCode = Number.parseInt(getString(rc, 'latest_beta_version_code'), 10) || 0;
     const latestBetaApkUrl = httpsOnly(getString(rc, 'latest_beta_apk_url'));
+    const latestBetaApkSha256 = sha256Only(getString(rc, 'latest_beta_apk_sha256'));
     const suggestedSpots = parseSuggestedSpots(getString(rc, 'suggested_spots'));
     // Orden: primero el catálogo extra, luego el id activo (puede apuntar a una entrada remota)
     setRemoteCatalog(getString(rc, 'eclipse_catalog'));
@@ -151,8 +164,10 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       sponsor,
       latestVersionCode,
       latestApkUrl,
+      latestApkSha256,
       latestBetaVersionCode,
       latestBetaApkUrl,
+      latestBetaApkSha256,
       suggestedSpots,
     };
   } catch (e) {
@@ -165,8 +180,10 @@ export async function fetchRemoteExtras(): Promise<RemoteExtras> {
       sponsor: null,
       latestVersionCode: 0,
       latestApkUrl: '',
+      latestApkSha256: '',
       latestBetaVersionCode: 0,
       latestBetaApkUrl: '',
+      latestBetaApkSha256: '',
       suggestedSpots: [],
     };
   }
