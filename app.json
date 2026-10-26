@@ -79,7 +79,8 @@
             "extraProguardRules": "-keepattributes SourceFile,LineNumberTable\n-renamesourcefileattribute SourceFile\n"
           }
         }
-      ]
+      ],
+      "./plugins/withoutBarcodeModels"
     ]
   }
 }

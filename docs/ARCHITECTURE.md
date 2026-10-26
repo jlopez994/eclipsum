@@ -66,7 +66,7 @@ Reschedules all notifications when the spot, toggles, sound, language or permiss
 | `bandGeo.ts` | Bundled path pack (**generated** by `scripts/genBandPack.ts`, do not edit by hand) | Every total/annular path in the browsable window (~50 paths, ~240 KB) — offline and zero-maintenance; history never changes. Shared walker in `scripts/bandWalk.ts` (fine 0.25° seeding for thin hybrid/annular paths) |
 | `spotEclipses.ts` | Eclipses visible from one spot | Iterates `SearchLocalSolarEclipse`/`NextLocalSolarEclipse` ±25/8 years, drops below-horizon series, canonicalizes each hit to the **global** peak's civil day (the local maximum can fall ±1 day). Promise cache per rounded coordinate; ~0.5 s per sweep, yielding between engine steps |
 | `spots.ts` | `Spot`/`SpotOption` types | No logic |
-| `maps.ts`, `anim.ts`, `soundPreview.ts` | RN utilities (open Maps, LayoutAnimation, sound preview) | Import react-native — outside the engine |
+| `maps.ts`, `anim.ts`, `soundPreview.ts`, `eclipseSound.ts` | RN utilities (open Maps, LayoutAnimation, sound preview and its per-platform source) | Import react-native — outside the engine |
 | `leafletVendor.ts` | Vendored Leaflet 1.9.4 (JS+CSS as strings) | The real map does not depend on a CDN |
 
 ## components/ and hooks/

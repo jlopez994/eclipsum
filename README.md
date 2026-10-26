@@ -44,7 +44,7 @@ lib/
   drill.ts               Synthetic eclipse for the drill (fixed minimum legs)
   i18n.ts                t(), LANGS/LANG_META; dictionaries in locales/*.json
   spots.ts               Spot/SpotOption types
-  maps.ts / anim.ts / soundPreview.ts / leafletVendor.ts
+  maps.ts / anim.ts / soundPreview.ts / eclipseSound.ts / leafletVendor.ts
 locales/
   es.json / en.json      Translations (flat JSON; see "Adding a language")
 hooks/
@@ -55,6 +55,8 @@ hooks/
   useApkUpdate.ts        In-app update flow (permission → download → install)
 modules/
   eclipsum-updater/      Local Expo module (Kotlin): downloads the APK, checks its sha256, installs it with PackageInstaller
+plugins/
+  withoutBarcodeModels.js  Leaves expo-camera's unused ML Kit barcode models out of the APK
 components/
   screens/               MapScreen, EclipsesScreen, AlertsScreen, SettingsScreen, EclipseModeScreen
   map/                   Visual map pieces (CompassChip, HorizonDiagram, …)
