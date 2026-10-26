@@ -88,7 +88,7 @@ export function NoticeStack({
   // La reubicación manda: el puesto en pantalla no es el que elegiste, y hasta que eso se
   // explique cada cifra de debajo parece describir un sitio equivocado. Luego la
   // divergencia, por lo mismo el día D. Después, volver al modo: mientras el evento ocurre
-  // no hay nada más urgente.
+  // no hay nada más urgente. La actualización va antes que el mensaje de RC: pide una acción.
   const notice =
     relocated !== null && relocatedHidden !== relocated
       ? 'relocated'
@@ -96,10 +96,10 @@ export function NoticeStack({
         ? 'diverge'
         : showBackToMode
           ? 'mode'
-          : showMessage
-            ? 'info'
-            : showUpdate
-              ? 'update'
+          : showUpdate
+            ? 'update'
+            : showMessage
+              ? 'info'
               : showDonate
                 ? 'donate'
                 : null;
@@ -150,8 +150,11 @@ export function NoticeStack({
   );
 }
 
-/** Mismos pasos que la app los recorre: aviso → permiso (una vez) → descarga → instalación. */
-function UpdateNotice({ update, onClose }: { update: ApkUpdateUi; onClose: () => void }) {
+/**
+ * Mismos pasos que la app los recorre: aviso → permiso (una vez) → descarga → instalación.
+ * Sin onClose no lleva ✕ (Ajustes, donde se llega a propósito).
+ */
+export function UpdateNotice({ update, onClose }: { update: ApkUpdateUi; onClose?: () => void }) {
   const st = update.state;
   switch (st.kind) {
     case 'available':

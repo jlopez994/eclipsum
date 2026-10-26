@@ -7,6 +7,8 @@ import { previewAlertSound } from '../../lib/soundPreview';
 import { track } from '../../lib/firebase';
 import { LANG_META, LANGS, t, type I18nKey, type Lang } from '../../lib/i18n';
 import type { PermissionKind, Permissions } from '../../hooks/usePermissions';
+import type { ApkUpdateUi } from '../../hooks/useApkUpdate';
+import { UpdateNotice } from '../NoticeStack';
 import type { AlertSound, UpdateChannel } from '../../lib/prefs';
 import { C, F } from '../theme';
 
@@ -34,6 +36,10 @@ interface SettingsScreenProps {
   /** Canal del que se aceptan avisos de actualización */
   updateChannel: UpdateChannel;
   onUpdateChannelChange: (channel: UpdateChannel) => void;
+  /** Actualización disponible en el canal elegido; null = ninguna o aún sin consultar */
+  update: ApkUpdateUi | null;
+  /** Consulta RC al momento; false = no respondió */
+  onCheckUpdates: () => Promise<boolean>;
   onDemoEclipse: () => void;
   /** Idioma elegido; '' = automático (sistema) */
   language: Lang | '';
@@ -60,6 +66,8 @@ export function SettingsScreen({
   onSoundChange,
   updateChannel,
   onUpdateChannelChange,
+  update,
+  onCheckUpdates,
   onDemoEclipse,
   language,
   onLanguageChange,
@@ -68,7 +76,14 @@ export function SettingsScreen({
 }: SettingsScreenProps) {
   const insets = useSafeAreaInsets();
   const [drillMsg, setDrillMsg] = useState<string | null>(null);
+  const [check, setCheck] = useState<'idle' | 'checking' | 'upToDate' | 'failed'>('idle');
   const missingPermission = PERMISSION_ROWS.some((r) => !permissions[r.kind]);
+
+  const checkUpdates = () => {
+    setCheck('checking');
+    // Si hay versión nueva, `update` llega antes que el resultado y el aviso sustituye a esta fila
+    void onCheckUpdates().then((ok) => setCheck(ok ? 'upToDate' : 'failed'));
+  };
 
   const runDrill = () => {
     onStartDrill()
@@ -209,6 +224,24 @@ export function SettingsScreen({
                 Eclipsum {Constants.expoConfig?.version ?? `b${Constants.expoConfig?.android?.versionCode ?? '?'}`}
               </Text>
             </View>
+            {update ? (
+              <View style={[s.updateBox, s.rowDivider]}>
+                <UpdateNotice update={update} />
+              </View>
+            ) : (
+              <Pressable
+                style={[s.rowItem, s.rowDivider]}
+                onPress={checkUpdates}
+                disabled={check === 'checking'}
+                accessibilityRole="button"
+                accessibilityLabel={t('settings.checkUpdates')}
+              >
+                <Text style={s.rowTitle}>{t('settings.checkUpdates')}</Text>
+                <Text style={check === 'idle' ? s.tourAction : s.aboutValue} accessibilityLiveRegion="polite">
+                  {t(`settings.checkUpdates.${check}`)}
+                </Text>
+              </Pressable>
+            )}
             {UPDATE_CHANNELS.map((opt, i) => {
               const on = updateChannel === opt.id;
               return (
@@ -389,6 +422,7 @@ const s = StyleSheet.create({
   linkCta: { fontFamily: F.bold, fontSize: 13, letterSpacing: 1, color: C.corona, marginTop: 12 },
   aboutValue: { fontFamily: F.medium, fontSize: 13, color: C.dim },
   tourAction: { fontFamily: F.bold, fontSize: 11, letterSpacing: 1.5, color: C.corona },
+  updateBox: { padding: 12 },
   upcomingNote: { fontFamily: F.regular, fontSize: 11, lineHeight: 16, color: C.dim, marginTop: 8 },
   aboutNote: { fontFamily: F.regular, fontSize: 13, lineHeight: 19, color: C.dim },
 });

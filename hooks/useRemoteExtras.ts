@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import Constants from 'expo-constants';
 import { fetchRemoteExtras, type RemoteExtras, type Sponsor, type SuggestedSpot } from '../lib/firebase';
@@ -61,15 +61,18 @@ function updateFor(r: RemoteExtras, channel: UpdateChannel, ownVc: number): ApkU
 }
 
 /**
- * Remote Config al arrancar y al volver a primer plano (fetchRemoteExtras respeta
- * su propia caché). Nunca lanza: sin red se queda con lo último activado.
+ * Remote Config al arrancar y al volver a primer plano, sin caché, y bajo demanda con
+ * checkNow (botón «Buscar actualizaciones»). Nunca lanza: sin red se queda con lo último activado.
  */
-export function useRemoteExtras(channel: UpdateChannel): RemoteExtrasState {
+export function useRemoteExtras(
+  channel: UpdateChannel,
+): RemoteExtrasState & { /** false = RC no respondió */ checkNow: () => Promise<boolean> } {
   const [state, setState] = useState<RemoteExtrasState>(EMPTY);
 
-  useEffect(() => {
-    const pull = () =>
-      void fetchRemoteExtras().then((r) => {
+  // channel en las deps: cambiarlo en Ajustes reevalúa el aviso sin esperar a otro arranque
+  const pull = useCallback(
+    () =>
+      fetchRemoteExtras().then((r) => {
         // Actualización sin tienda: RC anuncia versionCode, URL y sha256 de la APK
         const ownVc = PREVIEW_UPDATE_IN_DEV ? 0 : Constants.expoConfig?.android?.versionCode ?? 0;
         setState((prev) => ({
@@ -81,15 +84,18 @@ export function useRemoteExtras(channel: UpdateChannel): RemoteExtrasState {
           update: updateFor(r, channel, ownVc),
           catalogEpoch: prev.catalogEpoch + 1,
         }));
-      });
+        return r.fetched;
+      }),
+    [channel],
+  );
 
-    pull();
+  useEffect(() => {
+    void pull();
     const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'active') pull();
+      if (s === 'active') void pull();
     });
     return () => sub.remove();
-    // channel en las deps: cambiarlo en Ajustes reevalúa el aviso sin esperar a otro arranque
-  }, [channel]);
+  }, [pull]);
 
-  return state;
+  return { ...state, checkNow: pull };
 }
