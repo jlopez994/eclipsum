@@ -52,17 +52,27 @@ export function useApkUpdate(update: ApkUpdate | null): ApkUpdateUi | null {
       return;
     }
     setState({ kind: 'downloading', percent: -1 });
-    Updater.install(update.url, update.sha256).then(
-      // Condicional: si Android ya rechazó la instalación (onStatus), ese error manda
-      () => setState((s) => (s.kind === 'downloading' ? { kind: 'installing' } : s)),
-      (e: { code?: string; message?: string }) =>
-        setState({
-          kind: 'failed',
-          error: e.code === 'ERR_DOWNLOAD' ? 'download' : 'prepare',
-          // Expo antepone «Call to function … has been rejected → Caused by: …»; vale lo último
-          detail: e.message?.split('Caused by: ').pop() ?? '',
-        }),
-    );
+    const updater = Updater;
+    const download = (url: string): void => {
+      updater.install(url, update.sha256).then(
+        // Condicional: si Android ya rechazó la instalación (onStatus), ese error manda
+        () => setState((s) => (s.kind === 'downloading' ? { kind: 'installing' } : s)),
+        (e: { code?: string; message?: string }) => {
+          // El CDN falló: la misma APK (mismo sha256) desde GitHub, una vez
+          if (e.code === 'ERR_DOWNLOAD' && update.fallbackUrl && url !== update.fallbackUrl) {
+            download(update.fallbackUrl);
+            return;
+          }
+          setState({
+            kind: 'failed',
+            error: e.code === 'ERR_DOWNLOAD' ? 'download' : 'prepare',
+            // Expo antepone «Call to function … has been rejected → Caused by: …»; vale lo último
+            detail: e.message?.split('Caused by: ').pop() ?? '',
+          });
+        },
+      );
+    };
+    download(update.url);
   };
 
   return { state, install, openSettings: () => Updater?.openInstallSettings() };

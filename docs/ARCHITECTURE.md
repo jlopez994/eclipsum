@@ -6,7 +6,7 @@
 
 The **computation engine is pure TypeScript** runnable in Node: `lib/{eclipse,totality,spots,prefs,weather,eclipseCatalog}.ts` do not import `react-native` (AsyncStorage is allowed: its CJS entry loads in Node and native module access is deferred). `npm run selfcheck` (`scripts/selfcheck.ts`) runs them in Node with asserts covering the engine, catalog, RC, drill, prefs, totality and i18n — it is the gate for CI and for the Remote Config workflow.
 
-All astronomical computation is 100% local ([astronomy-engine](https://github.com/cosinekitty/astronomy)). There is no backend; the only network calls are Open-Meteo (clouds), map tiles, Expo's geocoder and Firebase (RC/Analytics/Crashlytics, best-effort).
+All astronomical computation is 100% local ([astronomy-engine](https://github.com/cosinekitty/astronomy)). There is no backend; the only network calls are Open-Meteo (clouds), map tiles, Expo's geocoder, Firebase (RC/Analytics/Crashlytics, best-effort) and the update manifests on `cdn.jlh.app` (`lib/cdnUpdate.ts`).
 
 ## App.tsx — root state
 
