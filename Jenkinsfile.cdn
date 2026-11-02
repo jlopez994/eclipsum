@@ -1,0 +1,56 @@
+// Copia al CDN (cdn.jlh.app/eclipsum/) la APK que release-apk.yml acaba de publicar en GitHub: la app
+// mira primero el CDN y GitHub queda de respaldo. Lo dispara ese workflow con el webhook genérico.
+@Library('jenkins-lib') _
+
+pipeline {
+  // VersityGW, donde publica publicarCdn, solo se alcanza desde el Mac.
+  agent { label 'mac' }
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '30'))
+    skipDefaultCheckout()
+  }
+  triggers {
+    GenericTrigger(
+      genericVariables: [
+        [key: 'TAG', value: '$.tag'],
+        [key: 'VERSION', value: '$.version'],
+        [key: 'VERSION_CODE', value: '$.versionCode'],
+        [key: 'CANAL', value: '$.canal'],
+        [key: 'SHA256', value: '$.sha256'],
+      ],
+      tokenCredentialId: 'eclipsum-cdn-webhook',
+      causeString: 'release-apk $TAG',
+      printContributedVariables: false,
+      printPostContent: false,
+    )
+  }
+  stages {
+    stage('CDN') {
+      steps {
+        script {
+          // Sin webhook (el build que registra el trigger, o uno a mano) no hay nada que copiar.
+          if (!env.TAG) {
+            currentBuild.result = 'NOT_BUILT'
+            return
+          }
+          // Viene de internet: solo pasa lo que encaja con lo que publica release-apk.yml.
+          def beta = env.CANAL == 'beta'
+          if (!(env.TAG ==~ /b[0-9]+/) || env.VERSION_CODE != env.TAG.substring(1)
+              || !(env.CANAL in ['latest', 'beta']) || !(env.SHA256 ==~ /[0-9a-f]{64}/)
+              || env.VERSION != env.TAG + (beta ? '-beta' : '')) {
+            error "Webhook no válido: tag=${env.TAG} version=${env.VERSION} versionCode=${env.VERSION_CODE} canal=${env.CANAL}"
+          }
+          sh '''#!/bin/bash
+            set -euo pipefail
+            curl -fsSL --retry 3 -o eclipsum.apk "https://github.com/jlopez994/eclipsum/releases/download/$TAG/eclipsum.apk"
+            echo "$SHA256  eclipsum.apk" | shasum -a 256 -c -
+          '''
+          publicarCdn(app: 'eclipsum', target: 'android', artefacto: 'eclipsum.apk',
+                      version: env.VERSION, versionCode: env.VERSION_CODE, canal: env.CANAL)
+        }
+      }
+    }
+  }
+}

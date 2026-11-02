@@ -62,6 +62,7 @@ import {
   yawRateFromRotationRate,
   type CameraBasis,
 } from '../lib/skyProjection';
+import { parseCdnManifest, pickUpdate } from '../lib/cdnUpdate';
 
 async function main() {
   // Nota: la caché del automático es monótona en el tiempo — los asserts van en fechas crecientes
@@ -834,6 +835,20 @@ async function main() {
   assert.equal(unseenDay, '2027-08-02', 'desde Seseña el próximo visible es el total de 2027, no el anular');
   assert.ok(eclipseForDay(unseenDay!) !== null, 'y el catálogo lo resuelve: el diálogo tiene adónde llevar');
   setUserSelectedEclipseDay('');
+
+  // Actualizaciones: el CDN primero, GitHub (RC) de respaldo y nunca algo sin https ni sha256
+  const sha = 'a'.repeat(64);
+  const cdnApk = { vc: 60, url: 'https://cdn.jlh.app/eclipsum/android/eclipsum-b60.apk', sha256: sha };
+  const ghApk = { vc: 60, url: 'https://github.com/jlopez994/eclipsum/releases/download/b60/eclipsum.apk', sha256: sha };
+  assert.deepEqual(parseCdnManifest({ android: { version: 'b60', versionCode: 60, url: cdnApk.url, sha256: sha.toUpperCase() } }), cdnApk);
+  assert.equal(parseCdnManifest({ android: { versionCode: 60, url: 'http://cdn.jlh.app/x.apk', sha256: sha } }), null, 'CDN: sin https no vale');
+  assert.equal(parseCdnManifest({ android: { versionCode: 60, url: cdnApk.url, sha256: 'abc' } }), null, 'CDN: sha256 roto no vale');
+  assert.equal(parseCdnManifest({ android: { versionCode: '60', url: cdnApk.url, sha256: sha } }), null, 'CDN: versionCode no numérico');
+  assert.deepEqual(pickUpdate([cdnApk], [ghApk], 59), { url: cdnApk.url, sha256: sha, fallbackUrl: ghApk.url }, 'empate: CDN con GitHub de respaldo');
+  assert.deepEqual(pickUpdate([], [ghApk], 59), { url: ghApk.url, sha256: sha }, 'CDN caído: GitHub');
+  assert.equal(pickUpdate([cdnApk], [{ ...ghApk, vc: 61 }], 59)?.url, ghApk.url, 'CDN atrasado: manda la más nueva');
+  assert.equal(pickUpdate([cdnApk], [ghApk], 60), null, 'ya al día: sin aviso');
+  assert.equal(pickUpdate([cdnApk], [{ ...ghApk, sha256: 'b'.repeat(64) }], 59)?.fallbackUrl, undefined, 'otro sha256: sin respaldo');
 
   console.log('selfcheck OK — Zaragoza total', zgz.totalityDurationSec + 's, máximo', max.time.toISOString());
   console.log(

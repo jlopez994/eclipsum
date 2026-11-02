@@ -6,12 +6,15 @@
 #   releases/latest/download/eclipsum.apk nunca cambia) + Remote Config
 #   latest_version_code / latest_apk_url / latest_apk_sha256: la app descarga
 #   esa APK, comprueba el sha256 y se instala ella misma.
+# Después Jenkins (Jenkinsfile.cdn) la copia a cdn.jlh.app/eclipsum/, que la app mira
+#   primero; lo de GitHub + RC queda de respaldo.
 # Beta/rc (versión contiene beta|rc): pre-release — no pisa releases/latest
 #   y escribe solo el trío latest_beta_*.
 #
 # Secretos requeridos (Settings → Secrets → Actions):
 #   GOOGLE_SERVICES_JSON     — contenido de google-services.json (gitignorado)
 #   FIREBASE_SERVICE_ACCOUNT — el mismo que usa sync-remote-config
+#   JENKINS_CDN_TOKEN        — token del webhook del job de Jenkinsfile.cdn (credencial eclipsum-cdn-webhook)
 name: release-apk
 
 on:
@@ -155,3 +158,21 @@ jobs:
             git pull --rebase
             git push
           }
+
+      # Jenkins (Jenkinsfile.cdn) copia esta APK al CDN, donde la app mira primero; GitHub queda de respaldo.
+      # El último: si falla, lo publicado y el template ya están (se repite a mano en Jenkins).
+      - name: Avisar a Jenkins (CDN)
+        if: steps.v.outputs.skip != 'true'
+        env:
+          JENKINS_CDN_TOKEN: ${{ secrets.JENKINS_CDN_TOKEN }}
+          V: ${{ steps.v.outputs.version }}
+          VC: ${{ steps.v.outputs.vc }}
+          IS_BETA: ${{ steps.v.outputs.prerelease }}
+        run: |
+          CANAL=latest
+          [ "$IS_BETA" = "true" ] && CANAL=beta
+          jq -n --arg tag "b$VC" --arg version "$V" --argjson versionCode "$VC" --arg canal "$CANAL" \
+            --arg sha256 "$(sha256sum eclipsum.apk | cut -d' ' -f1)" \
+            '{tag: $tag, version: $version, versionCode: $versionCode, canal: $canal, sha256: $sha256}' |
+            curl -sSf --retry 3 -X POST -H "token: $JENKINS_CDN_TOKEN" -H 'Content-Type: application/json' \
+              --data @- https://jenkins.jlh.app/generic-webhook-trigger/invoke
