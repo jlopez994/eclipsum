@@ -16,7 +16,8 @@ export interface UpdateCandidate {
 
 /** Manifiestos que escribe Jenkins (Jenkinsfile.cdn): latest.json estable y beta.json */
 export const CDN_BASE = 'https://cdn.jlh.app/eclipsum';
-const CDN_TIMEOUT_MS = 10_000;
+// Corto: el resto de lo de RC (banner, catálogo) espera a esta consulta
+const CDN_TIMEOUT_MS = 5_000;
 
 /** Entrada `android` de un manifiesto del CDN; null = falta o no vale (mismas reglas que RC). */
 export function parseCdnManifest(raw: unknown): UpdateCandidate | null {
