@@ -12,7 +12,7 @@
 #   y escribe solo el trío latest_beta_*.
 #
 # Secretos requeridos (Settings → Secrets → Actions):
-#   GOOGLE_SERVICES_JSON     — contenido de google-services.json (gitignorado)
+#   GOOGLE_SERVICES_JSON     — contenido de google-services.json (el del repo apunta al proyecto original; el secret permite usar otro)
 #   FIREBASE_SERVICE_ACCOUNT — el mismo que usa sync-remote-config
 #   JENKINS_CDN_TOKEN        — token del webhook del job de Jenkinsfile.cdn (credencial eclipsum-cdn-webhook)
 name: release-apk
